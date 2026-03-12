@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search") ?? "";
     const tier = searchParams.get("tier");
     const source = searchParams.get("source");
+    const circle = searchParams.get("circle");
     const tag = searchParams.get("tag");
     const sort = searchParams.get("sort") ?? "name";
 
@@ -37,10 +38,12 @@ export async function GET(req: NextRequest) {
         OR: [
           { name: { contains: search, mode: "insensitive" } },
           { email: { contains: search, mode: "insensitive" } },
+          { additionalEmails: { has: search } },
           { company: { contains: search, mode: "insensitive" } },
         ],
       }),
       ...(tier && { tier: tier as Prisma.EnumContactTierFilter["equals"] }),
+      ...(circle && { circles: { some: { circleId: circle } } }),
       ...(source && { source: source as Prisma.EnumContactSourceFilter["equals"] }),
       ...(tag && { tags: { has: tag } }),
     };
@@ -57,6 +60,11 @@ export async function GET(req: NextRequest) {
       orderBy,
       include: {
         _count: { select: { interactions: true } },
+        circles: {
+          select: {
+            circle: { select: { id: true, name: true, color: true } },
+          },
+        },
       },
     });
 
@@ -79,7 +87,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   const {
-    name, email, phone, company, role, tier, tags,
+    name, email, additionalEmails, phone, company, role, tier, tags,
     linkedinUrl, city, state, country, notes, followUpDays,
   } = body;
 
@@ -92,6 +100,9 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       name: name.trim(),
       email: email?.trim() || null,
+      additionalEmails: Array.isArray(additionalEmails)
+        ? additionalEmails.map((e: string) => e.trim()).filter(Boolean)
+        : [],
       phone: phone?.trim() || null,
       company: company?.trim() || null,
       role: role?.trim() || null,

@@ -21,6 +21,11 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         orderBy: { occurredAt: "desc" },
         take: 50,
       },
+      circles: {
+        select: {
+          circle: { select: { id: true, name: true, color: true } },
+        },
+      },
     },
   });
 
@@ -50,9 +55,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const allowedFields = [
-    "name", "email", "phone", "company", "role", "tier",
+    "name", "email", "additionalEmails", "phone", "company", "role", "tier",
     "tags", "linkedinUrl", "city", "state", "country",
     "latitude", "longitude", "notes", "followUpDays", "avatarUrl",
+    "birthday", "howWeMet",
   ] as const;
 
   const data: Record<string, unknown> = {};

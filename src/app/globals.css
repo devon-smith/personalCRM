@@ -7,7 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-instrument-serif);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -24,36 +25,86 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(26,25,23,0.04);
+  --shadow-sm: 0 2px 8px rgba(26,25,23,0.06);
+  --shadow-md: 0 4px 16px rgba(26,25,23,0.08);
+  --shadow-lg: 0 8px 32px rgba(26,25,23,0.10);
+  --shadow-focus: 0 0 0 3px rgba(26,25,23,0.12);
 }
 
 :root {
-  /* Quiet minimalism palette */
-  --background: #FAFAFA;
-  --foreground: #1A1A1A;
+  /* ─── Design System v1.0 — Warm Minimalism ─── */
+
+  /* Semantic palette */
+  --background: #FAFAF8;
+  --foreground: #1A1917;
   --card: #FFFFFF;
-  --card-foreground: #1A1A1A;
+  --card-foreground: #1A1917;
   --popover: #FFFFFF;
-  --popover-foreground: #1A1A1A;
-  --primary: #1A1A1A;
-  --primary-foreground: #FFFFFF;
-  --secondary: #F5F6F8;
-  --secondary-foreground: #1A1A1A;
-  --muted: #F5F6F8;
-  --muted-foreground: #6B7280;
-  --accent: #F5F6F8;
-  --accent-foreground: #1A1A1A;
-  --destructive: #BF5040;
-  --border: #F2F3F5;
-  --input: #E8EAED;
-  --ring: #6366F1;
-  --radius: 0.75rem;
+  --popover-foreground: #1A1917;
+  --primary: #1A1917;
+  --primary-foreground: #FAFAF8;
+  --secondary: #F5F4F0;
+  --secondary-foreground: #1A1917;
+  --muted: #F5F4F0;
+  --muted-foreground: #6B6860;
+  --accent: #F5F4F0;
+  --accent-foreground: #1A1917;
+  --destructive: #DC4A3F;
+  --border: #E8E6E1;
+  --input: #D4D1CA;
+  --ring: #1A1917;
+  --radius: 14px;
+
+  /* Extended semantic tokens */
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-sunken: #F5F4F0;
+  --border-subtle: #F0EEE9;
+  --border-strong: #D4D1CA;
+  --text-primary: #1A1917;
+  --text-secondary: #6B6860;
+  --text-tertiary: #9C9889;
+  --text-inverse: #FAFAF8;
+  --accent-color: #1A1917;
+  --accent-hover: #2D2C28;
+  --accent-soft: #F5F4F0;
+
+  /* Status colors */
+  --status-urgent: #DC4A3F;
+  --status-urgent-bg: #FEF2F1;
+  --status-warning: #E5A820;
+  --status-warning-bg: #FDF8EC;
+  --status-success: #2D8A4E;
+  --status-success-bg: #F0F9F3;
+  --status-info: #3B7DD8;
+  --status-info-bg: #F0F5FD;
+
+  /* Warmth colors (for circle health) */
+  --warmth-good: #2D8A4E;
+  --warmth-good-bg: #F0F9F3;
+  --warmth-mid: #E5A820;
+  --warmth-mid-bg: #FDF8EC;
+  --warmth-cold: #DC4A3F;
+  --warmth-cold-bg: #FEF2F1;
+  --warmth-none: #9C9889;
+  --warmth-none-bg: #F5F4F0;
+
+  /* Motion */
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+  --ease-default: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
 }
 
 @layer base {
@@ -71,43 +122,126 @@
   }
 }
 
-/* ─── CRM Design Tokens (Quiet Minimalism) ─── */
-:root {
-  /* Text hierarchy */
-  --crm-heading: #1A1A1A;
-  --crm-body: #2A2D32;
-  --crm-muted: #B5BAC0;
-  --crm-meta: #C1C5CA;
+/* ─── Typography utility classes ─── */
+.ds-display-xl {
+  font-family: var(--font-instrument-serif), Georgia, serif;
+  font-size: 2.25rem;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
 
-  /* Surfaces */
-  --crm-surface: #FFFFFF;
-  --crm-surface-hover: #F7F7F8;
-  --crm-surface-active: #F4F4F5;
+.ds-display-lg {
+  font-family: var(--font-instrument-serif), Georgia, serif;
+  font-size: 1.75rem;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
 
-  /* Borders */
-  --crm-border: #F2F3F5;
-  --crm-border-hover: #E8EAED;
+.ds-display-md {
+  font-family: var(--font-instrument-serif), Georgia, serif;
+  font-size: 1.375rem;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
 
-  /* Accent — indigo, hover only */
-  --crm-accent: #6366F1;
+.ds-heading-lg {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
 
-  /* Warmth colors (muted, sophisticated) */
-  --crm-warmth-good: #4A8C5E;
-  --crm-warmth-good-bg: #EDF5F0;
-  --crm-warmth-mid: #C4962E;
-  --crm-warmth-mid-bg: #FBF5E8;
-  --crm-warmth-cold: #BF5040;
-  --crm-warmth-cold-bg: #FAEAE7;
-  --crm-warmth-none: #C8CDD3;
-  --crm-warmth-none-bg: #F3F4F6;
+.ds-heading-md {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+}
 
-  /* Radius */
-  --crm-radius-sm: 8px;
-  --crm-radius-md: 12px;
-  --crm-radius-lg: 14px;
+.ds-heading-sm {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
 
-  /* Transitions */
-  --crm-transition: 150ms ease-out;
+.ds-body-lg {
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.ds-body-md {
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.ds-body-sm {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0.005em;
+  color: var(--text-secondary);
+}
+
+.ds-caption {
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.ds-stat-lg {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.0;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.ds-stat-md {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.0;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+/* ─── Section label (used in cards) ─── */
+.crm-section-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* ─── Card base style ─── */
+.crm-card {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(26,25,23,0.06);
+  transition: box-shadow var(--duration-fast) var(--ease-default),
+              transform var(--duration-fast) var(--ease-default);
+}
+.crm-card:hover {
+  box-shadow: 0 4px 16px rgba(26,25,23,0.08);
+}
+.crm-card-interactive:hover {
+  transform: translateY(-1px);
 }
 
 /* ─── Animations ─── */
@@ -128,16 +262,16 @@
 }
 
 .crm-animate-enter {
-  animation: crm-enter 0.4s ease both;
+  animation: crm-enter var(--duration-slow) var(--ease-out) both;
 }
 
 .crm-cold-pulse {
   animation: crm-cold-pulse 3s ease-in-out infinite;
 }
 
-/* Stagger children — use with data-stagger-index attribute */
+/* Stagger children */
 .crm-stagger > * {
-  animation: crm-enter 0.4s ease both;
+  animation: crm-enter var(--duration-slow) var(--ease-out) both;
 }
 .crm-stagger > :nth-child(1) { animation-delay: 0ms; }
 .crm-stagger > :nth-child(2) { animation-delay: 40ms; }
@@ -154,3 +288,17 @@
 .crm-stagger > :nth-child(13) { animation-delay: 480ms; }
 .crm-stagger > :nth-child(14) { animation-delay: 520ms; }
 .crm-stagger > :nth-child(15) { animation-delay: 560ms; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .crm-animate-enter,
+  .crm-stagger > *,
+  .crm-cold-pulse {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  * {
+    transition-duration: 0ms !important;
+  }
+}

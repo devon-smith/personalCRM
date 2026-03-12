@@ -10,32 +10,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { X } from "lucide-react";
+import { X, Plus } from "lucide-react";
 import {
   useCreateContact,
   useUpdateContact,
   useContact,
 } from "@/lib/hooks/use-contacts";
-import type { ContactTier } from "@/generated/prisma/enums";
 import { toast } from "sonner";
-
-const tiers = [
-  {
-    value: "INNER_CIRCLE",
-    label: "Inner Circle",
-    description: "Close contacts you interact with frequently",
-  },
-  {
-    value: "PROFESSIONAL",
-    label: "Professional",
-    description: "Work contacts and industry connections",
-  },
-  {
-    value: "ACQUAINTANCE",
-    label: "Acquaintance",
-    description: "People you've met but don't know well yet",
-  },
-] as const;
 
 interface ContactFormDialogProps {
   open: boolean;
@@ -55,10 +36,10 @@ export function ContactFormDialog({
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
-  const [tier, setTier] = useState<ContactTier>("PROFESSIONAL");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
@@ -73,10 +54,10 @@ export function ContactFormDialog({
     if (existing && isEditing) {
       setName(existing.name);
       setEmail(existing.email ?? "");
+      setAdditionalEmails((existing as Record<string, unknown>).additionalEmails as string[] ?? []);
       setPhone(existing.phone ?? "");
       setCompany(existing.company ?? "");
       setRole(existing.role ?? "");
-      setTier(existing.tier);
       setTags(existing.tags);
       setLinkedinUrl(existing.linkedinUrl ?? "");
       setCity(existing.city ?? "");
@@ -92,10 +73,10 @@ export function ContactFormDialog({
     if (!open) {
       setName("");
       setEmail("");
+      setAdditionalEmails([]);
       setPhone("");
       setCompany("");
       setRole("");
-      setTier("PROFESSIONAL");
       setTags([]);
       setTagInput("");
       setLinkedinUrl("");
@@ -136,10 +117,10 @@ export function ContactFormDialog({
     const data = {
       name,
       email: email || null,
+      additionalEmails: additionalEmails.filter((e) => e.trim()),
       phone: phone || null,
       company: company || null,
       role: role || null,
-      tier,
       tags,
       linkedinUrl: linkedinUrl || null,
       city: city || null,
@@ -193,24 +174,56 @@ export function ContactFormDialog({
             />
           </FormField>
 
-          {/* Email / Phone row */}
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Email">
+          {/* Email(s) */}
+          <FormField label="Email">
+            <div className="space-y-2">
               <Input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="john@example.com"
+                placeholder="Primary email"
               />
-            </FormField>
-            <FormField label="Phone">
-              <Input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1 (555) 000-0000"
-              />
-            </FormField>
-          </div>
+              {additionalEmails.map((ae, idx) => (
+                <div key={idx} className="flex items-center gap-1.5">
+                  <Input
+                    type="email"
+                    value={ae}
+                    onChange={(e) => {
+                      const updated = [...additionalEmails];
+                      updated[idx] = e.target.value;
+                      setAdditionalEmails(updated);
+                    }}
+                    placeholder="Additional email"
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAdditionalEmails(additionalEmails.filter((_, i) => i !== idx))}
+                    className="shrink-0 rounded-md p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setAdditionalEmails([...additionalEmails, ""])}
+                className="inline-flex items-center gap-1 text-[12px] text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Add another email
+              </button>
+            </div>
+          </FormField>
+
+          {/* Phone */}
+          <FormField label="Phone">
+            <Input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+1 (555) 000-0000"
+            />
+          </FormField>
 
           {/* Company / Role row */}
           <div className="grid grid-cols-2 gap-3">
@@ -229,35 +242,6 @@ export function ContactFormDialog({
               />
             </FormField>
           </div>
-
-          {/* Tier selector */}
-          <FormField label="Tier">
-            <div className="space-y-2">
-              {tiers.map((t) => (
-                <label
-                  key={t.value}
-                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                    tier === t.value
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200 hover:bg-gray-50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="tier"
-                    value={t.value}
-                    checked={tier === t.value}
-                    onChange={() => setTier(t.value)}
-                    className="mt-0.5"
-                  />
-                  <div>
-                    <p className="text-sm font-medium">{t.label}</p>
-                    <p className="text-xs text-gray-500">{t.description}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </FormField>
 
           {/* Tags */}
           <FormField label="Tags">

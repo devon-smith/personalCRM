@@ -1,12 +1,14 @@
-import { googleFetch } from "./client";
+import { getAllGoogleAccessTokens } from "./client";
 
 export interface GoogleContact {
   name: string;
   email: string | null;
+  additionalEmails: string[];
   phone: string | null;
   company: string | null;
   role: string | null;
   photoUrl: string | null;
+  birthday: string | null; // ISO date string e.g. "1995-03-12"
 }
 
 interface PeopleApiPerson {
@@ -16,6 +18,7 @@ interface PeopleApiPerson {
   phoneNumbers?: Array<{ value?: string }>;
   organizations?: Array<{ name?: string; title?: string }>;
   photos?: Array<{ url?: string; default?: boolean }>;
+  birthdays?: Array<{ date?: { year?: number; month?: number; day?: number } }>;
 }
 
 interface PeopleApiResponse {
@@ -25,12 +28,46 @@ interface PeopleApiResponse {
 }
 
 /**
- * Fetch contacts from Google People API.
- * Returns parsed contacts with name, email, phone, company, role.
+ * Fetch contacts from Google People API across ALL linked accounts.
+ * Deduplicates by primary email address.
  */
 export async function fetchGoogleContacts(
   userId: string,
   maxContacts: number = 2000,
+): Promise<GoogleContact[]> {
+  const accountTokens = await getAllGoogleAccessTokens(userId);
+  if (accountTokens.length === 0) {
+    throw new Error("No valid Google access token. User may need to reconnect.");
+  }
+
+  const contactsByEmail = new Map<string, GoogleContact>();
+  const contactsWithoutEmail: GoogleContact[] = [];
+
+  for (const { token } of accountTokens) {
+    try {
+      const accountContacts = await fetchContactsWithToken(token, maxContacts);
+      for (const contact of accountContacts) {
+        if (contact.email) {
+          // Deduplicate by primary email
+          if (!contactsByEmail.has(contact.email.toLowerCase())) {
+            contactsByEmail.set(contact.email.toLowerCase(), contact);
+          }
+        } else {
+          contactsWithoutEmail.push(contact);
+        }
+      }
+    } catch (err) {
+      // Skip accounts that don't have contacts scope
+      console.error("Contacts fetch error for account:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  return [...contactsByEmail.values(), ...contactsWithoutEmail].slice(0, maxContacts);
+}
+
+async function fetchContactsWithToken(
+  token: string,
+  maxContacts: number,
 ): Promise<GoogleContact[]> {
   const contacts: GoogleContact[] = [];
   let pageToken: string | undefined;
@@ -39,14 +76,16 @@ export async function fetchGoogleContacts(
     const url = new URL("https://people.googleapis.com/v1/people/me/connections");
     url.searchParams.set(
       "personFields",
-      "names,emailAddresses,phoneNumbers,organizations,photos",
+      "names,emailAddresses,phoneNumbers,organizations,photos,birthdays",
     );
     url.searchParams.set("pageSize", "100");
     if (pageToken) {
       url.searchParams.set("pageToken", pageToken);
     }
 
-    const res = await googleFetch(userId, url.toString());
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
     if (!res.ok) {
       const errorText = await res.text();
@@ -80,12 +119,26 @@ function parsePerson(person: PeopleApiPerson): GoogleContact | null {
   // Skip contacts without a name
   if (!name?.trim()) return null;
 
-  const email = person.emailAddresses?.[0]?.value ?? null;
+  const allEmails = (person.emailAddresses ?? [])
+    .map((e) => e.value?.trim())
+    .filter((v): v is string => !!v);
+  const email = allEmails[0] ?? null;
+  const additionalEmails = allEmails.slice(1);
   const phone = person.phoneNumbers?.[0]?.value ?? null;
   const company = person.organizations?.[0]?.name ?? null;
   const role = person.organizations?.[0]?.title ?? null;
   const photo = person.photos?.find((p) => !p.default);
   const photoUrl = photo?.url ?? null;
 
-  return { name: name.trim(), email, phone, company, role, photoUrl };
+  // Parse birthday from Google People API format { year, month, day }
+  const bdayData = person.birthdays?.[0]?.date;
+  let birthday: string | null = null;
+  if (bdayData?.month && bdayData?.day) {
+    const year = bdayData.year ?? 1900; // year may be missing for privacy
+    const month = String(bdayData.month).padStart(2, "0");
+    const day = String(bdayData.day).padStart(2, "0");
+    birthday = `${year}-${month}-${day}`;
+  }
+
+  return { name: name.trim(), email, additionalEmails, phone, company, role, photoUrl, birthday };
 }

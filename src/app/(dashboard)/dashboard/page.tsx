@@ -20,6 +20,9 @@ import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { ActionItems } from "@/components/dashboard/action-items";
 import { UpcomingMeetings } from "@/components/dashboard/upcoming-meetings";
 import { ReviewQueue } from "@/components/sightings/review-queue";
+import { UpcomingBirthdays } from "@/components/dashboard/upcoming-birthdays";
+import { SmartScheduling } from "@/components/dashboard/smart-scheduling";
+import { LifeUpdates } from "@/components/dashboard/life-updates";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -36,22 +39,11 @@ const typeIcons: Record<string, React.ElementType> = {
   NOTE: StickyNote,
 };
 
-function getUrgencyStyle(daysOverdue: number): string {
-  if (daysOverdue >= 14) return "bg-red-50 text-red-600";
-  return "bg-gray-100 text-gray-600";
+interface CircleBadge {
+  id: string;
+  name: string;
+  color: string;
 }
-
-const tierStyles: Record<string, string> = {
-  INNER_CIRCLE: "bg-amber-50 text-amber-700",
-  PROFESSIONAL: "bg-blue-50 text-blue-700",
-  ACQUAINTANCE: "bg-gray-100 text-gray-500",
-};
-
-const tierLabels: Record<string, string> = {
-  INNER_CIRCLE: "Inner Circle",
-  PROFESSIONAL: "Professional",
-  ACQUAINTANCE: "Acquaintance",
-};
 
 interface RecentlyActiveContact {
   id: string;
@@ -63,6 +55,7 @@ interface RecentlyActiveContact {
   lastInteraction: string | null;
   lastInteractionType: string | null;
   lastInteractionSummary: string | null;
+  circles: CircleBadge[];
 }
 
 interface DashboardStats {
@@ -82,6 +75,7 @@ interface DashboardStats {
       company: string | null;
       tier: string;
       source: string;
+      circles: { circle: CircleBadge }[];
     };
   }[];
   overdueContacts: {
@@ -111,19 +105,22 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch stats");
       return res.json();
     },
+    refetchInterval: 60_000,
   });
 
   if (isLoading || !stats) {
     return (
       <div className="space-y-8">
         <div>
-          <h1 className="text-[40px] font-bold tracking-tight text-gray-900">{getGreeting()}</h1>
-          <p className="mt-2 text-[16px] text-gray-400">Loading your dashboard...</p>
+          <h1 className="ds-display-xl">{getGreeting()}</h1>
+          <p className="ds-body-lg mt-2" style={{ color: "var(--text-tertiary)" }}>
+            Loading your dashboard...
+          </p>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="crm-card rounded-2xl p-6">
-              <div className="h-20 animate-pulse rounded-xl bg-gray-50" />
+            <div key={i} className="crm-card p-6">
+              <div className="h-20 animate-pulse rounded-[10px]" style={{ backgroundColor: "var(--surface-sunken)" }} />
             </div>
           ))}
         </div>
@@ -134,15 +131,13 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Hero greeting */}
-      <div>
-        <h1 className="text-[40px] font-bold tracking-tight" style={{ color: "var(--crm-text-primary)" }}>
-          {getGreeting()}
-        </h1>
-        <p className="mt-2 text-[16px]" style={{ color: "var(--crm-text-secondary)" }}>
+      <div className="crm-animate-enter">
+        <h1 className="ds-display-xl">{getGreeting()}</h1>
+        <p className="ds-body-lg mt-2" style={{ color: "var(--text-secondary)" }}>
           {stats.overdueCount > 0 ? (
             <>
               You have{" "}
-              <span className="font-medium text-gray-900">
+              <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                 {stats.overdueCount} overdue follow-up{stats.overdueCount !== 1 ? "s" : ""}
               </span>
             </>
@@ -162,11 +157,11 @@ export default function DashboardPage() {
           href="/people"
         />
         <StatCard
-          title="Inner Circle"
-          value={stats.tierCounts.INNER_CIRCLE ?? 0}
+          title="Circles"
+          value={stats.circles.length}
           icon={UserCheck}
-          description={`of ${stats.totalContacts} contacts`}
-          href="/people"
+          description={`${stats.circles.reduce((sum, c) => sum + c.contactCount, 0)} contacts organized`}
+          href="/circles"
         />
         <StatCard
           title="Interactions"
@@ -180,88 +175,50 @@ export default function DashboardPage() {
 
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Follow-Up Queue */}
-        <Card className="crm-card border-0 rounded-2xl">
-          <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
-            <CardTitle className="crm-section-label">Follow-up queue</CardTitle>
-          </CardHeader>
-          <CardContent className="px-6 pb-6 pt-4">
-            {stats.overdueContacts.length === 0 ? (
-              <div className="flex flex-col items-center py-8 text-center">
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-50">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <p className="text-[14px] font-medium text-gray-900">All caught up</p>
-                <p className="mt-1 text-[13px] text-gray-400">No overdue follow-ups</p>
-              </div>
-            ) : (
-              <div className="divide-y" style={{ borderColor: "var(--crm-border-light)" }}>
-                {stats.overdueContacts.map((c) => {
-                  const color = getAvatarColor(c.name);
-                  const urgency = getUrgencyStyle(c.daysOverdue);
-                  return (
-                    <Link key={c.id} href={`/people?contact=${c.id}`} className="group flex items-center gap-3 py-3 cursor-pointer transition-colors hover:bg-gray-50 -mx-2 px-2 rounded-lg">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback
-                          className="text-[11px] font-semibold"
-                          style={{ backgroundColor: color.bg, color: color.text }}
-                        >
-                          {getInitials(c.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[14px] font-medium text-gray-900 truncate">{c.name}</p>
-                        {c.company && (
-                          <p className="text-[12px] text-gray-400 truncate">{c.company}</p>
-                        )}
-                      </div>
-                      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${urgency}`}>
-                        {c.daysOverdue}d
-                      </span>
-                      <ChevronRight className="h-4 w-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Action Items */}
-        <Card className="crm-card border-0 rounded-2xl">
+        <Card className="crm-card border-0">
           <CardContent className="px-6 py-6">
             <ActionItems />
           </CardContent>
         </Card>
 
-        {/* Review Queue (only shows when there are pending reviews) */}
-        <Card className="crm-card border-0 rounded-2xl">
-          <CardContent className="px-6 py-6">
-            <ReviewQueue />
-          </CardContent>
-        </Card>
+        {/* Smart Scheduling */}
+        <SmartSchedulingCard />
 
-        {/* Recent Interactions (enhanced with contact context) */}
-        <Card className="crm-card border-0 rounded-2xl">
+        {/* Life Updates (job changes) */}
+        <LifeUpdatesCard />
+
+        {/* Review Queue (self-hides when empty) */}
+        <ReviewQueueCard />
+
+        {/* Recent Interactions */}
+        <Card className="crm-card border-0">
           <CardHeader className="px-6 pt-6 pb-0">
             <CardTitle className="crm-section-label">Recent interactions</CardTitle>
           </CardHeader>
           <CardContent className="px-6 pb-6 pt-4">
             {stats.recentInteractions.length === 0 ? (
               <div className="flex flex-col items-center py-8 text-center">
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-50">
-                  <MessageSquare className="h-5 w-5 text-gray-400" />
+                <div
+                  className="mb-3 flex h-12 w-12 items-center justify-center rounded-full"
+                  style={{ backgroundColor: "var(--surface-sunken)" }}
+                >
+                  <MessageSquare className="h-5 w-5" style={{ color: "var(--text-tertiary)" }} />
                 </div>
-                <p className="text-[14px] font-medium text-gray-900">No interactions yet</p>
-                <Link href="/activity" className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-gray-500 hover:text-gray-900 transition-colors">
+                <p className="ds-body-md font-medium" style={{ color: "var(--text-primary)" }}>
+                  No interactions yet
+                </p>
+                <Link
+                  href="/activity"
+                  className="mt-2 inline-flex items-center gap-1 ds-body-sm font-medium transition-colors"
+                  style={{ color: "var(--text-secondary)" }}
+                >
                   <Plus className="h-3.5 w-3.5" />
                   Log your first interaction
                 </Link>
               </div>
             ) : (
-              <div className="divide-y" style={{ borderColor: "var(--crm-border-light)" }}>
+              <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
                 {stats.recentInteractions.map((interaction) => {
                   const Icon = typeIcons[interaction.type] ?? StickyNote;
                   const color = getAvatarColor(interaction.contact.name);
@@ -269,7 +226,10 @@ export default function DashboardPage() {
                     <Link
                       key={interaction.id}
                       href={`/people?contact=${interaction.contact.id}`}
-                      className="group flex items-start gap-3 py-3 transition-colors hover:bg-gray-50 -mx-2 px-2 rounded-lg"
+                      className="group flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
+                      style={{ transitionDuration: "var(--duration-fast)" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
                     >
                       <Avatar className="h-8 w-8 shrink-0">
                         <AvatarFallback
@@ -281,28 +241,32 @@ export default function DashboardPage() {
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-[14px] font-medium text-gray-900 truncate">
+                          <span className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
                             {interaction.contact.name}
                           </span>
-                          {interaction.contact.tier && (
-                            <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-semibold ${tierStyles[interaction.contact.tier] ?? ""}`}>
-                              {tierLabels[interaction.contact.tier] ?? interaction.contact.tier}
+                          {interaction.contact.circles?.slice(0, 2).map((cc) => (
+                            <span
+                              key={cc.circle.id}
+                              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
+                              style={{ backgroundColor: `${cc.circle.color}15`, color: cc.circle.color }}
+                            >
+                              {cc.circle.name}
                             </span>
-                          )}
+                          ))}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <Icon className="h-3 w-3 text-gray-300 shrink-0" />
-                          <p className="text-[12px] text-gray-400 truncate">
+                          <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+                          <p className="ds-caption truncate">
                             {interaction.subject ?? interaction.summary ?? interaction.type.toLowerCase()}
                           </p>
                         </div>
                         {interaction.contact.company && (
-                          <p className="text-[11px] text-gray-300 truncate mt-0.5">
+                          <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>
                             {interaction.contact.company}
                           </p>
                         )}
                       </div>
-                      <span className="shrink-0 text-[11px] text-gray-300 mt-0.5">
+                      <span className="shrink-0 text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
                         {formatDistanceToNow(new Date(interaction.occurredAt))}
                       </span>
                     </Link>
@@ -313,15 +277,15 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recently Active Contacts (relationship pulse) */}
+        {/* Strongest relationships */}
         {stats.recentlyActive.length > 0 && (
-          <Card className="crm-card border-0 rounded-2xl">
+          <Card className="crm-card border-0">
             <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
               <CardTitle className="crm-section-label">Strongest relationships</CardTitle>
-              <span className="text-[11px] text-gray-400">Last 30 days</span>
+              <span className="ds-caption">Last 30 days</span>
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-4">
-              <div className="divide-y" style={{ borderColor: "var(--crm-border-light)" }}>
+              <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
                 {stats.recentlyActive.map((contact) => {
                   const color = getAvatarColor(contact.name);
                   const Icon = contact.lastInteractionType
@@ -331,7 +295,10 @@ export default function DashboardPage() {
                     <Link
                       key={contact.id}
                       href={`/people?contact=${contact.id}`}
-                      className="group flex items-center gap-3 py-3 transition-colors hover:bg-gray-50 -mx-2 px-2 rounded-lg"
+                      className="group flex items-center gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
+                      style={{ transitionDuration: "var(--duration-fast)" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
                     >
                       <Avatar className="h-9 w-9">
                         <AvatarFallback
@@ -343,34 +310,43 @@ export default function DashboardPage() {
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-[14px] font-medium text-gray-900 truncate">
+                          <span className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
                             {contact.name}
                           </span>
-                          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-semibold ${tierStyles[contact.tier] ?? ""}`}>
-                            {tierLabels[contact.tier] ?? contact.tier}
-                          </span>
+                          {contact.circles?.slice(0, 2).map((c) => (
+                            <span
+                              key={c.id}
+                              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
+                              style={{ backgroundColor: `${c.color}15`, color: c.color }}
+                            >
+                              {c.name}
+                            </span>
+                          ))}
                         </div>
                         {contact.company && (
-                          <p className="text-[12px] text-gray-400 truncate">{contact.company}</p>
+                          <p className="ds-caption truncate">{contact.company}</p>
                         )}
                         {contact.lastInteractionSummary && (
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <Icon className="h-3 w-3 text-gray-300 shrink-0" />
-                            <p className="text-[11px] text-gray-300 truncate">
+                            <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+                            <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
                               {contact.lastInteractionSummary}
                             </p>
                           </div>
                         )}
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="text-[13px] font-semibold text-gray-700">
+                        <p className="ds-heading-sm" style={{ color: "var(--text-secondary)" }}>
                           {contact.interactionCount}
                         </p>
-                        <p className="text-[10px] text-gray-400">
+                        <p className="ds-caption">
                           {contact.interactionCount === 1 ? "interaction" : "interactions"}
                         </p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      <ChevronRight
+                        className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        style={{ color: "var(--text-tertiary)" }}
+                      />
                     </Link>
                   );
                 })}
@@ -380,25 +356,38 @@ export default function DashboardPage() {
         )}
 
         {/* Upcoming Meetings */}
-        <Card className="crm-card border-0 rounded-2xl">
+        <Card className="crm-card border-0">
           <CardContent className="px-6 py-6">
             <UpcomingMeetings />
           </CardContent>
         </Card>
 
+        {/* Birthdays */}
+        <BirthdaysCard />
+
         {/* Your Circles */}
-        <Card className="crm-card border-0 rounded-2xl">
+        <Card className="crm-card border-0">
           <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
             <CardTitle className="crm-section-label">Your circles</CardTitle>
-            <Link href="/circles" className="text-[12px] font-medium text-gray-400 hover:text-gray-900 transition-colors">
+            <Link
+              href="/circles"
+              className="ds-caption font-medium transition-colors"
+              style={{ color: "var(--text-tertiary)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
+            >
               Manage
             </Link>
           </CardHeader>
           <CardContent className="px-6 pb-6 pt-4">
             {stats.circles.length === 0 ? (
               <div className="flex flex-col items-center py-6 text-center">
-                <p className="text-[14px] text-gray-400">No circles yet</p>
-                <Link href="/circles" className="mt-1.5 text-[13px] font-medium text-gray-500 hover:text-gray-900 transition-colors">
+                <p className="ds-body-md" style={{ color: "var(--text-tertiary)" }}>No circles yet</p>
+                <Link
+                  href="/circles"
+                  className="mt-1.5 ds-body-sm font-medium transition-colors"
+                  style={{ color: "var(--text-secondary)" }}
+                >
                   Set up your circles
                 </Link>
               </div>
@@ -408,16 +397,22 @@ export default function DashboardPage() {
                   <Link
                     key={circle.id}
                     href={`/people?circle=${circle.id}`}
-                    className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-gray-50"
+                    className="group flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-colors"
+                    style={{ transitionDuration: "var(--duration-fast)" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
                   >
                     <div
                       className="h-3 w-3 rounded-full shrink-0"
                       style={{ backgroundColor: circle.color }}
                     />
-                    <span className="flex-1 text-[14px] font-medium text-gray-700 group-hover:text-gray-900 transition-colors">
+                    <span
+                      className="flex-1 ds-body-md font-medium transition-colors"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
                       {circle.name}
                     </span>
-                    <span className="text-[13px] font-semibold text-gray-400">
+                    <span className="ds-body-sm font-semibold" style={{ color: "var(--text-tertiary)" }}>
                       {circle.contactCount}
                     </span>
                   </Link>
@@ -425,13 +420,13 @@ export default function DashboardPage() {
               </div>
             )}
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-gray-50 p-4 text-center">
-                <p className="text-[24px] font-bold text-gray-900">{stats.contactsThisMonth}</p>
-                <p className="text-[12px] text-gray-400">Added this month</p>
+              <div className="rounded-[10px] p-4 text-center" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                <p className="ds-stat-md">{stats.contactsThisMonth}</p>
+                <p className="ds-caption mt-1">Added this month</p>
               </div>
-              <div className="rounded-xl bg-gray-50 p-4 text-center">
-                <p className="text-[24px] font-bold text-gray-900">{stats.interactionsThisWeek}</p>
-                <p className="text-[12px] text-gray-400">Interactions this week</p>
+              <div className="rounded-[10px] p-4 text-center" style={{ backgroundColor: "var(--surface-sunken)" }}>
+                <p className="ds-stat-md">{stats.interactionsThisWeek}</p>
+                <p className="ds-caption mt-1">Interactions this week</p>
               </div>
             </div>
           </CardContent>
@@ -457,25 +452,28 @@ function StatCard({
   zeroAction?: { label: string; href: string };
 }) {
   const content = (
-    <div className="crm-card rounded-2xl p-6 cursor-pointer group">
+    <div className="crm-card crm-card-interactive p-6 cursor-pointer group">
       <div className="flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-50 group-hover:bg-gray-100 transition-colors">
-          <Icon className="h-[18px] w-[18px] text-gray-400" />
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-[10px] transition-colors"
+          style={{ backgroundColor: "var(--surface-sunken)", transitionDuration: "var(--duration-fast)" }}
+        >
+          <Icon className="h-[18px] w-[18px]" style={{ color: "var(--text-tertiary)" }} />
         </div>
-        <p className="text-[13px] font-medium" style={{ color: "var(--crm-text-secondary)" }}>{title}</p>
+        <p className="ds-caption">{title}</p>
       </div>
       {value === 0 && zeroAction ? (
         <div className="mt-4">
-          <p className="text-[14px] text-gray-400">No interactions this week</p>
-          <span className="mt-1.5 inline-flex items-center gap-1 text-[13px] font-medium text-gray-500 group-hover:text-gray-900 transition-colors">
+          <p className="ds-body-md" style={{ color: "var(--text-tertiary)" }}>No interactions this week</p>
+          <span className="mt-1.5 inline-flex items-center gap-1 ds-body-sm font-medium transition-colors" style={{ color: "var(--text-secondary)" }}>
             <Plus className="h-3.5 w-3.5" />
             {zeroAction.label}
           </span>
         </div>
       ) : (
         <>
-          <p className="mt-3 text-[36px] font-bold tracking-tight leading-none" style={{ color: "var(--crm-text-primary)" }}>{value}</p>
-          <p className="mt-1.5 text-[12px]" style={{ color: "var(--crm-text-tertiary)" }}>{description}</p>
+          <p className="ds-stat-lg mt-3">{value}</p>
+          <p className="ds-caption mt-1.5">{description}</p>
         </>
       )}
     </div>
@@ -485,4 +483,91 @@ function StatCard({
     return <Link href={href} className="block">{content}</Link>;
   }
   return content;
+}
+
+function ReviewQueueCard() {
+  const { data } = useQuery<{ items: unknown[]; totalPending: number }>({
+    queryKey: ["sightings-review"],
+    queryFn: async () => {
+      const res = await fetch("/api/sightings");
+      if (!res.ok) return { items: [], totalPending: 0 };
+      return res.json();
+    },
+  });
+
+  if (!data || (data.items.length === 0 && data.totalPending === 0)) {
+    return null;
+  }
+
+  return (
+    <Card className="crm-card border-0">
+      <CardContent className="px-6 py-6">
+        <ReviewQueue />
+      </CardContent>
+    </Card>
+  );
+}
+
+function SmartSchedulingCard() {
+  const { data } = useQuery<{ suggestions: { contactId: string }[] }>({
+    queryKey: ["scheduling-suggestions"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling");
+      if (!res.ok) return { suggestions: [] };
+      return res.json();
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
+  if (!data?.suggestions.length) return null;
+
+  return (
+    <Card className="crm-card border-0">
+      <CardContent className="px-6 py-6">
+        <SmartScheduling />
+      </CardContent>
+    </Card>
+  );
+}
+
+function LifeUpdatesCard() {
+  const { data } = useQuery<{ entries: { id: string }[] }>({
+    queryKey: ["changelog"],
+    queryFn: async () => {
+      const res = await fetch("/api/changelog");
+      if (!res.ok) return { entries: [] };
+      return res.json();
+    },
+  });
+
+  if (!data?.entries.length) return null;
+
+  return (
+    <Card className="crm-card border-0">
+      <CardContent className="px-6 py-6">
+        <LifeUpdates />
+      </CardContent>
+    </Card>
+  );
+}
+
+function BirthdaysCard() {
+  const { data } = useQuery<{ birthdays: { id: string }[] }>({
+    queryKey: ["birthdays"],
+    queryFn: async () => {
+      const res = await fetch("/api/birthdays?days=14");
+      if (!res.ok) return { birthdays: [] };
+      return res.json();
+    },
+  });
+
+  if (!data?.birthdays.length) return null;
+
+  return (
+    <Card className="crm-card border-0">
+      <CardContent className="px-6 py-6">
+        <UpcomingBirthdays />
+      </CardContent>
+    </Card>
+  );
 }

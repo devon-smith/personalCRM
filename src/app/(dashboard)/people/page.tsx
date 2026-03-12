@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Suspense, useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, Upload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,13 +12,6 @@ import { ContactFormDialog } from "@/components/contacts/contact-form-dialog";
 import { ContactImportDialog } from "@/components/contacts/contact-import-dialog";
 import { useContacts } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
-
-const tierOptions = [
-  { value: "", label: "All Tiers" },
-  { value: "INNER_CIRCLE", label: "Inner Circle" },
-  { value: "PROFESSIONAL", label: "Professional" },
-  { value: "ACQUAINTANCE", label: "Acquaintance" },
-];
 
 const sourceOptions = [
   { value: "", label: "All Sources" },
@@ -34,26 +29,60 @@ const sortOptions = [
   { value: "createdAt", label: "Date Added" },
 ];
 
+const selectClass =
+  "h-9 rounded-[10px] px-3 text-sm outline-none transition-colors" +
+  " focus-visible:ring-[3px]";
+
 export default function ContactsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-12"><p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>Loading contacts...</p></div>}>
+      <ContactsPageInner />
+    </Suspense>
+  );
+}
+
+function ContactsPageInner() {
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
-  const [tier, setTier] = useState("");
+  const [circleId, setCircleId] = useState("");
   const [source, setSource] = useState("");
+
+  const { data: circles } = useQuery<{ id: string; name: string; color: string }[]>({
+    queryKey: ["circles-filter"],
+    queryFn: async () => {
+      const res = await fetch("/api/circles");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : data.circles ?? [];
+    },
+  });
   const [sort, setSort] = useState("name");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
 
+  useEffect(() => {
+    const contactId = searchParams.get("contact");
+    if (contactId) {
+      setSelectedId(contactId);
+    }
+    const circleParam = searchParams.get("circle");
+    if (circleParam) {
+      setCircleId(circleParam);
+    }
+  }, [searchParams]);
+
   const debouncedSearch = useDebounce(search, 300);
 
   const filters = useMemo(
     () => ({
       search: debouncedSearch || undefined,
-      tier: tier || undefined,
+      circle: circleId || undefined,
       source: source || undefined,
       sort,
     }),
-    [debouncedSearch, tier, source, sort]
+    [debouncedSearch, circleId, source, sort]
   );
 
   const { data: contacts, isLoading } = useContacts(filters);
@@ -74,7 +103,7 @@ export default function ContactsPage() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
-          <h1 className="text-2xl font-bold text-gray-900">Contacts</h1>
+          <h1 className="ds-display-lg">Contacts</h1>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="mr-1.5 h-4 w-4" />
@@ -90,7 +119,7 @@ export default function ContactsPage() {
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 pb-4">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -99,20 +128,31 @@ export default function ContactsPage() {
             />
           </div>
           <select
-            value={tier}
-            onChange={(e) => setTier(e.target.value)}
-            className="h-8 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500"
+            value={circleId}
+            onChange={(e) => setCircleId(e.target.value)}
+            className={selectClass}
+            style={{
+              backgroundColor: "var(--surface)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+            }}
           >
-            {tierOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
+            <option value="">All Circles</option>
+            {circles?.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </select>
           <select
             value={source}
             onChange={(e) => setSource(e.target.value)}
-            className="h-8 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500"
+            className={selectClass}
+            style={{
+              backgroundColor: "var(--surface)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+            }}
           >
             {sourceOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -123,7 +163,12 @@ export default function ContactsPage() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="h-8 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500"
+            className={selectClass}
+            style={{
+              backgroundColor: "var(--surface)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+            }}
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -134,10 +179,16 @@ export default function ContactsPage() {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-y-auto rounded-lg border border-gray-200 bg-white">
+        <div
+          className="flex-1 overflow-y-auto rounded-[14px]"
+          style={{
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--surface)",
+          }}
+        >
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <p className="text-sm text-muted-foreground">Loading contacts...</p>
+              <p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>Loading contacts...</p>
             </div>
           ) : (
             <ContactTable
@@ -151,7 +202,13 @@ export default function ContactsPage() {
 
       {/* Detail panel slide-over */}
       {selectedId && (
-        <div className="w-[380px] shrink-0 border-l border-gray-200 bg-white overflow-hidden">
+        <div
+          className="w-[520px] shrink-0 overflow-hidden"
+          style={{
+            borderLeft: "1px solid var(--border)",
+            backgroundColor: "var(--surface)",
+          }}
+        >
           <ContactDetailPanel
             contactId={selectedId}
             onClose={() => setSelectedId(null)}

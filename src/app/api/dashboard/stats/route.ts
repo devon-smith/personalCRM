@@ -43,7 +43,7 @@ export async function GET() {
     prisma.interaction.findMany({
       where: { userId },
       orderBy: { occurredAt: "desc" },
-      take: 10,
+      take: 5,
       include: {
         contact: {
           select: {
@@ -52,6 +52,11 @@ export async function GET() {
             company: true,
             tier: true,
             source: true,
+            circles: {
+              select: {
+                circle: { select: { id: true, name: true, color: true } },
+              },
+            },
           },
         },
       },
@@ -62,20 +67,23 @@ export async function GET() {
       include: { _count: { select: { contacts: true } } },
       orderBy: { sortOrder: "asc" },
     }),
-    // Contacts with the most recent interactions (relationship pulse)
+    // Strongest relationships — by total interaction volume
     prisma.contact.findMany({
       where: {
         userId,
-        lastInteraction: { gte: thirtyDaysAgo },
+        interactions: { some: {} },
       },
-      orderBy: { lastInteraction: "desc" },
-      take: 10,
       include: {
         _count: { select: { interactions: true } },
         interactions: {
           orderBy: { occurredAt: "desc" },
           take: 1,
           select: { type: true, summary: true, occurredAt: true },
+        },
+        circles: {
+          select: {
+            circle: { select: { id: true, name: true, color: true } },
+          },
         },
       },
     }),
@@ -104,20 +112,28 @@ export async function GET() {
     contactCount: c._count.contacts,
   }));
 
-  const recentlyActive = recentlyActiveContacts.map((c) => {
-    const lastInt = c.interactions[0] ?? null;
-    return {
-      id: c.id,
-      name: c.name,
-      company: c.company,
-      tier: c.tier,
-      source: c.source,
-      interactionCount: c._count.interactions,
-      lastInteraction: c.lastInteraction?.toISOString() ?? null,
-      lastInteractionType: lastInt?.type ?? null,
-      lastInteractionSummary: lastInt?.summary ?? null,
-    };
-  });
+  const recentlyActive = recentlyActiveContacts
+    .map((c) => {
+      const lastInt = c.interactions[0] ?? null;
+      return {
+        id: c.id,
+        name: c.name,
+        company: c.company,
+        tier: c.tier,
+        source: c.source,
+        interactionCount: c._count.interactions,
+        lastInteraction: c.lastInteraction?.toISOString() ?? null,
+        lastInteractionType: lastInt?.type ?? null,
+        lastInteractionSummary: lastInt?.summary ?? null,
+        circles: c.circles.map((cc) => ({
+          id: cc.circle.id,
+          name: cc.circle.name,
+          color: cc.circle.color,
+        })),
+      };
+    })
+    .sort((a, b) => b.interactionCount - a.interactionCount)
+    .slice(0, 5);
 
   const sourceCounts: Record<string, number> = {};
   for (const s of contactsBySource) {

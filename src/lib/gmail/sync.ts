@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { googleFetch } from "./client";
+import { googleFetch, getAllGoogleAccessTokens } from "./client";
 
 interface GmailMessage {
   id: string;
@@ -35,6 +35,13 @@ type ProcessResult =
   | { matched: true }
   | { matched: false; unmatchedEmail: string | null };
 
+/** Make authenticated fetch using a pre-resolved token */
+function googleFetchWithToken(token: string, url: string): Promise<Response> {
+  return fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 function getHeader(headers: Array<{ name: string; value: string }>, name: string): string | null {
   return headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
 }
@@ -42,6 +49,11 @@ function getHeader(headers: Array<{ name: string; value: string }>, name: string
 function extractEmail(headerValue: string): string | null {
   const match = headerValue.match(/<([^>]+)>/) ?? headerValue.match(/([^\s<,]+@[^\s>,]+)/);
   return match?.[1]?.toLowerCase() ?? null;
+}
+
+function extractDisplayName(headerValue: string): string | null {
+  const match = headerValue.match(/^"?([^"<]+?)"?\s*</);
+  return match?.[1]?.trim() ?? null;
 }
 
 /**
@@ -95,12 +107,108 @@ function isHumanEmail(email: string): boolean {
 }
 
 /**
- * Initial sync — fetch recent emails (last 90 days) and create Interaction records.
+ * Build a set of all email addresses belonging to the user (primary + additional).
+ */
+function buildUserEmailSet(
+  primaryEmail: string | null | undefined,
+  additionalEmails: string[],
+): Set<string> {
+  const set = new Set<string>();
+  if (primaryEmail) set.add(primaryEmail.toLowerCase());
+  for (const e of additionalEmails) set.add(e.toLowerCase());
+  return set;
+}
+
+/**
+ * Build a lookup map from all emails (primary + additional) to contact IDs.
+ */
+function buildEmailLookup(
+  contacts: Array<{ id: string; email: string | null; additionalEmails: string[] }>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const c of contacts) {
+    if (c.email) {
+      map.set(c.email.toLowerCase(), c.id);
+    }
+    for (const ae of c.additionalEmails) {
+      map.set(ae.toLowerCase(), c.id);
+    }
+  }
+  return map;
+}
+
+/**
+ * Fetch and process messages from a single Google account for initial sync.
+ */
+async function syncAccountInitial(
+  token: string,
+  userId: string,
+  userEmails: Set<string>,
+  contactsByEmail: Map<string, string>,
+  contactNames: Map<string, string>,
+  unmatchedCounts: Map<string, number>,
+  batchSize: number,
+): Promise<{ processed: number; total: number }> {
+  const after = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
+  let processed = 0;
+  let totalMessages = 0;
+  let pageToken: string | undefined;
+
+  do {
+    const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+    url.searchParams.set("q", `after:${after}`);
+    url.searchParams.set("maxResults", String(batchSize));
+    if (pageToken) {
+      url.searchParams.set("pageToken", pageToken);
+    }
+
+    const res = await googleFetchWithToken(token, url.toString());
+    if (!res.ok) {
+      console.error(`Gmail API error for account: ${res.status}`);
+      break;
+    }
+
+    const data = (await res.json()) as GmailListResponse;
+    const messages = data.messages ?? [];
+    totalMessages += messages.length;
+
+    for (let i = 0; i < messages.length; i += 10) {
+      const batch = messages.slice(i, i + 10);
+      const results = await Promise.all(
+        batch.map(async (msg) => {
+          const detail = await fetchMessageDetail(userId, msg.id, token);
+          if (!detail) return null;
+          return processMessage(userId, userEmails, detail, contactsByEmail, contactNames);
+        }),
+      );
+
+      for (const result of results) {
+        if (!result) continue;
+        if (result.matched) {
+          processed++;
+        } else if (result.unmatchedEmail && isHumanEmail(result.unmatchedEmail)) {
+          unmatchedCounts.set(
+            result.unmatchedEmail,
+            (unmatchedCounts.get(result.unmatchedEmail) ?? 0) + 1,
+          );
+        }
+      }
+    }
+
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return { processed, total: totalMessages };
+}
+
+/**
+ * Initial sync — fetch all emails from the last 90 days across ALL linked Google accounts.
+ * Paginates through the full result set.
  * Tracks unmatched senders for gap analysis.
  */
 export async function initialGmailSync(
   userId: string,
-  batchSize: number = 50,
+  batchSize: number = 100,
 ): Promise<{ processed: number; total: number; done: boolean }> {
   await prisma.gmailSyncState.upsert({
     where: { userId },
@@ -108,53 +216,42 @@ export async function initialGmailSync(
     update: {},
   });
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  const userEmail = user?.email?.toLowerCase();
+  const [user, syncState, accountTokens] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId } }),
+    prisma.gmailSyncState.findUnique({ where: { userId }, select: { additionalUserEmails: true } }),
+    getAllGoogleAccessTokens(userId),
+  ]);
+  const userEmails = buildUserEmailSet(user?.email, syncState?.additionalUserEmails ?? []);
+
+  if (accountTokens.length === 0) {
+    console.error("No valid Google tokens for user", userId);
+    return { processed: 0, total: 0, done: true };
+  }
 
   const contacts = await prisma.contact.findMany({
-    where: { userId, email: { not: null } },
-    select: { id: true, email: true },
+    where: { userId },
+    select: { id: true, name: true, email: true, additionalEmails: true },
   });
-  const contactsByEmail = new Map(
-    contacts
-      .filter((c) => c.email)
-      .map((c) => [c.email!.toLowerCase(), c.id]),
-  );
-
-  const after = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
-  const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
-  url.searchParams.set("q", `after:${after}`);
-  url.searchParams.set("maxResults", String(batchSize));
-
-  const res = await googleFetch(userId, url.toString());
-  if (!res.ok) {
-    throw new Error(`Gmail API error: ${res.status}`);
-  }
-
-  const data = (await res.json()) as GmailListResponse;
-  const messages = data.messages ?? [];
+  const contactsByEmail = buildEmailLookup(contacts);
+  const contactNames = new Map(contacts.map((c) => [c.id, c.name]));
 
   let processed = 0;
+  let totalMessages = 0;
   const unmatchedCounts = new Map<string, number>();
 
-  for (const msg of messages) {
-    const detail = await fetchMessageDetail(userId, msg.id);
-    if (!detail) continue;
-
-    const result = await processMessage(userId, userEmail, detail, contactsByEmail);
-    if (result.matched) {
-      processed++;
-    } else if (result.unmatchedEmail && isHumanEmail(result.unmatchedEmail)) {
-      unmatchedCounts.set(
-        result.unmatchedEmail,
-        (unmatchedCounts.get(result.unmatchedEmail) ?? 0) + 1,
-      );
-    }
+  // Sync from each linked Google account
+  for (const { token } of accountTokens) {
+    const result = await syncAccountInitial(
+      token, userId, userEmails, contactsByEmail, contactNames,
+      unmatchedCounts, batchSize,
+    );
+    processed += result.processed;
+    totalMessages += result.total;
   }
 
-  // Get current historyId for incremental sync
-  const profileRes = await googleFetch(
-    userId,
+  // Get current historyId from primary account for incremental sync
+  const profileRes = await googleFetchWithToken(
+    accountTokens[0].token,
     "https://gmail.googleapis.com/gmail/v1/users/me/profile",
   );
   if (profileRes.ok) {
@@ -175,58 +272,43 @@ export async function initialGmailSync(
 
   return {
     processed,
-    total: data.resultSizeEstimate ?? messages.length,
-    done: !data.nextPageToken,
+    total: totalMessages,
+    done: true,
   };
 }
 
 /**
- * Incremental sync — fetch only new messages since last sync via historyId.
- * Also tracks unmatched senders.
+ * Incremental sync for a single account using history API.
+ * Returns messages added since startHistoryId.
  */
-export async function incrementalGmailSync(
+async function syncAccountIncremental(
+  token: string,
   userId: string,
-): Promise<{ processed: number }> {
-  const syncState = await prisma.gmailSyncState.findUnique({
-    where: { userId },
-  });
-
-  if (!syncState?.historyId) {
-    return initialGmailSync(userId);
-  }
-
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  const userEmail = user?.email?.toLowerCase();
-
-  const contacts = await prisma.contact.findMany({
-    where: { userId, email: { not: null } },
-    select: { id: true, email: true },
-  });
-  const contactsByEmail = new Map(
-    contacts
-      .filter((c) => c.email)
-      .map((c) => [c.email!.toLowerCase(), c.id]),
-  );
-
+  startHistoryId: string,
+  userEmails: Set<string>,
+  contactsByEmail: Map<string, string>,
+  contactNames: Map<string, string>,
+  unmatchedCounts: Map<string, number>,
+): Promise<{ processed: number; historyId: string | null; needsFullSync: boolean }> {
   let processed = 0;
   let pageToken: string | undefined;
-  let latestHistoryId = syncState.historyId;
-  const unmatchedCounts = new Map<string, number>();
+  let latestHistoryId: string | null = null;
 
   do {
     const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/history");
-    url.searchParams.set("startHistoryId", syncState.historyId);
+    url.searchParams.set("startHistoryId", startHistoryId);
     url.searchParams.set("historyTypes", "messageAdded");
     if (pageToken) {
       url.searchParams.set("pageToken", pageToken);
     }
 
-    const res = await googleFetch(userId, url.toString());
+    const res = await googleFetchWithToken(token, url.toString());
     if (!res.ok) {
       if (res.status === 404) {
-        return initialGmailSync(userId);
+        return { processed: 0, historyId: null, needsFullSync: true };
       }
-      throw new Error(`Gmail history API error: ${res.status}`);
+      console.error(`Gmail history API error for account: ${res.status}`);
+      break;
     }
 
     const data = (await res.json()) as GmailHistoryResponse;
@@ -237,10 +319,10 @@ export async function incrementalGmailSync(
 
     for (const historyItem of data.history ?? []) {
       for (const added of historyItem.messagesAdded ?? []) {
-        const detail = await fetchMessageDetail(userId, added.message.id);
+        const detail = await fetchMessageDetail(userId, added.message.id, token);
         if (!detail) continue;
 
-        const result = await processMessage(userId, userEmail, detail, contactsByEmail);
+        const result = await processMessage(userId, userEmails, detail, contactsByEmail, contactNames);
         if (result.matched) {
           processed++;
         } else if (result.unmatchedEmail && isHumanEmail(result.unmatchedEmail)) {
@@ -254,6 +336,63 @@ export async function incrementalGmailSync(
 
     pageToken = data.nextPageToken;
   } while (pageToken);
+
+  return { processed, historyId: latestHistoryId, needsFullSync: false };
+}
+
+/**
+ * Incremental sync — fetch only new messages since last sync across ALL accounts.
+ * Also tracks unmatched senders.
+ */
+export async function incrementalGmailSync(
+  userId: string,
+): Promise<{ processed: number }> {
+  const syncState = await prisma.gmailSyncState.findUnique({
+    where: { userId },
+  });
+
+  if (!syncState?.historyId) {
+    return initialGmailSync(userId);
+  }
+
+  const [user, accountTokens] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId } }),
+    getAllGoogleAccessTokens(userId),
+  ]);
+  const userEmails = buildUserEmailSet(user?.email, syncState.additionalUserEmails ?? []);
+
+  if (accountTokens.length === 0) {
+    console.error("No valid Google tokens for user", userId);
+    return { processed: 0 };
+  }
+
+  const contacts = await prisma.contact.findMany({
+    where: { userId },
+    select: { id: true, name: true, email: true, additionalEmails: true },
+  });
+  const contactsByEmail = buildEmailLookup(contacts);
+  const contactNames = new Map(contacts.map((c) => [c.id, c.name]));
+
+  let processed = 0;
+  let latestHistoryId = syncState.historyId;
+  const unmatchedCounts = new Map<string, number>();
+
+  // Sync from each linked Google account
+  for (const { token } of accountTokens) {
+    const result = await syncAccountIncremental(
+      token, userId, syncState.historyId,
+      userEmails, contactsByEmail, contactNames, unmatchedCounts,
+    );
+
+    if (result.needsFullSync) {
+      return initialGmailSync(userId);
+    }
+
+    processed += result.processed;
+    if (result.historyId) {
+      latestHistoryId = result.historyId;
+    }
+  }
 
   // Merge new unmatched senders with existing ones
   const existingSenders = (syncState.unmatchedSenders as Array<{ email: string; count: number }>) ?? [];
@@ -276,10 +415,11 @@ export async function incrementalGmailSync(
 async function fetchMessageDetail(
   userId: string,
   messageId: string,
+  token?: string,
 ): Promise<GmailMessageDetail | null> {
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`;
 
-  const res = await googleFetch(userId, url);
+  const res = token ? await googleFetchWithToken(token, url) : await googleFetch(userId, url);
   if (!res.ok) return null;
 
   return (await res.json()) as GmailMessageDetail;
@@ -287,9 +427,10 @@ async function fetchMessageDetail(
 
 async function processMessage(
   userId: string,
-  userEmail: string | undefined,
+  userEmails: Set<string>,
   detail: GmailMessageDetail,
   contactsByEmail: Map<string, string>,
+  contactNames: Map<string, string>,
 ): Promise<ProcessResult> {
   const fromHeader = getHeader(detail.payload.headers, "From");
   const toHeader = getHeader(detail.payload.headers, "To");
@@ -302,9 +443,32 @@ async function processMessage(
 
   if (!fromEmail || !toEmail) return { matched: false, unmatchedEmail: null };
 
-  const isOutbound = fromEmail === userEmail;
+  const isOutbound = userEmails.has(fromEmail);
   const contactEmail = isOutbound ? toEmail : fromEmail;
-  const contactId = contactsByEmail.get(contactEmail);
+  const contactId = contactsByEmail.get(contactEmail) ?? null;
+  const contactName = contactId ? (contactNames.get(contactId) ?? null) : null;
+  const occurredAt = new Date(parseInt(detail.internalDate));
+
+  // Store in EmailMessage for the inbox (dedup by gmailId)
+  const fromName = extractDisplayName(fromHeader);
+  await prisma.emailMessage.upsert({
+    where: { userId_gmailId: { userId, gmailId: detail.id } },
+    create: {
+      userId,
+      gmailId: detail.id,
+      threadId: detail.threadId ?? null,
+      fromEmail: fromEmail,
+      fromName: isOutbound ? null : fromName,
+      toEmail: toEmail,
+      subject: subject?.slice(0, 255) ?? null,
+      snippet: detail.snippet?.slice(0, 500) ?? null,
+      direction: isOutbound ? "OUTBOUND" : "INBOUND",
+      occurredAt,
+      contactId,
+      contactName,
+    },
+    update: {},
+  });
 
   if (!contactId) {
     return { matched: false, unmatchedEmail: contactEmail };
@@ -324,14 +488,14 @@ async function processMessage(
       direction: isOutbound ? "OUTBOUND" : "INBOUND",
       subject: subject?.slice(0, 255) ?? null,
       summary: detail.snippet?.slice(0, 500) ?? null,
-      occurredAt: new Date(parseInt(detail.internalDate)),
+      occurredAt,
       sourceId: detail.id,
     },
   });
 
   await prisma.contact.update({
     where: { id: contactId },
-    data: { lastInteraction: new Date(parseInt(detail.internalDate)) },
+    data: { lastInteraction: occurredAt },
   });
 
   return { matched: true };

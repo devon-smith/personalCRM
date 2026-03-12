@@ -3,15 +3,18 @@ import type { Contact, Interaction } from "@/generated/prisma/client";
 
 export type ContactWithCount = Contact & {
   _count: { interactions: number };
+  circles: { circle: { id: string; name: string; color: string } }[];
 };
 
 export type ContactWithDetails = Contact & {
   interactions: Interaction[];
+  circles: { circle: { id: string; name: string; color: string } }[];
 };
 
 interface ContactFilters {
   search?: string;
   tier?: string;
+  circle?: string;
   source?: string;
   tag?: string;
   sort?: string;
@@ -30,6 +33,7 @@ export function useContacts(filters: ContactFilters = {}) {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);
   if (filters.tier) params.set("tier", filters.tier);
+  if (filters.circle) params.set("circle", filters.circle);
   if (filters.source) params.set("source", filters.source);
   if (filters.tag) params.set("tag", filters.tag);
   if (filters.sort) params.set("sort", filters.sort);
@@ -40,6 +44,7 @@ export function useContacts(filters: ContactFilters = {}) {
   return useQuery<ContactWithCount[]>({
     queryKey: ["contacts", filters],
     queryFn: () => fetchJson(url),
+    refetchInterval: 60_000,
   });
 }
 

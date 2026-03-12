@@ -14,19 +14,26 @@ export type { CalendarSyncResult };
  * Returns null if OK, or a JSON response to send back if not.
  */
 async function checkCalendarScope(userId: string): Promise<NextResponse | null> {
-  const account = await prisma.account.findFirst({
+  const accounts = await prisma.account.findMany({
     where: { userId, provider: "google" },
     select: { scope: true, access_token: true },
   });
 
-  if (!account?.access_token) {
+  if (accounts.length === 0 || !accounts.some((a) => a.access_token)) {
     return NextResponse.json(
       { error: "Google account not connected. Please sign in with Google first.", events: [] },
       { status: 200 },
     );
   }
 
-  if (!account.scope?.includes("calendar.readonly")) {
+  // Check if ANY account has calendar scope granted.
+  // If scope is NULL (older OAuth sessions), assume calendar was granted
+  // since we always request it — the API call will fail with 403 if not.
+  const hasCalendarScope = accounts.some(
+    (a) => a.access_token && (!a.scope || a.scope.includes("calendar.readonly")),
+  );
+
+  if (!hasCalendarScope) {
     return NextResponse.json(
       { error: "Calendar scope not granted. Please re-authenticate to grant Calendar access.", events: [] },
       { status: 200 },

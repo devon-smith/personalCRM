@@ -22,7 +22,34 @@ const nextAuth = NextAuth({
   pages: {
     signIn: "/login",
   },
+  events: {
+    // PrismaAdapter doesn't save scope from OAuth — persist it here
+    async linkAccount({ account }) {
+      if (account.provider === "google" && account.scope) {
+        await prisma.account.updateMany({
+          where: {
+            provider: account.provider,
+            providerAccountId: account.providerAccountId,
+          },
+          data: { scope: account.scope },
+        });
+      }
+    },
+  },
   callbacks: {
+    async signIn({ account }) {
+      // Persist scopes on every sign-in (linkAccount only fires on first link)
+      if (account?.provider === "google" && account.scope) {
+        await prisma.account.updateMany({
+          where: {
+            provider: account.provider,
+            providerAccountId: account.providerAccountId,
+          },
+          data: { scope: account.scope },
+        });
+      }
+      return true;
+    },
     session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;

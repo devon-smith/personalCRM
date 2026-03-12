@@ -8,6 +8,7 @@ import {
   type SightingData,
   type LinkedInResolutionResult,
 } from "@/lib/identity-resolution";
+import { detectChanges } from "@/lib/changelog";
 import type { ContactSource, SightingResolution } from "@/generated/prisma/client";
 
 interface LinkedInRow {
@@ -166,13 +167,25 @@ export async function POST(req: NextRequest) {
           if (contact) Object.assign(contact, enrichment);
         }
 
-        // Track job changes for review
+        // Track job changes for review + create changelog entries
         if (resolution.companyChanged && sightingData.company && resolution.existingCompany) {
           result.jobChanges.push({
             name: fullName,
             oldCompany: resolution.existingCompany,
             newCompany: sightingData.company,
           });
+
+          // Persist changelog for dashboard surfacing
+          const existingContact = contacts.find((c) => c.id === contactId);
+          if (contactId && existingContact) {
+            await detectChanges(
+              userId,
+              contactId,
+              { company: resolution.existingCompany, role: existingContact.role },
+              { company: sightingData.company, role: sightingData.role },
+              "linkedin_reimport",
+            );
+          }
         }
 
         result.autoMerged++;

@@ -38,6 +38,19 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Check if Google account exists before attempting sync
+  const googleAccount = await prisma.account.findFirst({
+    where: { userId: session.user.id, provider: "google" },
+    select: { access_token: true },
+  });
+
+  if (!googleAccount?.access_token) {
+    return NextResponse.json(
+      { error: "No Google account connected", processed: 0 },
+      { status: 400 },
+    );
+  }
+
   try {
     const syncState = await prisma.gmailSyncState.findUnique({
       where: { userId: session.user.id },
@@ -59,6 +72,7 @@ export async function POST() {
           error instanceof Error
             ? error.message
             : "Failed to sync Gmail. You may need to reconnect your Google account.",
+        processed: 0,
       },
       { status: 500 },
     );

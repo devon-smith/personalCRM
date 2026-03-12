@@ -11,14 +11,17 @@ import {
   useDeleteCircle,
 } from "@/lib/hooks/use-circles";
 import type { CircleWithContacts } from "@/lib/hooks/use-circles";
+import { useContacts } from "@/lib/hooks/use-contacts";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutoCategorizeResult } from "@/app/api/circles/auto-categorize/route";
+import { CircleSuggestions } from "@/components/circles/circle-suggestions";
 
 export default function CirclesPage() {
   const { data: circles, isLoading } = useCircles();
+  const { data: contactsData } = useContacts();
   const createCircle = useCreateCircle();
   const updateCircle = useUpdateCircle();
   const deleteCircle = useDeleteCircle();
@@ -47,6 +50,11 @@ export default function CirclesPage() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const allContacts = useMemo(
+    () => (contactsData ?? []).map((c) => ({ id: c.id, name: c.name })),
+    [contactsData],
+  );
 
   const totals = useMemo(() => {
     if (!circles) return { people: 0, good: 0, mid: 0, cold: 0 };
@@ -110,7 +118,7 @@ export default function CirclesPage() {
   if (isLoading) {
     return (
       <div className="pt-14">
-        <div className="h-6 w-20 animate-pulse rounded bg-[#F2F3F5]" />
+        <div className="h-6 w-20 animate-pulse rounded-[6px]" style={{ backgroundColor: "var(--surface-sunken)" }} />
       </div>
     );
   }
@@ -119,12 +127,7 @@ export default function CirclesPage() {
     <div className="pt-14">
       {/* Header */}
       <div className="crm-animate-enter flex items-center justify-between">
-        <h1
-          className="text-[24px] font-semibold text-[#1A1A1A]"
-          style={{ letterSpacing: "-0.04em" }}
-        >
-          Circles
-        </h1>
+        <h1 className="ds-display-lg">Circles</h1>
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
@@ -140,7 +143,7 @@ export default function CirclesPage() {
             )}
             Auto-categorize
           </Button>
-          <span className="text-[13px] text-[#AAAFB5]">
+          <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>
             {totals.people} people
           </span>
         </div>
@@ -149,9 +152,10 @@ export default function CirclesPage() {
       {/* Auto-categorize result */}
       {categorizeResult && categorizeResult.contactsAssigned > 0 && (
         <div
-          className="crm-animate-enter mt-3 rounded-xl bg-green-50 p-3 space-y-1.5"
+          className="crm-animate-enter mt-3 rounded-[14px] p-3 space-y-1.5"
+          style={{ backgroundColor: "var(--status-success-bg)" }}
         >
-          <p className="text-[12px] font-medium text-green-700">
+          <p className="ds-caption font-medium" style={{ color: "var(--status-success)" }}>
             Auto-categorized {categorizeResult.contactsAssigned} contacts
           </p>
           <div className="flex flex-wrap gap-2">
@@ -160,20 +164,22 @@ export default function CirclesPage() {
               .map((t) => (
                 <span
                   key={t.name}
-                  className="text-[11px] text-green-600 bg-green-100 rounded-full px-2 py-0.5"
+                  className="text-[11px] rounded-full px-2 py-0.5"
+                  style={{ color: "var(--status-success)", backgroundColor: "var(--status-success-bg)" }}
                 >
                   {t.name}: {t.contactCount}
                 </span>
               ))}
           </div>
           {categorizeResult.uncategorized > 0 && (
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
               {categorizeResult.uncategorized} contacts had no recent interactions
             </p>
           )}
           <button
             onClick={() => setCategorizeResult(null)}
-            className="text-[11px] text-green-600 hover:underline"
+            className="text-[11px] hover:underline"
+            style={{ color: "var(--status-success)" }}
           >
             Dismiss
           </button>
@@ -191,13 +197,13 @@ export default function CirclesPage() {
           </div>
           <div className="flex gap-2 text-[12px] font-medium">
             {totals.good > 0 && (
-              <span style={{ color: "#4A8C5E" }}>{totals.good}</span>
+              <span style={{ color: "var(--warmth-good)" }}>{totals.good}</span>
             )}
             {totals.mid > 0 && (
-              <span style={{ color: "#C4962E" }}>{totals.mid}</span>
+              <span style={{ color: "var(--warmth-mid)" }}>{totals.mid}</span>
             )}
             {totals.cold > 0 && (
-              <span style={{ color: "#BF5040" }}>{totals.cold}</span>
+              <span style={{ color: "var(--warmth-cold)" }}>{totals.cold}</span>
             )}
           </div>
         </div>
@@ -211,6 +217,7 @@ export default function CirclesPage() {
             onDoubleClick={() => setEditingCircle(circle)}
           >
             <CircleRow
+              circleId={circle.id}
               name={circle.name}
               color={circle.color}
               followUpDays={circle.followUpDays}
@@ -218,32 +225,40 @@ export default function CirclesPage() {
               health={circle.health}
               isOpen={openCircleId === circle.id}
               onToggle={() => handleToggle(circle.id)}
+              allContacts={allContacts}
             />
           </div>
         ))}
 
         {/* New circle row */}
         <button
-          className="flex items-center gap-3 rounded-[14px] px-4 py-[13px] transition-colors hover:bg-[#F4F4F5]"
+          className="flex items-center gap-3 rounded-[14px] px-4 py-[13px] transition-colors"
+          style={{ transitionDuration: "var(--duration-fast)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
           onClick={() => setDialogOpen(true)}
         >
           <div
-            className="flex items-center justify-center text-[#C1C5CA]"
+            className="flex items-center justify-center"
             style={{
               width: 36,
               height: 36,
               borderRadius: 36 * 0.3,
-              border: "1.5px dashed #D5D8DC",
+              border: "1.5px dashed var(--border-strong)",
               fontSize: 16,
+              color: "var(--text-tertiary)",
             }}
           >
             +
           </div>
-          <span className="text-[14px] font-medium text-[#B5BAC0]">
+          <span className="ds-body-md font-medium" style={{ color: "var(--text-tertiary)" }}>
             New circle
           </span>
         </button>
       </div>
+
+      {/* Suggested circles (below existing) */}
+      <CircleSuggestions />
 
       {/* Create dialog */}
       <CircleDialog

@@ -10,21 +10,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Sparkline } from "@/components/ui/sparkline";
 import type { ContactWithCount } from "@/lib/hooks/use-contacts";
+import { useMomentum } from "@/lib/hooks/use-momentum";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
-
-const tierColors: Record<string, string> = {
-  INNER_CIRCLE: "bg-gray-900 text-white",
-  PROFESSIONAL: "bg-gray-200 text-gray-700",
-  ACQUAINTANCE: "bg-gray-100 text-gray-500",
-};
-
-const tierLabels: Record<string, string> = {
-  INNER_CIRCLE: "Inner Circle",
-  PROFESSIONAL: "Professional",
-  ACQUAINTANCE: "Acquaintance",
-};
+import { useMemo } from "react";
 
 const sourceLabels: Record<string, string> = {
   MANUAL: "Manual",
@@ -44,6 +35,17 @@ interface ContactTableProps {
 }
 
 export function ContactTable({ contacts, onSelect, selectedId }: ContactTableProps) {
+  const contactIds = useMemo(() => contacts.map((c) => c.id), [contacts]);
+  const { data: momentumData } = useMomentum(contactIds);
+
+  const momentumMap = useMemo(() => {
+    const map = new Map<string, { sparkline: readonly number[]; trend: import("@/lib/momentum").MomentumTrend }>();
+    for (const m of momentumData?.momentum ?? []) {
+      map.set(m.contactId, { sparkline: m.sparkline, trend: m.trend });
+    }
+    return map;
+  }, [momentumData]);
+
   if (contacts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -64,7 +66,8 @@ export function ContactTable({ contacts, onSelect, selectedId }: ContactTablePro
         <TableRow className="border-b border-gray-100">
           <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Name</TableHead>
           <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Company</TableHead>
-          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tier</TableHead>
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Circles</TableHead>
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Momentum</TableHead>
           <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Last Contact</TableHead>
           <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Source</TableHead>
           <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tags</TableHead>
@@ -105,9 +108,27 @@ export function ContactTable({ contacts, onSelect, selectedId }: ContactTablePro
                 {contact.company ?? "—"}
               </TableCell>
               <TableCell className="py-1.5">
-                <Badge variant="secondary" className={`text-[11px] px-1.5 py-0 ${tierColors[contact.tier]}`}>
-                  {tierLabels[contact.tier]}
-                </Badge>
+                <div className="flex flex-wrap gap-1">
+                  {contact.circles?.slice(0, 2).map((cc) => (
+                    <span
+                      key={cc.circle.id}
+                      className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                      style={{ backgroundColor: `${cc.circle.color}15`, color: cc.circle.color }}
+                    >
+                      {cc.circle.name}
+                    </span>
+                  ))}
+                  {!contact.circles?.length && (
+                    <span className="text-[10px] text-gray-300">—</span>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell className="py-1.5">
+                {(() => {
+                  const m = momentumMap.get(contact.id);
+                  if (!m) return <span className="text-[10px] text-gray-300">—</span>;
+                  return <Sparkline data={m.sparkline} trend={m.trend} />;
+                })()}
               </TableCell>
               <TableCell className="py-1.5 text-[12px] text-gray-400">
                 {contact.lastInteraction

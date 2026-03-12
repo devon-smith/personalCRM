@@ -34,9 +34,11 @@ export async function POST(req: Request) {
     contacts: Array<{
       name: string;
       email: string | null;
+      additionalEmails?: string[];
       phone: string | null;
       company: string | null;
       role: string | null;
+      birthday: string | null;
       circleId?: string;
     }>;
   };
@@ -65,6 +67,71 @@ export async function POST(req: Request) {
   }));
 
   const batch = await processBatch(session.user.id, sightings);
+
+  // Save additional emails from Google Contacts
+  const contactsWithExtras = body.contacts.filter((c) => c.additionalEmails?.length);
+  if (contactsWithExtras.length > 0) {
+    const allContactsForEmails = await prisma.contact.findMany({
+      where: { userId: session.user.id },
+      select: { id: true, name: true, email: true, additionalEmails: true },
+    });
+
+    const contactByEmail = new Map(
+      allContactsForEmails.filter((c) => c.email).map((c) => [c.email!.toLowerCase(), c]),
+    );
+    const contactByName = new Map(
+      allContactsForEmails.map((c) => [c.name.toLowerCase().trim(), c]),
+    );
+
+    for (const gc of contactsWithExtras) {
+      const match =
+        (gc.email ? contactByEmail.get(gc.email.toLowerCase()) : undefined) ??
+        contactByName.get(gc.name.toLowerCase().trim());
+      if (match) {
+        const existingSet = new Set([
+          ...(match.email ? [match.email.toLowerCase()] : []),
+          ...match.additionalEmails.map((e) => e.toLowerCase()),
+        ]);
+        const newEmails = (gc.additionalEmails ?? []).filter(
+          (e) => !existingSet.has(e.toLowerCase()),
+        );
+        if (newEmails.length > 0) {
+          await prisma.contact.update({
+            where: { id: match.id },
+            data: { additionalEmails: [...match.additionalEmails, ...newEmails] },
+          });
+        }
+      }
+    }
+  }
+
+  // Save birthdays from Google Contacts for contacts that don't already have one
+  const contactsWithBirthdays = body.contacts.filter((c) => c.birthday);
+  if (contactsWithBirthdays.length > 0) {
+    const allContacts = await prisma.contact.findMany({
+      where: { userId: session.user.id, birthday: null },
+      select: { id: true, name: true, email: true },
+    });
+
+    const contactByEmail = new Map(
+      allContacts.filter((c) => c.email).map((c) => [c.email!.toLowerCase(), c]),
+    );
+    const contactByName = new Map(
+      allContacts.map((c) => [c.name.toLowerCase().trim(), c]),
+    );
+
+    for (const gc of contactsWithBirthdays) {
+      const match =
+        (gc.email ? contactByEmail.get(gc.email.toLowerCase()) : undefined) ??
+        contactByName.get(gc.name.toLowerCase().trim());
+      if (match) {
+        await prisma.contact.update({
+          where: { id: match.id },
+          data: { birthday: new Date(gc.birthday!) },
+        });
+      }
+    }
+  }
 
   // Mark contacts as imported in gmail sync state
   await prisma.gmailSyncState.upsert({

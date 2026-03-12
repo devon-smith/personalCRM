@@ -29,6 +29,7 @@ model User {
   actionItems          ActionItem[]
   sightings            ContactSighting[]
   gmailSync            GmailSyncState?
+  emailMessages        EmailMessage[]
 }
 
 model Account {
@@ -99,7 +100,8 @@ model Contact {
   id              String      @id @default(uuid())
   userId          String
   name            String
-  email           String?
+  email            String?
+  additionalEmails String[]  @default([])
   phone           String?
   company         String?
   role            String?
@@ -115,6 +117,8 @@ model Contact {
   followUpDays    Int?
   lastInteraction DateTime?
   avatarUrl       String?
+  birthday        DateTime?   @db.Date
+  howWeMet        String?     @db.Text
   source          ContactSource @default(MANUAL)
   importedAt      DateTime?
   createdAt       DateTime    @default(now())
@@ -126,6 +130,9 @@ model Contact {
   circles            ContactCircle[]
   actionItems        ActionItem[]
   sightings          ContactSighting[]
+  journalEntries     JournalEntry[]
+  changelog          ContactChangelog[]
+  emailMessages      EmailMessage[]
 
   @@index([userId])
   @@index([email])
@@ -154,8 +161,9 @@ model Interaction {
   subject    String?
   summary    String?              @db.Text
   occurredAt DateTime
-  sourceId   String?
-  createdAt  DateTime             @default(now())
+  sourceId    String?
+  dismissedAt DateTime?
+  createdAt   DateTime             @default(now())
 
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -293,18 +301,103 @@ model ContactSighting {
   @@index([phone])
 }
 
+// ─── Journal Entries (private relationship notes) ────────────
+
+enum JournalMood {
+  POSITIVE
+  NEUTRAL
+  CONCERN
+}
+
+model JournalEntry {
+  id        String      @id @default(uuid())
+  contactId String
+  userId    String
+  content   String      @db.Text
+  mood      JournalMood @default(NEUTRAL)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([userId])
+}
+
+// ─── Contact Changelog (job/role changes) ────────────────────
+
+enum ChangelogType {
+  JOB_CHANGE
+  ROLE_CHANGE
+  COMPANY_CHANGE
+}
+
+enum ChangelogStatus {
+  PENDING
+  SEEN
+  ACTED
+  DISMISSED
+}
+
+model ContactChangelog {
+  id          String          @id @default(uuid())
+  contactId   String
+  userId      String
+  type        ChangelogType
+  field       String          // "company", "role"
+  oldValue    String?
+  newValue    String?
+  source      String          @default("linkedin_reimport")
+  status      ChangelogStatus @default(PENDING)
+  detectedAt  DateTime        @default(now())
+  actedAt     DateTime?
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([contactId])
+}
+
+// ─── Email Inbox (all synced emails, matched or not) ────────
+
+model EmailMessage {
+  id            String    @id @default(uuid())
+  userId        String
+  gmailId       String    // Gmail message ID for dedup
+  threadId      String?   // Gmail thread ID
+  fromEmail     String
+  fromName      String?
+  toEmail       String
+  subject       String?
+  snippet       String?   @db.Text
+  direction     InteractionDirection
+  occurredAt    DateTime
+  contactId     String?   // null if sender not in contacts
+  contactName   String?   // resolved name if matched
+  isRead        Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, gmailId])
+  @@index([userId, occurredAt])
+  @@index([contactId])
+}
+
 // ─── Gmail Sync State ────────────────────────────────────────
 
 model GmailSyncState {
-  id               String    @id @default(uuid())
-  userId           String    @unique
-  historyId        String?
-  lastSyncAt       DateTime?
-  syncEnabled      Boolean   @default(false)
-  contactsImported Boolean   @default(false)
-  unmatchedSenders Json?     // Array of { email: string, count: number } — senders with no matching contact
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                   String    @id @default(uuid())
+  userId               String    @unique
+  historyId            String?
+  lastSyncAt           DateTime?
+  syncEnabled          Boolean   @default(false)
+  contactsImported     Boolean   @default(false)
+  additionalUserEmails String[]  @default([]) // Other email addresses belonging to this user (for direction detection)
+  unmatchedSenders     Json?     // Array of { email: string, count: number } — senders with no matching contact
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -44,7 +44,6 @@ export function UpcomingMeetings() {
     queryFn: async () => {
       const res = await fetch("/api/calendar");
       if (!res.ok) {
-        // Return empty events rather than throwing — avoids 500 retry loops
         return { events: [], error: `Calendar unavailable (${res.status})` };
       }
       return res.json();
@@ -56,22 +55,39 @@ export function UpcomingMeetings() {
     return (
       <div className="space-y-3">
         <p className="crm-section-label">Upcoming meetings</p>
-        <div className="h-16 animate-pulse rounded-xl bg-gray-50" />
+        <div className="h-16 animate-pulse rounded-[10px]" style={{ backgroundColor: "var(--surface-sunken)" }} />
       </div>
     );
   }
 
   const events = data?.events ?? [];
+  const apiError = data?.error;
 
   if (events.length === 0) {
     return (
       <div className="space-y-3">
         <p className="crm-section-label">Upcoming meetings</p>
         <div className="flex flex-col items-center py-6 text-center">
-          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-gray-50">
-            <Calendar className="h-4 w-4 text-gray-400" />
+          <div
+            className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
+            style={{ backgroundColor: "var(--surface-sunken)" }}
+          >
+            <Calendar className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
           </div>
-          <p className="text-[13px] text-gray-400">No meetings this week</p>
+          {apiError ? (
+            <>
+              <p className="ds-body-sm font-medium" style={{ color: "var(--status-warning)" }}>Calendar not connected</p>
+              <p className="mt-1 ds-caption max-w-[220px]">
+                {apiError.includes("scope")
+                  ? "Re-sign in with Google to grant Calendar access."
+                  : apiError.includes("not connected")
+                    ? "Sign in with Google to see your upcoming meetings."
+                    : apiError}
+              </p>
+            </>
+          ) : (
+            <p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>No meetings this week</p>
+          )}
         </div>
       </div>
     );
@@ -80,7 +96,7 @@ export function UpcomingMeetings() {
   return (
     <div className="space-y-3">
       <p className="crm-section-label">Upcoming meetings</p>
-      <div className="divide-y" style={{ borderColor: "var(--crm-border-light)" }}>
+      <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
         {events.slice(0, 8).map((event) => {
           const knownAttendees = event.attendees.filter((a) => a.contactId);
           const unknownCount = event.attendees.length - knownAttendees.length;
@@ -88,15 +104,21 @@ export function UpcomingMeetings() {
           return (
             <div
               key={event.id}
-              className="flex items-start gap-3 py-3 -mx-2 px-2 rounded-lg transition-colors hover:bg-gray-50"
+              className="flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
+              style={{ transitionDuration: "var(--duration-fast)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
             >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-50">
-                <Calendar className="h-4 w-4 text-gray-400" />
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                style={{ backgroundColor: "var(--surface-sunken)" }}
+              >
+                <Calendar className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <p className="text-[14px] font-medium text-gray-900 truncate">
+                  <p className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
                     {event.title}
                   </p>
                   {event.htmlLink && (
@@ -104,7 +126,10 @@ export function UpcomingMeetings() {
                       href={event.htmlLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="shrink-0 text-gray-300 hover:text-gray-500 transition-colors"
+                      className="shrink-0 transition-colors"
+                      style={{ color: "var(--text-tertiary)", transitionDuration: "var(--duration-fast)" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
                     >
                       <ExternalLink className="h-3 w-3" />
                     </a>
@@ -112,10 +137,10 @@ export function UpcomingMeetings() {
                 </div>
 
                 <div className="flex items-center gap-2 mt-0.5">
-                  <p className="text-[12px] text-gray-400">
+                  <p className="ds-caption">
                     {formatEventTime(event.startTime)}
                     {event.endTime && (
-                      <span className="text-gray-300"> · {formatDuration(event.startTime, event.endTime)}</span>
+                      <span style={{ color: "var(--border-strong)" }}> · {formatDuration(event.startTime, event.endTime)}</span>
                     )}
                   </p>
                 </div>
@@ -132,7 +157,7 @@ export function UpcomingMeetings() {
                             href={`/people?contact=${a.contactId}`}
                             title={a.name ?? a.email}
                           >
-                            <Avatar className="h-5 w-5 ring-2 ring-white">
+                            <Avatar className="h-5 w-5 ring-2" style={{ "--tw-ring-color": "var(--surface)" } as React.CSSProperties}>
                               <AvatarFallback
                                 className="text-[8px] font-semibold"
                                 style={{ backgroundColor: color.bg, color: color.text }}
@@ -145,16 +170,16 @@ export function UpcomingMeetings() {
                       })}
                     </div>
                     {knownAttendees.length > 0 && (
-                      <span className="text-[11px] text-gray-400">
+                      <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                         {knownAttendees.map((a) => a.name ?? a.email.split("@")[0]).slice(0, 2).join(", ")}
                         {knownAttendees.length > 2 && ` +${knownAttendees.length - 2}`}
                       </span>
                     )}
                     {unknownCount > 0 && knownAttendees.length > 0 && (
-                      <span className="text-[11px] text-gray-300">+{unknownCount}</span>
+                      <span className="text-[11px]" style={{ color: "var(--border-strong)" }}>+{unknownCount}</span>
                     )}
                     {unknownCount > 0 && knownAttendees.length === 0 && (
-                      <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                      <div className="flex items-center gap-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                         <Users className="h-3 w-3" />
                         {unknownCount} attendee{unknownCount !== 1 ? "s" : ""}
                       </div>
