@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useLogInteraction } from "@/lib/hooks/use-reminders";
+import { useLogInteraction } from "@/lib/hooks/use-interactions";
 import { toast } from "sonner";
 import { Loader2, Sparkles } from "lucide-react";
 

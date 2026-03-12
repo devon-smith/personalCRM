@@ -12,7 +12,7 @@ const nextAuth = NextAuth({
       authorization: {
         params: {
           scope:
-            "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+            "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/calendar.readonly",
           access_type: "offline",
           prompt: "consent",
         },
@@ -34,15 +34,19 @@ const nextAuth = NextAuth({
 
 export const { handlers, signIn, signOut } = nextAuth;
 
-// In development, bypass auth and use the first user in the database
+// In development, try real auth first, then fall back to seeded user
 export const auth =
   process.env.NODE_ENV === "development"
     ? async () => {
         const realSession = await nextAuth.auth();
         if (realSession?.user?.id) return realSession;
 
-        // Fall back to first user in DB (seeded user)
-        const user = await prisma.user.findFirst();
+        // Fall back to first user with a linked Google account,
+        // or the first user in DB if none have Google linked
+        const userWithGoogle = await prisma.user.findFirst({
+          where: { accounts: { some: { provider: "google" } } },
+        });
+        const user = userWithGoogle ?? (await prisma.user.findFirst());
         if (!user) return null;
 
         return {

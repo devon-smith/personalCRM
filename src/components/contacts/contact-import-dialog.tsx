@@ -20,7 +20,8 @@ import {
 import { Upload, FileText, Check, AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { parseCsv, type ParsedContact, type CsvParseResult } from "@/lib/csv-parser";
+import { parseCsv, detectLinkedInCsv, type ParsedContact, type CsvParseResult } from "@/lib/csv-parser";
+import { parseVcf, isVcardContent } from "@/lib/vcard-parser";
 
 type Step = "upload" | "preview" | "result";
 
@@ -44,6 +45,7 @@ export function ContactImportDialog({
   const [parseResult, setParseResult] = useState<CsvParseResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importing, setImporting] = useState(false);
+  const [detectedSource, setDetectedSource] = useState<string>("CSV_IMPORT");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -52,6 +54,7 @@ export function ContactImportDialog({
     setParseResult(null);
     setImportResult(null);
     setImporting(false);
+    setDetectedSource("CSV_IMPORT");
     onOpenChange(false);
   }
 
@@ -70,15 +73,35 @@ export function ContactImportDialog({
     }
   }
 
-  function handleParse(csvText: string) {
-    const result = parseCsv(csvText);
+  function handleParse(text: string) {
+    let result: CsvParseResult;
+
+    if (isVcardContent(text)) {
+      const vcfResult = parseVcf(text);
+      result = {
+        contacts: vcfResult.contacts,
+        headers: ["Name", "Email", "Phone", "Company", "Role"],
+        errors: vcfResult.errors,
+        rowCount: vcfResult.totalCards,
+      };
+      setDetectedSource("APPLE_CONTACTS");
+    } else {
+      result = parseCsv(text);
+      // Auto-detect LinkedIn CSV format
+      if (detectLinkedInCsv(result.headers)) {
+        setDetectedSource("LINKEDIN");
+      } else {
+        setDetectedSource("CSV_IMPORT");
+      }
+    }
+
     setParseResult(result);
 
     if (result.contacts.length > 0) {
       setStep("preview");
     } else {
       toast.error(
-        result.errors[0] ?? "No valid contacts found in the CSV."
+        result.errors[0] ?? "No valid contacts found in the file."
       );
     }
   }
@@ -91,7 +114,7 @@ export function ContactImportDialog({
       const res = await fetch("/api/contacts/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contacts: parseResult.contacts }),
+        body: JSON.stringify({ contacts: parseResult.contacts, source: detectedSource }),
       });
 
       if (!res.ok) {
@@ -131,6 +154,7 @@ export function ContactImportDialog({
           <PreviewStep
             result={parseResult}
             importing={importing}
+            detectedSource={detectedSource}
             onImport={handleImport}
             onBack={() => setStep("upload")}
           />
@@ -165,16 +189,16 @@ function UploadStep({
         <Upload className="h-8 w-8 text-gray-400" />
         <div className="text-center">
           <p className="text-sm font-medium text-gray-700">
-            Upload a CSV file
+            Upload a CSV or vCard file
           </p>
           <p className="text-xs text-gray-500">
-            Click to browse or drag and drop
+            Supports .csv and .vcf (Apple Contacts, Outlook)
           </p>
         </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.vcf,text/csv,text/vcard,text/x-vcard"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -209,28 +233,55 @@ function UploadStep({
         </Button>
       </div>
 
-      {/* LinkedIn tip */}
-      <div className="rounded-md bg-blue-50 p-3">
-        <p className="text-xs font-medium text-blue-700">
-          Importing from LinkedIn?
-        </p>
-        <p className="text-xs text-blue-600">
-          Go to LinkedIn → Settings → Data Privacy → Get a copy of your data
-          → Select &quot;Connections&quot; → Download. Then upload the CSV here.
-        </p>
+      {/* Import tips */}
+      <div className="space-y-2">
+        <div className="rounded-md bg-gray-50 p-3">
+          <p className="text-xs font-medium text-gray-700">
+            Importing from Apple Contacts?
+          </p>
+          <p className="text-xs text-gray-500">
+            Open Contacts → Select All (⌘A) → File → Export vCard.
+            Then upload the .vcf file here.
+          </p>
+        </div>
+        <div className="rounded-md bg-gray-50 p-3">
+          <p className="text-xs font-medium text-gray-700">
+            Importing from LinkedIn?
+          </p>
+          <p className="text-xs text-gray-500">
+            Go to LinkedIn → Settings → Data Privacy → Get a copy of your data
+            → Select &quot;Connections&quot; → Download the CSV.
+          </p>
+        </div>
       </div>
     </div>
   );
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  CSV_IMPORT: "CSV Import",
+  LINKEDIN: "LinkedIn",
+  APPLE_CONTACTS: "Apple Contacts",
+  GOOGLE_CONTACTS: "Google Contacts",
+};
+
+const SOURCE_COLORS: Record<string, string> = {
+  LINKEDIN: "bg-blue-100 text-blue-700",
+  APPLE_CONTACTS: "bg-gray-100 text-gray-700",
+  CSV_IMPORT: "bg-gray-100 text-gray-600",
+  GOOGLE_CONTACTS: "bg-red-50 text-red-600",
+};
+
 function PreviewStep({
   result,
   importing,
+  detectedSource,
   onImport,
   onBack,
 }: {
   result: CsvParseResult;
   importing: boolean;
+  detectedSource: string;
   onImport: () => void;
   onBack: () => void;
 }) {
@@ -249,9 +300,17 @@ function PreviewStep({
             </p>
           )}
         </div>
-        <Badge variant="secondary">
-          {result.headers.length} columns detected
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="secondary"
+            className={SOURCE_COLORS[detectedSource] ?? "bg-gray-100 text-gray-600"}
+          >
+            {SOURCE_LABELS[detectedSource] ?? detectedSource}
+          </Badge>
+          <Badge variant="secondary">
+            {result.headers.length} columns
+          </Badge>
+        </div>
       </div>
 
       {result.errors.length > 0 && (

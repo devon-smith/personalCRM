@@ -37,6 +37,11 @@ export async function getOverdueContacts(
   });
 
   return contacts
+    .filter((c) => {
+      // Skip freshly imported contacts with no interactions — they're "New"
+      if (!c.lastInteraction && c.importedAt) return false;
+      return true;
+    })
     .map((c) => {
       const cadenceDays = getCadence(c.tier, c.followUpDays);
       const dueDate = getDueDate(c.lastInteraction, cadenceDays);
@@ -86,6 +91,11 @@ export async function getUpcomingFollowUps(
   });
 
   return contacts
+    .filter((c) => {
+      // Skip freshly imported contacts with no interactions
+      if (!c.lastInteraction && c.importedAt) return false;
+      return true;
+    })
     .map((c) => {
       const cadenceDays = getCadence(c.tier, c.followUpDays);
       const dueDate = getDueDate(c.lastInteraction, cadenceDays);

@@ -16,55 +16,74 @@ export async function GET() {
   startOfWeek.setDate(now.getDate() - now.getDay());
   startOfWeek.setHours(0, 0, 0, 0);
 
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
   const [
     contactsByTier,
     contactsThisMonth,
     interactionsThisWeek,
-    pipelineCounts,
     recentInteractions,
     overdueContacts,
-    upcomingDeadlines,
+    circles,
+    recentlyActiveContacts,
+    contactsBySource,
   ] = await Promise.all([
-    // Contacts by tier
     prisma.contact.groupBy({
       by: ["tier"],
       where: { userId },
       _count: true,
     }),
-    // Contacts added this month
     prisma.contact.count({
       where: { userId, createdAt: { gte: startOfMonth } },
     }),
-    // Interactions this week
     prisma.interaction.count({
       where: { userId, occurredAt: { gte: startOfWeek } },
     }),
-    // Pipeline counts by status
-    prisma.jobApplication.groupBy({
-      by: ["status"],
-      where: { userId },
-      _count: true,
-    }),
-    // Recent interactions
     prisma.interaction.findMany({
       where: { userId },
       orderBy: { occurredAt: "desc" },
       take: 10,
       include: {
-        contact: { select: { id: true, name: true } },
+        contact: {
+          select: {
+            id: true,
+            name: true,
+            company: true,
+            tier: true,
+            source: true,
+          },
+        },
       },
     }),
-    // Overdue follow-ups
     getOverdueContacts(userId),
-    // Upcoming deadlines
-    prisma.jobApplication.findMany({
+    prisma.circle.findMany({
+      where: { userId },
+      include: { _count: { select: { contacts: true } } },
+      orderBy: { sortOrder: "asc" },
+    }),
+    // Contacts with the most recent interactions (relationship pulse)
+    prisma.contact.findMany({
       where: {
         userId,
-        deadline: { gte: now },
-        status: { notIn: ["REJECTED", "CLOSED"] },
+        lastInteraction: { gte: thirtyDaysAgo },
       },
-      orderBy: { deadline: "asc" },
-      take: 5,
+      orderBy: { lastInteraction: "desc" },
+      take: 10,
+      include: {
+        _count: { select: { interactions: true } },
+        interactions: {
+          orderBy: { occurredAt: "desc" },
+          take: 1,
+          select: { type: true, summary: true, occurredAt: true },
+        },
+      },
+    }),
+    // Contacts grouped by source
+    prisma.contact.groupBy({
+      by: ["source"],
+      where: { userId },
+      _count: true,
     }),
   ]);
 
@@ -77,20 +96,44 @@ export async function GET() {
     tierCounts[t.tier] = t._count;
   }
 
-  const pipelineData = pipelineCounts.map((p) => ({
-    status: p.status,
-    count: p._count,
+  const circleSummary = circles.map((c) => ({
+    id: c.id,
+    name: c.name,
+    color: c.color,
+    icon: c.icon,
+    contactCount: c._count.contacts,
   }));
+
+  const recentlyActive = recentlyActiveContacts.map((c) => {
+    const lastInt = c.interactions[0] ?? null;
+    return {
+      id: c.id,
+      name: c.name,
+      company: c.company,
+      tier: c.tier,
+      source: c.source,
+      interactionCount: c._count.interactions,
+      lastInteraction: c.lastInteraction?.toISOString() ?? null,
+      lastInteractionType: lastInt?.type ?? null,
+      lastInteractionSummary: lastInt?.summary ?? null,
+    };
+  });
+
+  const sourceCounts: Record<string, number> = {};
+  for (const s of contactsBySource) {
+    sourceCounts[s.source] = s._count;
+  }
 
   return NextResponse.json({
     tierCounts,
     contactsThisMonth,
     interactionsThisWeek,
     totalContacts: Object.values(tierCounts).reduce((a, b) => a + b, 0),
-    pipelineData,
     recentInteractions,
     overdueContacts: overdueContacts.slice(0, 5),
     overdueCount: overdueContacts.length,
-    upcomingDeadlines,
+    circles: circleSummary,
+    recentlyActive,
+    sourceCounts,
   });
 }

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Contact, Interaction, JobApplication } from "@/generated/prisma/client";
+import type { Contact, Interaction } from "@/generated/prisma/client";
 
 export type ContactWithCount = Contact & {
   _count: { interactions: number };
@@ -7,12 +7,12 @@ export type ContactWithCount = Contact & {
 
 export type ContactWithDetails = Contact & {
   interactions: Interaction[];
-  jobApplications: Pick<JobApplication, "id" | "company" | "roleTitle" | "status">[];
 };
 
 interface ContactFilters {
   search?: string;
   tier?: string;
+  source?: string;
   tag?: string;
   sort?: string;
 }
@@ -30,6 +30,7 @@ export function useContacts(filters: ContactFilters = {}) {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);
   if (filters.tier) params.set("tier", filters.tier);
+  if (filters.source) params.set("source", filters.source);
   if (filters.tag) params.set("tag", filters.tag);
   if (filters.sort) params.set("sort", filters.sort);
 

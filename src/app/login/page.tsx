@@ -1,10 +1,16 @@
 import { signIn, auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ force?: string }>;
+}) {
+  const params = await searchParams;
   const session = await auth();
 
-  if (session?.user) {
+  // Allow ?force=true to bypass redirect (useful in dev to link Google account)
+  if (session?.user && params.force !== "true") {
     redirect("/dashboard");
   }
 

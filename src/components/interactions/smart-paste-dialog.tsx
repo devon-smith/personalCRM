@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, Check } from "lucide-react";
-import { useLogInteraction } from "@/lib/hooks/use-reminders";
+import { useLogInteraction } from "@/lib/hooks/use-interactions";
 import { toast } from "sonner";
 
 const interactionTypes = [

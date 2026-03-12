@@ -1,8 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const hasApiKey =
+  !!process.env.ANTHROPIC_API_KEY &&
+  process.env.ANTHROPIC_API_KEY !== "your-anthropic-api-key";
+
+const anthropic = hasApiKey
+  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
 
 interface ContactForInsight {
   id: string;
@@ -74,6 +78,36 @@ export async function computeRelationshipHealth(
       )
     : 999;
 
+  // Fallback: heuristic-based score (used when no API key or as fallback)
+  const heuristicScore =
+    daysSinceLast > 90
+      ? 15
+      : daysSinceLast > 60
+        ? 30
+        : daysSinceLast > 30
+          ? 50
+          : daysSinceLast > 14
+            ? 70
+            : 85;
+  const heuristicLabel =
+    heuristicScore >= 70
+      ? "thriving"
+      : heuristicScore >= 50
+        ? "stable"
+        : heuristicScore >= 30
+          ? "fading"
+          : "dormant";
+  const heuristicResult: HealthResult = {
+    healthScore: heuristicScore,
+    healthLabel: heuristicLabel,
+    summary: daysSinceLast === 999
+      ? "No interactions recorded yet."
+      : `Last interaction was ${daysSinceLast} days ago.`,
+    actions: ["Reach out soon to maintain this relationship."],
+  };
+
+  if (!anthropic) return heuristicResult;
+
   const recentInteractions = contact.interactions.slice(0, 10);
   const interactionsSummary = recentInteractions
     .map(
@@ -128,31 +162,7 @@ Return as JSON:
     };
   }
 
-  // Fallback: heuristic-based score
-  const score =
-    daysSinceLast > 90
-      ? 15
-      : daysSinceLast > 60
-        ? 30
-        : daysSinceLast > 30
-          ? 50
-          : daysSinceLast > 14
-            ? 70
-            : 85;
-  const label =
-    score >= 70
-      ? "thriving"
-      : score >= 50
-        ? "stable"
-        : score >= 30
-          ? "fading"
-          : "dormant";
-  return {
-    healthScore: score,
-    healthLabel: label,
-    summary: `Last interaction was ${daysSinceLast} days ago.`,
-    actions: ["Reach out soon to maintain this relationship."],
-  };
+  return heuristicResult;
 }
 
 export async function generateWeeklyDigest(
@@ -173,6 +183,28 @@ export async function generateWeeklyDigest(
   overdueCount: number,
   newContactsCount: number
 ): Promise<DigestSection> {
+  if (!anthropic) {
+    return {
+      highlights: ["AI insights require an Anthropic API key. Using heuristic data."],
+      needsAttention: contacts
+        .filter((c) => {
+          if (!c.lastInteraction) return true;
+          const days = Math.floor(
+            (Date.now() - new Date(c.lastInteraction).getTime()) / (1000 * 60 * 60 * 24),
+          );
+          return days > 30;
+        })
+        .slice(0, 5)
+        .map((c) => ({ name: c.name, reason: "No recent interaction" })),
+      suggestedActions: ["Set up your Anthropic API key for AI-powered insights."],
+      stats: {
+        totalInteractions: recentInteractions.length,
+        contactsReached: new Set(recentInteractions.map((i) => i.contactName)).size,
+        newContacts: newContactsCount,
+      },
+    };
+  }
+
   const interactionLines = recentInteractions
     .slice(0, 20)
     .map(
@@ -262,7 +294,7 @@ export async function suggestIntroductions(
     tags: string[];
   }>
 ): Promise<IntroductionSuggestion[]> {
-  if (contacts.length < 2) return [];
+  if (contacts.length < 2 || !anthropic) return [];
 
   const contactList = contacts
     .slice(0, 30) // limit context size

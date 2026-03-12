@@ -2,12 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import {
-  LayoutDashboard,
+  Home,
   Users,
-  Kanban,
-  MessageSquare,
-  Bell,
-  Brain,
+  CircleDot,
+  Activity,
   Settings,
   ClipboardPaste,
 } from "lucide-react";
@@ -21,12 +19,10 @@ import {
 } from "@/components/ui/command";
 
 const pages = [
-  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/pipeline", label: "Pipeline", icon: Kanban },
-  { href: "/interactions", label: "Interactions", icon: MessageSquare },
-  { href: "/reminders", label: "Reminders", icon: Bell },
-  { href: "/insights", label: "AI Insights", icon: Brain },
+  { href: "/dashboard", label: "Home", icon: Home },
+  { href: "/people", label: "People", icon: Users },
+  { href: "/circles", label: "Circles", icon: CircleDot },
+  { href: "/activity", label: "Activity", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

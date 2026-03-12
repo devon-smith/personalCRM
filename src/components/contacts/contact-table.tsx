@@ -12,12 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { ContactWithCount } from "@/lib/hooks/use-contacts";
 import { formatDistanceToNow } from "@/lib/date-utils";
-import { HealthBadge } from "@/components/insights/health-badge";
+import { getAvatarColor, getInitials } from "@/lib/avatar";
 
 const tierColors: Record<string, string> = {
-  INNER_CIRCLE: "bg-purple-100 text-purple-700",
-  PROFESSIONAL: "bg-blue-100 text-blue-700",
-  ACQUAINTANCE: "bg-gray-100 text-gray-700",
+  INNER_CIRCLE: "bg-gray-900 text-white",
+  PROFESSIONAL: "bg-gray-200 text-gray-700",
+  ACQUAINTANCE: "bg-gray-100 text-gray-500",
 };
 
 const tierLabels: Record<string, string> = {
@@ -26,14 +26,16 @@ const tierLabels: Record<string, string> = {
   ACQUAINTANCE: "Acquaintance",
 };
 
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
+const sourceLabels: Record<string, string> = {
+  MANUAL: "Manual",
+  CSV_IMPORT: "CSV",
+  GOOGLE_CONTACTS: "Google",
+  GMAIL_DISCOVER: "Gmail",
+  APPLE_CONTACTS: "Apple",
+  IMESSAGE: "iMessage",
+  LINKEDIN: "LinkedIn",
+  WHATSAPP: "WhatsApp",
+};
 
 interface ContactTableProps {
   contacts: ContactWithCount[];
@@ -44,8 +46,14 @@ interface ContactTableProps {
 export function ContactTable({ contacts, onSelect, selectedId }: ContactTableProps) {
   if (contacts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-sm text-muted-foreground">No contacts found</p>
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+          <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+          </svg>
+        </div>
+        <p className="text-sm font-medium text-gray-900">No contacts found</p>
+        <p className="mt-1 text-[13px] text-gray-400">Try adjusting your search or filters</p>
       </div>
     );
   }
@@ -53,69 +61,81 @@ export function ContactTable({ contacts, onSelect, selectedId }: ContactTablePro
   return (
     <Table>
       <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Company</TableHead>
-          <TableHead>Tier</TableHead>
-          <TableHead>Health</TableHead>
-          <TableHead>Last Contact</TableHead>
-          <TableHead>Tags</TableHead>
+        <TableRow className="border-b border-gray-100">
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Name</TableHead>
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Company</TableHead>
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tier</TableHead>
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Last Contact</TableHead>
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Source</TableHead>
+          <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tags</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {contacts.map((contact) => (
-          <TableRow
-            key={contact.id}
-            className={`cursor-pointer transition-colors ${selectedId === contact.id ? "bg-blue-50" : "hover:bg-gray-50"}`}
-            onClick={() => onSelect(contact.id)}
-          >
-            <TableCell>
-              <div className="flex items-center gap-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-blue-100 text-xs text-blue-700">
-                    {getInitials(contact.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <p className="font-medium text-gray-900">{contact.name}</p>
-                  {contact.email && (
-                    <p className="text-xs text-gray-500">{contact.email}</p>
+        {contacts.map((contact) => {
+          const avatarColor = getAvatarColor(contact.name);
+          return (
+            <TableRow
+              key={contact.id}
+              className={`cursor-pointer transition-all duration-150 h-[44px] ${
+                selectedId === contact.id
+                  ? "bg-gray-100 border-l-2 border-l-gray-900"
+                  : "hover:bg-gray-50 border-l-2 border-l-transparent"
+              }`}
+              onClick={() => onSelect(contact.id)}
+            >
+              <TableCell className="py-1.5">
+                <div className="flex items-center gap-2.5">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback
+                      className="text-[10px] font-semibold"
+                      style={{ backgroundColor: avatarColor.bg, color: avatarColor.text }}
+                    >
+                      {getInitials(contact.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-gray-900 truncate">{contact.name}</p>
+                    {contact.email && (
+                      <p className="text-[11px] text-gray-400 truncate">{contact.email}</p>
+                    )}
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell className="py-1.5 text-[13px] text-gray-500">
+                {contact.company ?? "—"}
+              </TableCell>
+              <TableCell className="py-1.5">
+                <Badge variant="secondary" className={`text-[11px] px-1.5 py-0 ${tierColors[contact.tier]}`}>
+                  {tierLabels[contact.tier]}
+                </Badge>
+              </TableCell>
+              <TableCell className="py-1.5 text-[12px] text-gray-400">
+                {contact.lastInteraction
+                  ? formatDistanceToNow(new Date(contact.lastInteraction))
+                  : "Never"}
+              </TableCell>
+              <TableCell className="py-1.5">
+                <span className="text-[11px] text-gray-400">
+                  {sourceLabels[contact.source] ?? "—"}
+                </span>
+              </TableCell>
+              <TableCell className="py-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {contact.tags.slice(0, 2).map((tag) => (
+                    <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0 text-gray-500 border-gray-200">
+                      {tag}
+                    </Badge>
+                  ))}
+                  {contact.tags.length > 2 && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-gray-400 border-gray-200">
+                      +{contact.tags.length - 2}
+                    </Badge>
                   )}
                 </div>
-              </div>
-            </TableCell>
-            <TableCell className="text-gray-600">
-              {contact.company ?? "—"}
-            </TableCell>
-            <TableCell>
-              <Badge variant="secondary" className={tierColors[contact.tier]}>
-                {tierLabels[contact.tier]}
-              </Badge>
-            </TableCell>
-            <TableCell>
-              <HealthBadge contactId={contact.id} compact />
-            </TableCell>
-            <TableCell className="text-gray-500 text-sm">
-              {contact.lastInteraction
-                ? formatDistanceToNow(new Date(contact.lastInteraction))
-                : "Never"}
-            </TableCell>
-            <TableCell>
-              <div className="flex flex-wrap gap-1">
-                {contact.tags.slice(0, 3).map((tag) => (
-                  <Badge key={tag} variant="outline" className="text-xs">
-                    {tag}
-                  </Badge>
-                ))}
-                {contact.tags.length > 3 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{contact.tags.length - 3}
-                  </Badge>
-                )}
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

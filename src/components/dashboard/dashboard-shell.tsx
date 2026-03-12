@@ -1,21 +1,15 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { Sidebar } from "@/components/dashboard/sidebar";
-import { TopBar } from "@/components/dashboard/top-bar";
+import { useState, useEffect } from "react";
+import { NavMenu } from "@/components/dashboard/sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { QuickLogPicker } from "@/components/interactions/quick-log-picker";
+import { Search } from "lucide-react";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [quickLogOpen, setQuickLogOpen] = useState(false);
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((prev) => !prev);
-  }, []);
-
-  // Cmd+K shortcut and Cmd+L for quick log
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -31,27 +25,26 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Auto-collapse sidebar on mobile
-  useEffect(() => {
-    function handleResize() {
-      setSidebarCollapsed(window.innerWidth < 768);
-    }
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+    <div className="flex min-h-screen flex-col bg-[#FAFAFA]">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between bg-[#FAFAFA] px-4">
+        <NavMenu />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar onSearchOpen={() => setSearchOpen(true)} />
+        <button
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-[#B5BAC0] transition-colors hover:bg-[#F2F3F5]"
+          onClick={() => setSearchOpen(true)}
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Search</span>
+          <kbd className="pointer-events-none hidden rounded bg-[#F2F3F5] px-1.5 text-[10px] font-medium text-[#C1C5CA] sm:inline">
+            ⌘K
+          </kbd>
+        </button>
+      </header>
 
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl p-6">{children}</div>
-        </main>
-      </div>
+      <main className="flex-1">
+        <div className="mx-auto max-w-[600px] px-5 pb-12">{children}</div>
+      </main>
 
       <CommandPalette
         open={searchOpen}

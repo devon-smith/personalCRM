@@ -118,6 +118,12 @@ export function autoMapHeaders(
   return mapping;
 }
 
+/** Detect if CSV headers match LinkedIn's export format */
+export function detectLinkedInCsv(headers: string[]): boolean {
+  const normalized = new Set(headers.map((h) => h.toLowerCase().trim()));
+  return normalized.has("connected on") && (normalized.has("url") || normalized.has("first name"));
+}
+
 export function parseCsv(
   csvText: string,
   columnMapping?: Record<number, keyof ParsedContact>

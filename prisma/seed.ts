@@ -12,7 +12,6 @@ async function main() {
 
   // Clean existing data
   await prisma.interaction.deleteMany();
-  await prisma.jobApplication.deleteMany();
   await prisma.contact.deleteMany();
   await prisma.session.deleteMany();
   await prisma.account.deleteMany();
@@ -213,74 +212,6 @@ async function main() {
 
   console.log(`Created ${contacts.length} contacts`);
 
-  // Create 5 job applications in different statuses
-  const jobsData = [
-    {
-      company: "TechCorp",
-      roleTitle: "Senior Frontend Engineer",
-      url: "https://techcorp.com/careers/sfe-123",
-      status: "APPLIED" as const,
-      salaryRange: "$180k - $220k",
-      deadline: daysFromNow(5),
-      notes: "Sarah Chen referred me. Applied last week.",
-      contactIndices: [0], // Sarah Chen
-    },
-    {
-      company: "FinTech Solutions",
-      roleTitle: "Staff Engineer",
-      url: "https://fintech.com/jobs/staff-eng",
-      status: "SCREEN" as const,
-      salaryRange: "$200k - $250k",
-      deadline: daysFromNow(3),
-      notes: "Phone screen scheduled for Thursday.",
-      contactIndices: [7], // David Park
-    },
-    {
-      company: "Startup.io",
-      roleTitle: "Founding Engineer",
-      url: "https://startup.io/join",
-      status: "ONSITE" as const,
-      salaryRange: "$160k + 1% equity",
-      deadline: daysFromNow(7),
-      notes: "Marcus's company. On-site next Monday.",
-      contactIndices: [1], // Marcus Johnson
-    },
-    {
-      company: "BigTech Inc",
-      roleTitle: "Senior Software Engineer",
-      url: "https://bigtech.com/careers/sse",
-      status: "INTERESTED" as const,
-      salaryRange: "$190k - $240k",
-      notes: "James mentioned a new team forming. Should apply soon.",
-      contactIndices: [3], // James Kim
-    },
-    {
-      company: "CloudCo",
-      roleTitle: "Platform Engineer",
-      url: "https://cloudco.com/jobs/platform",
-      status: "REJECTED" as const,
-      salaryRange: "$170k - $210k",
-      notes: "Rejected after final round. Feedback: wanted more cloud experience.",
-      contactIndices: [5], // Tom Williams
-    },
-  ];
-
-  const jobs = await Promise.all(
-    jobsData.map(({ contactIndices, ...data }) =>
-      prisma.jobApplication.create({
-        data: {
-          userId: user.id,
-          ...data,
-          contacts: {
-            connect: contactIndices.map((i) => ({ id: contacts[i].id })),
-          },
-        },
-      })
-    )
-  );
-
-  console.log(`Created ${jobs.length} job applications`);
-
   // Create 20 interactions across various contacts
   const interactionsData = [
     { contactIdx: 0, type: "EMAIL" as const, direction: "OUTBOUND" as const, subject: "Application follow-up", summary: "Sent thank you email after referral", occurredAt: daysAgo(5), channel: "gmail" },
@@ -324,12 +255,6 @@ async function main() {
 function daysAgo(days: number): Date {
   const date = new Date();
   date.setDate(date.getDate() - days);
-  return date;
-}
-
-function daysFromNow(days: number): Date {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
   return date;
 }
 

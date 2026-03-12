@@ -21,9 +21,6 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         orderBy: { occurredAt: "desc" },
         take: 50,
       },
-      jobApplications: {
-        select: { id: true, company: true, roleTitle: true, status: true },
-      },
     },
   });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Pencil, Trash2, Mail, ExternalLink, Sparkles, Tag, Loader2 } from "lucide-react";
+import { X, Pencil, Trash2, Mail, ExternalLink, Sparkles, Tag, Loader2, Linkedin, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -10,11 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useContact, useDeleteContact, useUpdateContact } from "@/lib/hooks/use-contacts";
 import { InteractionTimeline } from "@/components/contacts/interaction-timeline";
 import { toast } from "sonner";
+import { getAvatarColor, getInitials } from "@/lib/avatar";
 
 const tierColors: Record<string, string> = {
-  INNER_CIRCLE: "bg-purple-100 text-purple-700",
-  PROFESSIONAL: "bg-blue-100 text-blue-700",
-  ACQUAINTANCE: "bg-gray-100 text-gray-700",
+  INNER_CIRCLE: "bg-gray-900 text-white",
+  PROFESSIONAL: "bg-gray-200 text-gray-700",
+  ACQUAINTANCE: "bg-gray-100 text-gray-500",
 };
 
 const tierLabels: Record<string, string> = {
@@ -23,14 +24,16 @@ const tierLabels: Record<string, string> = {
   ACQUAINTANCE: "Acquaintance",
 };
 
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
+const sourceLabels: Record<string, string> = {
+  MANUAL: "Manual",
+  CSV_IMPORT: "CSV",
+  GOOGLE_CONTACTS: "Google",
+  GMAIL_DISCOVER: "Gmail",
+  APPLE_CONTACTS: "Apple",
+  IMESSAGE: "iMessage",
+  LINKEDIN: "LinkedIn",
+  WHATSAPP: "WhatsApp",
+};
 
 interface ContactDetailPanelProps {
   contactId: string;
@@ -50,6 +53,8 @@ export function ContactDetailPanel({
   const [aiLoading, setAiLoading] = useState(false);
   const [suggestedTags, setSuggestedTags] = useState<string[] | null>(null);
   const [tagsLoading, setTagsLoading] = useState(false);
+  const [linkedinInput, setLinkedinInput] = useState("");
+  const [showLinkedinInput, setShowLinkedinInput] = useState(false);
 
   async function handleAiSummary() {
     setAiLoading(true);
@@ -101,6 +106,23 @@ export function ContactDetailPanel({
     setSuggestedTags((prev) => prev?.filter((t) => t !== tag) ?? null);
   }
 
+  function handleSaveLinkedIn() {
+    if (!contact || !linkedinInput.trim()) return;
+    const url = linkedinInput.trim().startsWith("http")
+      ? linkedinInput.trim()
+      : `https://${linkedinInput.trim()}`;
+    updateContact.mutate(
+      { id: contact.id, linkedinUrl: url },
+      {
+        onSuccess: () => {
+          toast.success("LinkedIn URL added");
+          setShowLinkedinInput(false);
+          setLinkedinInput("");
+        },
+      },
+    );
+  }
+
   function handleDelete() {
     if (!confirm("Are you sure you want to delete this contact?")) return;
     deleteContact.mutate(contactId, {
@@ -131,46 +153,73 @@ export function ContactDetailPanel({
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-start justify-between p-4">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-12 w-12">
-            <AvatarFallback className="bg-blue-100 text-blue-700">
+      <div className="flex items-start justify-between px-6 pt-6 pb-4">
+        <div className="flex items-center gap-4">
+          <Avatar className="h-16 w-16 rounded-2xl">
+            <AvatarFallback
+              className="text-lg font-semibold rounded-2xl"
+              style={{
+                backgroundColor: getAvatarColor(contact.name).bg,
+                color: getAvatarColor(contact.name).text,
+              }}
+            >
               {getInitials(contact.name)}
             </AvatarFallback>
           </Avatar>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-[20px] font-bold tracking-tight flex items-center gap-1.5" style={{ color: "var(--crm-text-primary)" }}>
               {contact.name}
+              {contact.linkedinUrl && (
+                <a
+                  href={contact.linkedinUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="View LinkedIn profile"
+                  className="text-[#0A66C2] hover:opacity-80 transition-opacity"
+                >
+                  <Linkedin className="h-4 w-4" />
+                </a>
+              )}
             </h2>
             {contact.company && (
-              <p className="text-sm text-gray-500">
+              <p className="mt-0.5 text-[14px]" style={{ color: "var(--crm-text-secondary)" }}>
                 {contact.role ? `${contact.role} at ` : ""}
                 {contact.company}
               </p>
             )}
-            <Badge
-              variant="secondary"
-              className={`mt-1 ${tierColors[contact.tier]}`}
-            >
-              {tierLabels[contact.tier]}
-            </Badge>
+            <div className="mt-2 flex items-center gap-1.5">
+              <Badge
+                variant="secondary"
+                className={`text-[11px] ${tierColors[contact.tier]}`}
+              >
+                {tierLabels[contact.tier]}
+              </Badge>
+              {contact.source && contact.source !== "MANUAL" && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] text-gray-400 border-gray-200"
+                >
+                  {sourceLabels[contact.source] ?? contact.source}
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors rounded-lg">
           <X className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Quick actions */}
-      <div className="flex gap-2 px-4 pb-3">
-        <Button variant="outline" size="sm" onClick={() => onEdit(contact.id)}>
-          <Pencil className="mr-1.5 h-3 w-3" />
+      <div className="flex gap-1.5 px-6 pb-4">
+        <Button variant="outline" size="sm" className="h-8 text-[12px] rounded-lg hover:bg-gray-50 transition-colors" onClick={() => onEdit(contact.id)}>
+          <Pencil className="mr-1 h-3 w-3" />
           Edit
         </Button>
         {contact.email && (
           <a href={`mailto:${contact.email}`}>
-            <Button variant="outline" size="sm">
-              <Mail className="mr-1.5 h-3 w-3" />
+            <Button variant="outline" size="sm" className="h-8 text-[12px] rounded-lg hover:bg-gray-50 transition-colors">
+              <Mail className="mr-1 h-3 w-3" />
               Email
             </Button>
           </a>
@@ -178,10 +227,10 @@ export function ContactDetailPanel({
         <Button
           variant="outline"
           size="sm"
-          className="text-red-600 hover:text-red-700"
+          className="h-8 text-[12px] rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition-colors"
           onClick={handleDelete}
         >
-          <Trash2 className="mr-1.5 h-3 w-3" />
+          <Trash2 className="mr-1 h-3 w-3" />
           Delete
         </Button>
       </div>
@@ -190,14 +239,14 @@ export function ContactDetailPanel({
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="flex-1 overflow-hidden">
-        <TabsList className="mx-4 mt-3">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="timeline">
+        <TabsList className="mx-6 mt-2">
+          <TabsTrigger value="overview" className="text-[13px]">Overview</TabsTrigger>
+          <TabsTrigger value="timeline" className="text-[13px]">
             Timeline ({contact.interactions.length})
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="overflow-y-auto px-4 pb-4">
+        <TabsContent value="overview" className="overflow-y-auto px-6 pb-6">
           <div className="space-y-4 pt-2">
             {contact.email && (
               <InfoRow label="Email" value={contact.email} />
@@ -205,20 +254,56 @@ export function ContactDetailPanel({
             {contact.phone && (
               <InfoRow label="Phone" value={contact.phone} />
             )}
-            {contact.linkedinUrl && (
-              <div>
-                <p className="text-xs font-medium text-gray-500">LinkedIn</p>
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--crm-text-tertiary)" }}>LinkedIn</p>
+              {contact.linkedinUrl ? (
                 <a
                   href={contact.linkedinUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                  className="mt-0.5 inline-flex items-center gap-1.5 text-[13px] text-[#0A66C2] hover:underline"
                 >
-                  Profile
+                  <Linkedin className="h-3.5 w-3.5" />
+                  View Profile
                   <ExternalLink className="h-3 w-3" />
                 </a>
-              </div>
-            )}
+              ) : showLinkedinInput ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={linkedinInput}
+                    onChange={(e) => setLinkedinInput(e.target.value)}
+                    placeholder="linkedin.com/in/username"
+                    className="flex-1 rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveLinkedIn()}
+                    autoFocus
+                  />
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={handleSaveLinkedIn}
+                    disabled={!linkedinInput.trim()}
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => { setShowLinkedinInput(false); setLinkedinInput(""); }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowLinkedinInput(true)}
+                  className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-gray-400 hover:text-[#0A66C2] transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add LinkedIn
+                </button>
+              )}
+            </div>
             {contact.followUpDays && (
               <InfoRow
                 label="Follow-up cadence"
@@ -227,7 +312,7 @@ export function ContactDetailPanel({
             )}
             {contact.tags.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-gray-500 mb-1">Tags</p>
+                <p className="text-[11px] font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--crm-text-tertiary)" }}>Tags</p>
                 <div className="flex flex-wrap gap-1">
                   {contact.tags.map((tag) => (
                     <Badge key={tag} variant="outline" className="text-xs">
@@ -239,8 +324,8 @@ export function ContactDetailPanel({
             )}
             {contact.notes && (
               <div>
-                <p className="text-xs font-medium text-gray-500 mb-1">Notes</p>
-                <p className="whitespace-pre-wrap text-sm text-gray-700">
+                <p className="text-[11px] font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--crm-text-tertiary)" }}>Notes</p>
+                <p className="whitespace-pre-wrap text-[13px] text-gray-700 leading-relaxed">
                   {contact.notes}
                 </p>
               </div>
@@ -249,7 +334,7 @@ export function ContactDetailPanel({
             {/* AI Summary */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-medium text-gray-500">AI Summary</p>
+                <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--crm-text-tertiary)" }}>AI Summary</p>
                 <Button
                   variant="ghost"
                   size="xs"
@@ -265,7 +350,7 @@ export function ContactDetailPanel({
                 </Button>
               </div>
               {aiSummary && (
-                <p className="rounded-md bg-purple-50 p-2.5 text-sm text-purple-900">
+                <p className="rounded-xl bg-gray-50 p-3 text-[13px] text-gray-700 leading-relaxed">
                   {aiSummary}
                 </p>
               )}
@@ -274,7 +359,7 @@ export function ContactDetailPanel({
             {/* Suggested Tags */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-medium text-gray-500">Suggested Tags</p>
+                <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--crm-text-tertiary)" }}>Suggested Tags</p>
                 <Button
                   variant="ghost"
                   size="xs"
@@ -295,19 +380,19 @@ export function ContactDetailPanel({
                     <Badge
                       key={tag}
                       variant="outline"
-                      className="gap-1 border-purple-200 bg-purple-50 text-xs text-purple-700"
+                      className="gap-1 border-gray-200 bg-gray-50 text-xs text-gray-700"
                     >
                       {tag}
                       <button
                         onClick={() => acceptTag(tag)}
-                        className="text-green-600 hover:text-green-800"
+                        className="text-gray-400 hover:text-gray-900 transition-colors"
                         title="Accept"
                       >
                         ✓
                       </button>
                       <button
                         onClick={() => dismissTag(tag)}
-                        className="text-gray-400 hover:text-red-600"
+                        className="text-gray-300 hover:text-gray-900 transition-colors"
                         title="Dismiss"
                       >
                         ×
@@ -320,7 +405,7 @@ export function ContactDetailPanel({
           </div>
         </TabsContent>
 
-        <TabsContent value="timeline" className="overflow-y-auto px-4 pb-4">
+        <TabsContent value="timeline" className="overflow-y-auto px-6 pb-6">
           <InteractionTimeline interactions={contact.interactions} />
         </TabsContent>
       </Tabs>
@@ -331,8 +416,8 @@ export function ContactDetailPanel({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className="text-sm text-gray-900">{value}</p>
+      <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--crm-text-tertiary)" }}>{label}</p>
+      <p className="mt-0.5 text-[13px]" style={{ color: "var(--crm-text-primary)" }}>{value}</p>
     </div>
   );
 }
