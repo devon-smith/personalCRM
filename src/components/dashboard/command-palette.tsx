@@ -8,6 +8,8 @@ import {
   Activity,
   Settings,
   ClipboardPaste,
+  Inbox,
+  FileEdit,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -20,9 +22,9 @@ import {
 
 const pages = [
   { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/people", label: "People", icon: Users },
-  { href: "/circles", label: "Circles", icon: CircleDot },
   { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/circles", label: "Circles", icon: CircleDot },
+  { href: "/people", label: "People", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -59,6 +61,14 @@ export function CommandPalette({
             <CommandItem onSelect={handleQuickLog}>
               <ClipboardPaste className="mr-2 h-4 w-4" />
               Quick Log (Smart Paste)
+            </CommandItem>
+            <CommandItem onSelect={() => navigateTo("/dashboard#needs-response")}>
+              <Inbox className="mr-2 h-4 w-4" />
+              Who needs a response?
+            </CommandItem>
+            <CommandItem onSelect={() => navigateTo("/dashboard#drafts")}>
+              <FileEdit className="mr-2 h-4 w-4" />
+              Review drafts
             </CommandItem>
           </CommandGroup>
         )}

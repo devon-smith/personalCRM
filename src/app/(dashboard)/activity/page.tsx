@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { UnrespondedThreads } from "@/components/dashboard/unresponded-threads";
+import { NeedsResponse } from "@/components/dashboard/needs-response";
 
 export default function ActivityPage() {
   return (
@@ -10,14 +10,14 @@ export default function ActivityPage() {
       <div className="crm-animate-enter">
         <h1 className="ds-display-lg">Activity</h1>
         <p className="ds-body-sm mt-1" style={{ color: "var(--text-tertiary)" }}>
-          Messages awaiting your reply
+          People waiting on a reply from you
         </p>
       </div>
 
-      {/* Awaiting Reply */}
+      {/* Needs Response */}
       <Card className="crm-card border-0">
         <CardContent className="px-6 py-6">
-          <UnrespondedThreads limit={10} />
+          <NeedsResponse />
         </CardContent>
       </Card>
     </div>

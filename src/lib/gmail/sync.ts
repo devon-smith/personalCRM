@@ -56,6 +56,19 @@ function extractDisplayName(headerValue: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+/** Decode HTML entities that Gmail API returns in snippets. */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_match, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_match, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
 /**
  * Merge new unmatched senders into the running tally.
  * Keeps the top 50 by message count.
@@ -461,7 +474,7 @@ async function processMessage(
       fromName: isOutbound ? null : fromName,
       toEmail: toEmail,
       subject: subject?.slice(0, 255) ?? null,
-      snippet: detail.snippet?.slice(0, 500) ?? null,
+      snippet: detail.snippet ? decodeHtmlEntities(detail.snippet).slice(0, 500) : null,
       direction: isOutbound ? "OUTBOUND" : "INBOUND",
       occurredAt,
       contactId,
@@ -487,7 +500,7 @@ async function processMessage(
       type: "EMAIL",
       direction: isOutbound ? "OUTBOUND" : "INBOUND",
       subject: subject?.slice(0, 255) ?? null,
-      summary: detail.snippet?.slice(0, 500) ?? null,
+      summary: detail.snippet ? decodeHtmlEntities(detail.snippet).slice(0, 500) : null,
       occurredAt,
       sourceId: detail.id,
     },

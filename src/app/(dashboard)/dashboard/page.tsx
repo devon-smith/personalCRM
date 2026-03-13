@@ -23,6 +23,8 @@ import { ReviewQueue } from "@/components/sightings/review-queue";
 import { UpcomingBirthdays } from "@/components/dashboard/upcoming-birthdays";
 import { SmartScheduling } from "@/components/dashboard/smart-scheduling";
 import { LifeUpdates } from "@/components/dashboard/life-updates";
+import { DraftQueue } from "@/components/dashboard/draft-queue";
+
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -181,6 +183,9 @@ export default function DashboardPage() {
             <ActionItems />
           </CardContent>
         </Card>
+
+        {/* Draft Queue */}
+        <DraftQueueCard />
 
         {/* Smart Scheduling */}
         <SmartSchedulingCard />
@@ -546,6 +551,27 @@ function LifeUpdatesCard() {
     <Card className="crm-card border-0">
       <CardContent className="px-6 py-6">
         <LifeUpdates />
+      </CardContent>
+    </Card>
+  );
+}
+
+function DraftQueueCard() {
+  const { data } = useQuery<{ drafts: { id: string }[] }>({
+    queryKey: ["drafts", "DRAFT"],
+    queryFn: async () => {
+      const res = await fetch("/api/drafts?status=DRAFT");
+      if (!res.ok) return { drafts: [] };
+      return res.json();
+    },
+  });
+
+  if (!data?.drafts.length) return null;
+
+  return (
+    <Card className="crm-card border-0">
+      <CardContent className="px-6 py-6">
+        <DraftQueue />
       </CardContent>
     </Card>
   );

@@ -19,9 +19,9 @@ import { UserNav } from "@/components/auth/user-nav";
 
 const navItems = [
   { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/people", label: "People", icon: Users },
-  { href: "/circles", label: "Circles", icon: CircleDot },
   { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/circles", label: "Circles", icon: CircleDot },
+  { href: "/people", label: "People", icon: Users },
   { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/merge", label: "Merge", icon: Merge },
   { href: "/settings", label: "Settings", icon: Settings },

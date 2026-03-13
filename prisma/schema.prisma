@@ -30,6 +30,7 @@ model User {
   sightings            ContactSighting[]
   gmailSync            GmailSyncState?
   emailMessages        EmailMessage[]
+  drafts               Draft[]
 }
 
 model Account {
@@ -133,6 +134,7 @@ model Contact {
   journalEntries     JournalEntry[]
   changelog          ContactChangelog[]
   emailMessages      EmailMessage[]
+  drafts             Draft[]
 
   @@index([userId])
   @@index([email])
@@ -382,6 +384,42 @@ model EmailMessage {
 
   @@unique([userId, gmailId])
   @@index([userId, occurredAt])
+  @@index([contactId])
+}
+
+// ─── Drafts (persistent AI-generated messages) ──────────────
+
+enum DraftStatus {
+  DRAFT
+  SENT
+  DISCARDED
+}
+
+enum DraftType {
+  REPLY_EMAIL
+  CATCHING_UP
+  CONGRATULATE
+  ASK
+  FOLLOW_UP
+}
+
+model Draft {
+  id          String      @id @default(uuid())
+  userId      String
+  contactId   String
+  status      DraftStatus @default(DRAFT)
+  type        DraftType
+  tone        String      // casual, warm, professional, congratulatory, checking_in
+  content     String      @db.Text
+  subjectLine String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  sentAt      DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
   @@index([contactId])
 }
 

@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { generateDraft } from "@/lib/draft-generator";
+import { prisma } from "@/lib/prisma";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
+import type { DraftType } from "@/generated/prisma/client";
 
 const VALID_TONES: readonly string[] = ["casual", "warm", "professional", "congratulatory", "checking_in"];
 const VALID_CONTEXTS: readonly string[] = ["reply_email", "catching_up", "congratulate", "ask", "follow_up"];
+
+const CONTEXT_TO_TYPE: Record<string, DraftType> = {
+  reply_email: "REPLY_EMAIL",
+  catching_up: "CATCHING_UP",
+  congratulate: "CONGRATULATE",
+  ask: "ASK",
+  follow_up: "FOLLOW_UP",
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,13 +24,14 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { contactId, tone, context, contextDetail, threadSubject, threadSnippet } = body as {
+    const { contactId, tone, context, contextDetail, threadSubject, threadSnippet, variant } = body as {
       contactId: string;
       tone: string;
       context: string;
       contextDetail?: string;
       threadSubject?: string;
       threadSnippet?: string;
+      variant?: "quick" | "detailed";
     };
 
     if (!contactId || typeof contactId !== "string") {
@@ -43,7 +54,20 @@ export async function POST(req: NextRequest) {
       threadSnippet,
     });
 
-    return NextResponse.json(result);
+    // Persist the selected variant (default to detailed) as a Draft record
+    const selectedContent = variant === "quick" ? result.quick : result.detailed;
+    const draft = await prisma.draft.create({
+      data: {
+        userId: session.user.id,
+        contactId,
+        type: CONTEXT_TO_TYPE[context] ?? "CATCHING_UP",
+        tone,
+        content: selectedContent,
+        subjectLine: result.subjectLine,
+      },
+    });
+
+    return NextResponse.json({ ...result, draftId: draft.id });
   } catch (error) {
     console.error("[POST /api/drafts/generate]", error);
     return NextResponse.json(
