@@ -177,6 +177,46 @@ function isConversationEnder(summary: string | null): boolean {
   return false;
 }
 
+// ─── Email noise filter ──────────────────────────────────────
+
+/**
+ * Skip automated, transactional, and mass emails that shouldn't trigger
+ * a "needs response" alert. This supplements the general spam filter
+ * with email-specific heuristics.
+ */
+function shouldSkipEmailForNeedsResponse(
+  summary: string | null,
+  subject: string | null,
+): boolean {
+  const text = [summary, subject].filter(Boolean).join(" ").toLowerCase();
+  if (!text) return true; // Empty emails don't need response
+
+  // Automated / transactional
+  if (/\b(unsubscribe|opt[- ]?out|manage preferences|email preferences)\b/.test(text)) return true;
+  if (/\b(receipt|confirmation|order #|tracking|shipped|delivered)\b/.test(text)) return true;
+  if (/\b(notification|alert|reminder|automated|auto[- ]?reply|out of office)\b/.test(text)) return true;
+  if (/\b(noreply|no-reply|donotreply|do-not-reply)\b/.test(text)) return true;
+
+  // Newsletters and mass emails
+  if (/\b(newsletter|digest|weekly|monthly|daily brief|morning brew)\b/.test(text)) return true;
+  if (/\b(view in browser|view online|email client)\b/.test(text)) return true;
+
+  // Financial / billing
+  if (/\b(statement|invoice|payment (due|received|confirmed)|billing)\b/.test(text)) return true;
+  if (/\b(your (account|balance|subscription)|plan (expires|renew))\b/.test(text)) return true;
+
+  // Security / verification
+  if (/\b(verify your|confirm your|security code|one[- ]?time|2fa|sign[- ]?in attempt)\b/.test(text)) return true;
+
+  // Marketing
+  if (/\b(sale|% off|limited time|act now|exclusive offer|promo code)\b/.test(text)) return true;
+
+  // Very short subject with no body content — likely automated
+  if (subject && subject.length < 5 && (!summary || summary.length < 10)) return true;
+
+  return false;
+}
+
 // ─── Main detection ──────────────────────────────────────────
 
 export async function detectNeedsResponse(
@@ -320,6 +360,11 @@ export async function detectNeedsResponse(
     const newestMessage = unrepliedMessages[0];
     if (looksLikeSpam(newestMessage.summary, newestMessage.subject)) continue;
     if (isConversationEnder(newestMessage.summary)) continue;
+
+    // Extra email-specific filter: skip automated/transactional emails
+    if (channel === "gmail" || channel === "email") {
+      if (shouldSkipEmailForNeedsResponse(newestMessage.summary, newestMessage.subject)) continue;
+    }
 
     const messageCount = unrepliedMessages.length;
     const waitingMs = now - new Date(mostRecent.occurredAt).getTime();

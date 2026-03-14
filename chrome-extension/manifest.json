@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Personal CRM",
+  "version": "1.0.0",
+  "description": "Your personal CRM, integrated with LinkedIn",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "http://localhost:3000/*",
+    "http://localhost:3003/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/in/*"],
+      "js": ["content-profile.js"],
+      "css": ["sidebar.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.linkedin.com/messaging/*"],
+      "js": ["content-messaging.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/mynetwork/*",
+        "https://www.linkedin.com/feed/*"
+      ],
+      "js": ["content-feed.js"],
+      "css": ["sidebar.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
