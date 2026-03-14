@@ -11,6 +11,8 @@ import { Trash2, Plus } from "lucide-react";
 import { CircleIcon } from "@/components/ui/circle-icon";
 import Link from "next/link";
 import { Plug } from "lucide-react";
+import { NotionSync } from "@/components/settings/notion-sync";
+import { NicknameMatches } from "@/components/settings/nickname-matches";
 
 export default function SettingsPage() {
   return (
@@ -42,6 +44,16 @@ export default function SettingsPage() {
         </div>
         <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
       </Link>
+
+      {/* Notion Message Sync */}
+      <section className="crm-animate-enter" style={{ animationDelay: "60ms" }}>
+        <NotionSync />
+      </section>
+
+      {/* Nickname / Duplicate Detection */}
+      <section className="crm-animate-enter" style={{ animationDelay: "80ms" }}>
+        <NicknameMatches />
+      </section>
 
       <CirclesSection />
     </div>

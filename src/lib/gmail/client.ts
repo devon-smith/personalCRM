@@ -116,7 +116,25 @@ export async function getAllGoogleAccessTokens(
 }
 
 /**
+ * Make an authenticated fetch using a pre-resolved token.
+ */
+export function googleFetchWithToken(
+  token: string,
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  return fetch(url, {
+    ...init,
+    headers: {
+      ...init?.headers,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+/**
  * Make an authenticated request to a Google API.
+ * Uses the first available Google account for the user.
  */
 export async function googleFetch(
   userId: string,
@@ -128,11 +146,5 @@ export async function googleFetch(
     throw new Error("No valid Google access token. User may need to reconnect.");
   }
 
-  return fetch(url, {
-    ...init,
-    headers: {
-      ...init?.headers,
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return googleFetchWithToken(token, url, init);
 }

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { googleFetch, getAllGoogleAccessTokens } from "./client";
+import { googleFetch, googleFetchWithToken, getAllGoogleAccessTokens } from "./client";
 
 interface GmailMessage {
   id: string;
@@ -34,13 +34,6 @@ interface GmailHistoryResponse {
 type ProcessResult =
   | { matched: true }
   | { matched: false; unmatchedEmail: string | null };
-
-/** Make authenticated fetch using a pre-resolved token */
-function googleFetchWithToken(token: string, url: string): Promise<Response> {
-  return fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-}
 
 function getHeader(headers: Array<{ name: string; value: string }>, name: string): string | null {
   return headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
@@ -499,6 +492,7 @@ async function processMessage(
       contactId,
       type: "EMAIL",
       direction: isOutbound ? "OUTBOUND" : "INBOUND",
+      channel: "gmail",
       subject: subject?.slice(0, 255) ?? null,
       summary: detail.snippet ? decodeHtmlEntities(detail.snippet).slice(0, 500) : null,
       occurredAt,

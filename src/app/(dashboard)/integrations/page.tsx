@@ -121,9 +121,9 @@ export default function IntegrationsPage() {
       return res.json() as Promise<IMessageSyncResult>;
     },
     onSuccess: (result) => {
-      toast(result.interactionsLogged > 0
-        ? `iMessage: ${result.interactionsLogged} conversations logged`
-        : "All conversations already synced");
+      toast(result.messagesCreated > 0
+        ? `iMessage: ${result.messagesCreated} messages logged`
+        : "All messages already synced");
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
     },
     onError: (err) => toast.error(err.message),

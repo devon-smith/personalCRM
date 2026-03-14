@@ -239,6 +239,70 @@ export async function getMessagesForHandle(
 }
 
 /**
+ * Get ALL individual messages from the last N days across all handles.
+ * Used for bulk backfill — returns every message in one query.
+ * Filters out short-code SMS (handles < 7 digits) and empty messages.
+ */
+export async function getAllMessages(
+  days: number = 90,
+): Promise<IMessageSyncResult> {
+  const accessError = checkIMessageAccess();
+  if (accessError) {
+    return { messages: [], total: 0, error: accessError };
+  }
+
+  const minDate = daysAgoAppleTimestamp(days);
+
+  const query = `
+    SELECT
+      m.guid,
+      m.text,
+      m.date,
+      m.is_from_me AS isFromMe,
+      h.id AS handleId,
+      h.service AS service
+    FROM message m
+    JOIN handle h ON m.handle_id = h.ROWID
+    WHERE m.date > ${minDate}
+      AND m.is_empty = 0
+      AND m.is_service_message = 0
+      AND h.id IS NOT NULL
+      AND h.id != ''
+      AND m.text IS NOT NULL
+      AND LENGTH(m.text) > 0
+    ORDER BY m.date ASC;
+  `.trim();
+
+  interface RawMsg {
+    guid: string;
+    text: string | null;
+    date: number;
+    isFromMe: number;
+    handleId: string;
+    service: string;
+  }
+
+  try {
+    const rows = await runQuery<RawMsg>(query);
+
+    const messages: IMessageDetail[] = rows.map((row) => ({
+      guid: row.guid,
+      text: row.text,
+      date: appleTimestampToDate(row.date),
+      isFromMe: row.isFromMe === 1,
+      handleId: row.handleId,
+      service: row.service,
+    }));
+
+    return { messages, total: messages.length, error: null };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to read messages";
+    return { messages: [], total: 0, error: message };
+  }
+}
+
+/**
  * Get all messages from the last N days, grouped by day and handle.
  * Returns one "interaction summary" per day per handle — useful for
  * creating interaction records without one per message.

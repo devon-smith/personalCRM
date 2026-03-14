@@ -29,6 +29,8 @@ model User {
   actionItems          ActionItem[]
   sightings            ContactSighting[]
   gmailSync            GmailSyncState?
+  notionSync           NotionSyncState?
+  imessageSyncStates   IMessageSyncState[]
   emailMessages        EmailMessage[]
   drafts               Draft[]
 }
@@ -102,12 +104,15 @@ model Contact {
   userId          String
   name            String
   email            String?
-  additionalEmails String[]  @default([])
-  phone           String?
-  company         String?
-  role            String?
-  tier            ContactTier @default(PROFESSIONAL)
-  tags            String[]
+  additionalEmails  String[]  @default([])
+  phone             String?
+  additionalPhones  String[]  @default([])
+  company           String?
+  role              String?
+  tier              ContactTier @default(PROFESSIONAL)
+  tags              String[]
+  nicknames         String[]  @default([])
+  aliases           String[]  @default([])
   linkedinUrl     String?
   city            String?
   state           String?
@@ -438,4 +443,55 @@ model GmailSyncState {
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Snoozed Contacts (needs-response snooze) ──────────────
+
+model SnoozedContact {
+  id        String   @id @default(uuid())
+  userId    String
+  contactId String
+  until     DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([userId, contactId])
+  @@index([userId, until])
+}
+
+// ─── iMessage Sync State (Mac chat.db → individual messages) ─────────
+
+model IMessageSyncState {
+  id              String    @id @default(uuid())
+  userId          String
+  handleId        String    // phone number or email
+  service         String    // "iMessage" or "SMS"
+  lastMessageGuid String?   // GUID of the most recent synced message
+  lastSyncAt      DateTime?
+  messageCount    Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, handleId])
+  @@index([userId])
+}
+
+// ─── Notion Sync State (iMessage/SMS via iOS Shortcuts → Notion) ─────
+
+model NotionSyncState {
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  notionToken  String
+  notionPageId String
+  userHandles  String?
+  lastBlockId  String?
+  lastSyncAt   DateTime?
+  lastResult   String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

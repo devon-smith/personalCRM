@@ -55,8 +55,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   const allowedFields = [
-    "name", "email", "additionalEmails", "phone", "company", "role", "tier",
-    "tags", "linkedinUrl", "city", "state", "country",
+    "name", "email", "additionalEmails", "phone", "additionalPhones",
+    "company", "role", "tier", "tags", "aliases", "nicknames",
+    "linkedinUrl", "city", "state", "country",
     "latitude", "longitude", "notes", "followUpDays", "avatarUrl",
     "birthday", "howWeMet",
   ] as const;

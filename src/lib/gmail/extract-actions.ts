@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { googleFetch } from "./client";
+import { googleFetch, getAllGoogleAccessTokens, googleFetchWithToken } from "./client";
 import Anthropic from "@anthropic-ai/sdk";
 
 const hasApiKey =
@@ -36,16 +36,18 @@ interface GmailFullMessage {
   snippet: string;
 }
 
-interface ExtractedAction {
-  title: string;
-  type: "action" | "follow_up" | "waiting";
-  context: string;
-  dueHint: string | null; // e.g. "by Friday", "next week", "ASAP"
+interface GmailListResponse {
+  messages?: Array<{ id: string; threadId: string }>;
+  nextPageToken?: string;
 }
 
-interface ThreadAnalysis {
-  actions: ExtractedAction[];
-  conversationDone: boolean;
+type Classification = "action_required" | "invitation" | "fyi";
+
+interface AIClassification {
+  readonly classification: Classification;
+  readonly title: string | null;
+  readonly urgency: "low" | "medium" | "high" | null;
+  readonly reasoning: string;
 }
 
 export interface ExtractResult {
@@ -119,7 +121,6 @@ function getMessageBody(message: GmailFullMessage): string {
  * Clean up email body: strip signatures, forwarded headers, excessive whitespace.
  */
 function cleanEmailBody(raw: string): string {
-  // Trim at common signature markers
   const sigMarkers = [
     /^--\s*$/m,
     /^Sent from my /m,
@@ -136,7 +137,6 @@ function cleanEmailBody(raw: string): string {
     }
   }
 
-  // Collapse whitespace
   return body.replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -144,42 +144,126 @@ function cleanEmailBody(raw: string): string {
 
 /**
  * Fetch recent threads with full message bodies.
+ * Paginates through all messages in the time window.
  */
 async function fetchRecentThreads(
   userId: string,
-  maxThreads: number = 20,
+  days: number = 90,
+  maxThreads: number = 200,
 ): Promise<GmailThread[]> {
-  // Get recent message IDs (last 7 days)
-  const after = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
-  const listUrl = new URL(
-    "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-  );
-  listUrl.searchParams.set("q", `after:${after} in:inbox`);
-  listUrl.searchParams.set("maxResults", "50");
+  const after = Math.floor((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
+  const query = `after:${after} in:inbox -category:promotions -category:social -category:updates`;
 
-  const listRes = await googleFetch(userId, listUrl.toString());
-  if (!listRes.ok) throw new Error(`Gmail list error: ${listRes.status}`);
+  const allThreadIds = new Set<string>();
+  let pageToken: string | undefined;
 
-  const listData = (await listRes.json()) as {
-    messages?: Array<{ id: string; threadId: string }>;
-  };
+  // Paginate through message list to collect unique thread IDs
+  do {
+    const listUrl = new URL(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+    );
+    listUrl.searchParams.set("q", query);
+    listUrl.searchParams.set("maxResults", "100");
+    if (pageToken) listUrl.searchParams.set("pageToken", pageToken);
 
-  if (!listData.messages?.length) return [];
+    const listRes = await googleFetch(userId, listUrl.toString());
+    if (!listRes.ok) {
+      console.error(`[extract-actions] Gmail list error: ${listRes.status}`);
+      break;
+    }
 
-  // Collect unique thread IDs (most recent first)
-  const threadIds = [
-    ...new Set(listData.messages.map((m) => m.threadId)),
-  ].slice(0, maxThreads);
+    const listData = (await listRes.json()) as GmailListResponse;
+    for (const msg of listData.messages ?? []) {
+      allThreadIds.add(msg.threadId);
+    }
 
-  // Fetch each thread with full content
+    pageToken = listData.nextPageToken;
+
+    if (allThreadIds.size >= maxThreads) break;
+  } while (pageToken);
+
+  // Take up to maxThreads
+  const threadIds = [...allThreadIds].slice(0, maxThreads);
+
+  // Fetch each thread with full content (batched)
   const threads: GmailThread[] = [];
-  for (const threadId of threadIds) {
-    const threadUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`;
-    const threadRes = await googleFetch(userId, threadUrl);
-    if (!threadRes.ok) continue;
+  const BATCH_SIZE = 10;
 
-    const thread = (await threadRes.json()) as GmailThread;
-    threads.push(thread);
+  for (let i = 0; i < threadIds.length; i += BATCH_SIZE) {
+    const batch = threadIds.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (threadId) => {
+        const threadUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`;
+        const threadRes = await googleFetch(userId, threadUrl);
+        if (!threadRes.ok) return null;
+        return (await threadRes.json()) as GmailThread;
+      }),
+    );
+
+    for (const thread of results) {
+      if (thread) threads.push(thread);
+    }
+  }
+
+  return threads;
+}
+
+/**
+ * Fetch threads using a specific account token (for multi-account backfill).
+ */
+async function fetchRecentThreadsWithToken(
+  token: string,
+  days: number = 90,
+  maxThreads: number = 200,
+): Promise<GmailThread[]> {
+  const after = Math.floor((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
+  const query = `after:${after} in:inbox -category:promotions -category:social -category:updates`;
+
+  const allThreadIds = new Set<string>();
+  let pageToken: string | undefined;
+
+  do {
+    const listUrl = new URL(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+    );
+    listUrl.searchParams.set("q", query);
+    listUrl.searchParams.set("maxResults", "100");
+    if (pageToken) listUrl.searchParams.set("pageToken", pageToken);
+
+    const listRes = await googleFetchWithToken(token, listUrl.toString());
+    if (!listRes.ok) {
+      console.error(`[extract-actions] Gmail list error: ${listRes.status}`);
+      break;
+    }
+
+    const listData = (await listRes.json()) as GmailListResponse;
+    for (const msg of listData.messages ?? []) {
+      allThreadIds.add(msg.threadId);
+    }
+
+    pageToken = listData.nextPageToken;
+
+    if (allThreadIds.size >= maxThreads) break;
+  } while (pageToken);
+
+  const threadIds = [...allThreadIds].slice(0, maxThreads);
+  const threads: GmailThread[] = [];
+  const BATCH_SIZE = 10;
+
+  for (let i = 0; i < threadIds.length; i += BATCH_SIZE) {
+    const batch = threadIds.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (threadId) => {
+        const threadUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`;
+        const threadRes = await googleFetchWithToken(token, threadUrl);
+        if (!threadRes.ok) return null;
+        return (await threadRes.json()) as GmailThread;
+      }),
+    );
+
+    for (const thread of results) {
+      if (thread) threads.push(thread);
+    }
   }
 
   return threads;
@@ -189,11 +273,13 @@ async function fetchRecentThreads(
 
 function buildThreadSummary(
   thread: GmailThread,
-  userEmail: string,
-): string | null {
+  userEmails: Set<string>,
+): { summary: string; lastSenderEmail: string | null; isInbound: boolean } | null {
   // Take the last 3 messages in the thread for context
   const recentMessages = thread.messages.slice(-3);
   const parts: string[] = [];
+  let lastSenderEmail: string | null = null;
+  let lastIsInbound = false;
 
   for (const msg of recentMessages) {
     const from = getHeader(msg.payload.headers, "From") ?? "Unknown";
@@ -201,11 +287,14 @@ function buildThreadSummary(
     const subject = getHeader(msg.payload.headers, "Subject") ?? "(no subject)";
     const date = new Date(parseInt(msg.internalDate)).toLocaleDateString();
     const fromEmail = extractEmail(from);
-    const direction = fromEmail === userEmail ? "SENT" : "RECEIVED";
+    const isOutbound = fromEmail ? userEmails.has(fromEmail) : false;
+    const direction = isOutbound ? "SENT" : "RECEIVED";
+
+    lastSenderEmail = fromEmail;
+    lastIsInbound = !isOutbound;
 
     let body = getMessageBody(msg);
     body = cleanEmailBody(body);
-    // Limit body length per message
     if (body.length > 800) {
       body = body.slice(0, 800) + "...";
     }
@@ -216,71 +305,102 @@ function buildThreadSummary(
   }
 
   if (parts.length === 0) return null;
-  return parts.join("\n\n---\n\n");
+
+  return {
+    summary: parts.join("\n\n---\n\n"),
+    lastSenderEmail,
+    isInbound: lastIsInbound,
+  };
 }
 
-async function analyzeThread(
+/**
+ * Classify an email thread using the strict prompt matching message-actions.ts.
+ */
+async function classifyThread(
   threadSummary: string,
-  userName: string,
-): Promise<ThreadAnalysis> {
-  if (!anthropic) {
-    return { actions: [], conversationDone: false };
-  }
-
-  const message = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 500,
-    messages: [
-      {
-        role: "user",
-        content: `Analyze this email thread for ${userName}. Extract any action items, follow-ups, or things they need to do.
-
-EMAIL THREAD:
-${threadSummary}
-
-Rules:
-- Only extract items where ${userName} needs to take action or follow up
-- "action" = something they need to DO (reply, send something, complete a task)
-- "follow_up" = something to check back on later (waiting for a response, deadline approaching)
-- "waiting" = they're waiting on someone else (no action needed yet, but track it)
-- If the conversation looks resolved/complete, mark conversationDone as true
-- Skip pleasantries, newsletters, automated emails — only real tasks
-- Be specific in titles: "Reply to Sarah about meeting time" not "Follow up"
-- If there's a due date mentioned, include it in dueHint
-
-Return JSON:
-{
-  "actions": [
-    { "title": "...", "type": "action", "context": "brief quote from email", "dueHint": "by Friday" }
-  ],
-  "conversationDone": false
-}
-
-If no actions found, return { "actions": [], "conversationDone": true }`,
-      },
-    ],
-  });
-
-  const text =
-    message.content[0].type === "text" ? message.content[0].text : "";
+  senderName: string,
+): Promise<AIClassification | null> {
+  if (!anthropic) return null;
 
   try {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
-      return {
-        actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-        conversationDone: parsed.conversationDone ?? false,
-      };
-    }
-  } catch {
-    // fallback
-  }
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 300,
+      messages: [
+        {
+          role: "user",
+          content: `You are classifying an email thread for a personal CRM. Your job is to determine if this thread contains a DIRECT REQUEST for the recipient to take a specific real-world action.
 
-  return { actions: [], conversationDone: false };
+Email thread (most recent messages from ${senderName}):
+"${threadSummary.slice(0, 1500)}"
+
+An action item means the sender is EXPLICITLY asking the recipient to DO something specific. The key word is "asking" — the sender must be directing a request AT the recipient.
+
+Classify as "action_required" ONLY if ALL of these are true:
+1. The sender is making a request directed at the recipient (not sharing info)
+2. The request requires a real-world action beyond just replying to the email
+3. The action is specific and concrete (not vague like "let's catch up sometime")
+
+Examples of action_required:
+- "Can you send me the deck?" → YES (send something)
+- "Can you intro me to Sarah?" → YES (make a connection)
+- "Please book the restaurant for Saturday" → YES (make a reservation)
+- "Can you review this doc and give feedback?" → YES (review something)
+- "You said you'd send me that link" → YES (unfulfilled commitment)
+- "Can you Venmo me $20 for last night?" → YES (send money)
+
+Examples that are NOT action_required:
+- "Here's the update on the project" → NO (sharing info)
+- "Thanks for sending that over" → NO (acknowledgment)
+- "Let me know if you have questions" → NO (open-ended)
+- "Looking forward to catching up" → NO (vague)
+- "FYI the meeting got moved to 3pm" → NO (informational)
+- "Great work on the presentation!" → NO (praise)
+- "I'll send you the details tomorrow" → NO (they'll do it, not you)
+- Newsletter or automated emails → NO (not personal)
+
+Classify as "invitation" ONLY if the sender is EXPLICITLY inviting the recipient to a specific event with a concrete time, date, or place mentioned:
+- "Dinner at my place Friday at 7?" → YES (specific event + time + place)
+- "Want to play tennis Saturday morning?" → YES (specific activity + time)
+- "You're invited to my birthday party March 20th" → YES (specific event + date)
+- "We should hang out sometime" → NO (too vague)
+- "Want to grab lunch?" → NO (no specific time/place)
+
+If there is no specific time, date, or place mentioned, it is NOT an invitation.
+
+Everything else is "fyi". When in doubt, classify as "fyi". It is much better to miss an action item than to create a false one.
+
+Return JSON only:
+{
+  "classification": "action_required",
+  "title": "Send Cooper the pitch deck",
+  "urgency": "medium",
+  "reasoning": "one sentence why"
+}
+
+If classification is "fyi", set title to null and urgency to null.`,
+        },
+      ],
+    });
+
+    const text =
+      message.content[0].type === "text" ? message.content[0].text : "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    return JSON.parse(jsonMatch[0]) as AIClassification;
+  } catch (error) {
+    console.error("[extract-actions] AI classification failed:", error);
+    return null;
+  }
 }
 
 // ─── Main extraction pipeline ───
+
+const ACTIONABLE_CLASSIFICATIONS: ReadonlySet<Classification> = new Set([
+  "action_required",
+  "invitation",
+]);
 
 export async function extractActionItems(
   userId: string,
@@ -290,19 +410,39 @@ export async function extractActionItems(
   const userName = user?.name ?? "the user";
   if (!userEmail) throw new Error("User has no email address");
 
-  // 1. Fetch recent threads
-  const threads = await fetchRecentThreads(userId, 20);
+  // Build set of all user emails
+  const syncState = await prisma.gmailSyncState.findUnique({
+    where: { userId },
+    select: { additionalUserEmails: true },
+  });
+  const userEmails = new Set<string>();
+  userEmails.add(userEmail);
+  for (const e of syncState?.additionalUserEmails ?? []) {
+    userEmails.add(e.toLowerCase());
+  }
 
-  // 2. Load contacts for matching
+  // 1. Fetch recent threads (7 days for regular scan, small batch)
+  const threads = await fetchRecentThreads(userId, 7, 30);
+
+  // 2. Load contacts for matching (including additionalEmails)
   const contacts = await prisma.contact.findMany({
     where: { userId, email: { not: null } },
-    select: { id: true, email: true },
+    select: { id: true, name: true, email: true, additionalEmails: true },
   });
-  const contactByEmail = new Map(
-    contacts.filter((c) => c.email).map((c) => [c.email!.toLowerCase(), c.id]),
-  );
+  const contactByEmail = new Map<string, string>();
+  const contactNameByEmail = new Map<string, string>();
+  for (const c of contacts) {
+    if (c.email) {
+      contactByEmail.set(c.email.toLowerCase(), c.id);
+      contactNameByEmail.set(c.email.toLowerCase(), c.name);
+    }
+    for (const ae of c.additionalEmails) {
+      contactByEmail.set(ae.toLowerCase(), c.id);
+      contactNameByEmail.set(ae.toLowerCase(), c.name);
+    }
+  }
 
-  // 3. Load existing action item sourceIds to avoid reprocessing
+  // 3. Load existing action item threadIds to avoid reprocessing
   const existingThreadIds = new Set(
     (
       await prisma.actionItem.findMany({
@@ -318,93 +458,248 @@ export async function extractActionItems(
 
   // 4. Analyze each thread
   for (const thread of threads) {
-    // Skip already-processed threads
     if (existingThreadIds.has(thread.id)) continue;
 
-    const summary = buildThreadSummary(thread, userEmail);
-    if (!summary) continue;
+    const result = buildThreadSummary(thread, userEmails);
+    if (!result) continue;
+
+    // Only classify inbound threads (someone sent to us)
+    if (!result.isInbound) {
+      // Mark as processed so we don't re-check
+      const lastMsg = thread.messages[thread.messages.length - 1];
+      await prisma.actionItem.create({
+        data: {
+          userId,
+          status: "DISMISSED",
+          title: "Outbound",
+          sourceId: `email:${lastMsg.id}`,
+          threadId: thread.id,
+        },
+      });
+      continue;
+    }
 
     threadsAnalyzed++;
 
-    const analysis = await analyzeThread(summary, userName);
+    const senderName = result.lastSenderEmail
+      ? (contactNameByEmail.get(result.lastSenderEmail) ?? result.lastSenderEmail)
+      : "Unknown";
 
-    if (analysis.conversationDone || analysis.actions.length === 0) continue;
+    const classification = await classifyThread(result.summary, senderName);
 
-    // Find the counterparty contact
+    if (!classification) continue;
+
     const lastMsg = thread.messages[thread.messages.length - 1];
-    const fromHeader = getHeader(lastMsg.payload.headers, "From") ?? "";
-    const toHeader = getHeader(lastMsg.payload.headers, "To") ?? "";
-    const fromEmail = extractEmail(fromHeader);
-    const toEmail = extractEmail(toHeader);
-    const counterpartyEmail =
-      fromEmail === userEmail ? toEmail : fromEmail;
+    const counterpartyEmail = result.lastSenderEmail;
     const contactId = counterpartyEmail
       ? contactByEmail.get(counterpartyEmail) ?? null
       : null;
 
-    // 5. Save action items
-    for (const action of analysis.actions) {
-      actionsFound++;
-
-      // Parse due date hint
-      let dueDate: Date | null = null;
-      if (action.dueHint) {
-        dueDate = parseDueHint(action.dueHint);
-      }
-
+    if (!ACTIONABLE_CLASSIFICATIONS.has(classification.classification)) {
+      // Store dismissed marker
       await prisma.actionItem.create({
         data: {
           userId,
           contactId,
-          title: action.title.slice(0, 255),
-          context: action.context?.slice(0, 500) ?? null,
-          sourceId: lastMsg.id,
+          status: "DISMISSED",
+          title: classification.title || "FYI",
+          context: result.summary.slice(0, 200),
+          sourceId: `email:${lastMsg.id}`,
           threadId: thread.id,
-          dueDate,
-          status: action.type === "waiting" ? "OPEN" : "OPEN",
         },
       });
-      actionsSaved++;
+      continue;
     }
+
+    actionsFound++;
+
+    // Get subject and preview
+    const subject = getHeader(lastMsg.payload.headers, "Subject");
+    const preview = getMessageBody(lastMsg);
+    const cleanPreview = cleanEmailBody(preview).slice(0, 200);
+
+    await prisma.actionItem.create({
+      data: {
+        userId,
+        contactId,
+        status: "OPEN",
+        title: classification.title || "Action needed",
+        context: JSON.stringify({
+          classification: classification.classification,
+          urgency: classification.urgency ?? "medium",
+          reasoning: classification.reasoning,
+          channel: "gmail",
+          preview: cleanPreview,
+          occurredAt: new Date(parseInt(lastMsg.internalDate)).toISOString(),
+        }),
+        sourceId: `email:${lastMsg.id}`,
+        threadId: thread.id,
+      },
+    });
+    actionsSaved++;
   }
 
   return { threadsAnalyzed, actionsFound, actionsSaved };
 }
 
-/**
- * Parse natural language due date hints into actual dates.
- */
-function parseDueHint(hint: string): Date | null {
-  const lower = hint.toLowerCase().trim();
-  const now = new Date();
+// ─── Backfill extraction (90 days, all accounts) ───
 
-  if (lower.includes("asap") || lower.includes("urgent") || lower.includes("today")) {
-    return now;
-  }
-  if (lower.includes("tomorrow")) {
-    return new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  }
-  if (lower.includes("end of week") || lower.includes("this week") || lower.includes("by friday")) {
-    const daysUntilFriday = (5 - now.getDay() + 7) % 7 || 7;
-    return new Date(now.getTime() + daysUntilFriday * 24 * 60 * 60 * 1000);
-  }
-  if (lower.includes("next week") || lower.includes("by monday")) {
-    const daysUntilMonday = (1 - now.getDay() + 7) % 7 || 7;
-    return new Date(now.getTime() + daysUntilMonday * 24 * 60 * 60 * 1000);
-  }
-  if (lower.includes("end of month") || lower.includes("this month")) {
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return endOfMonth;
+export async function extractActionItemsBackfill(
+  userId: string,
+  days: number = 90,
+): Promise<ExtractResult> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const userEmail = user?.email?.toLowerCase();
+  const userName = user?.name ?? "the user";
+  if (!userEmail) throw new Error("User has no email address");
+
+  // Build set of all user emails
+  const syncState = await prisma.gmailSyncState.findUnique({
+    where: { userId },
+    select: { additionalUserEmails: true },
+  });
+  const userEmails = new Set<string>();
+  userEmails.add(userEmail);
+  for (const e of syncState?.additionalUserEmails ?? []) {
+    userEmails.add(e.toLowerCase());
   }
 
-  // Try day names
-  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  for (let i = 0; i < days.length; i++) {
-    if (lower.includes(days[i])) {
-      const daysUntil = (i - now.getDay() + 7) % 7 || 7;
-      return new Date(now.getTime() + daysUntil * 24 * 60 * 60 * 1000);
+  // Get all account tokens
+  const accountTokens = await getAllGoogleAccessTokens(userId);
+  if (accountTokens.length === 0) {
+    console.error("[extract-actions] No valid Google tokens");
+    return { threadsAnalyzed: 0, actionsFound: 0, actionsSaved: 0 };
+  }
+
+  // Fetch threads from all accounts
+  const allThreads: GmailThread[] = [];
+  const seenThreadIds = new Set<string>();
+
+  for (const { token } of accountTokens) {
+    const threads = await fetchRecentThreadsWithToken(token, days, 200);
+    for (const thread of threads) {
+      if (!seenThreadIds.has(thread.id)) {
+        seenThreadIds.add(thread.id);
+        allThreads.push(thread);
+      }
     }
   }
 
-  return null;
+  console.log(`[extract-actions] Backfill: ${allThreads.length} threads from ${days} days across ${accountTokens.length} accounts`);
+
+  // Load contacts for matching (including additionalEmails)
+  const contacts = await prisma.contact.findMany({
+    where: { userId, email: { not: null } },
+    select: { id: true, name: true, email: true, additionalEmails: true },
+  });
+  const contactByEmail = new Map<string, string>();
+  const contactNameByEmail = new Map<string, string>();
+  for (const c of contacts) {
+    if (c.email) {
+      contactByEmail.set(c.email.toLowerCase(), c.id);
+      contactNameByEmail.set(c.email.toLowerCase(), c.name);
+    }
+    for (const ae of c.additionalEmails) {
+      contactByEmail.set(ae.toLowerCase(), c.id);
+      contactNameByEmail.set(ae.toLowerCase(), c.name);
+    }
+  }
+
+  // Load existing action item threadIds to avoid reprocessing
+  const existingThreadIds = new Set(
+    (
+      await prisma.actionItem.findMany({
+        where: { userId, threadId: { not: null } },
+        select: { threadId: true },
+      })
+    ).map((a) => a.threadId!),
+  );
+
+  let threadsAnalyzed = 0;
+  let actionsFound = 0;
+  let actionsSaved = 0;
+  const MAX_CLASSIFICATIONS = 100; // Cap AI calls per backfill run
+
+  for (const thread of allThreads) {
+    if (threadsAnalyzed >= MAX_CLASSIFICATIONS) break;
+    if (existingThreadIds.has(thread.id)) continue;
+
+    const result = buildThreadSummary(thread, userEmails);
+    if (!result) continue;
+
+    // Only classify inbound threads
+    if (!result.isInbound) {
+      const lastMsg = thread.messages[thread.messages.length - 1];
+      await prisma.actionItem.create({
+        data: {
+          userId,
+          status: "DISMISSED",
+          title: "Outbound",
+          sourceId: `email:${lastMsg.id}`,
+          threadId: thread.id,
+        },
+      });
+      continue;
+    }
+
+    threadsAnalyzed++;
+
+    const senderName = result.lastSenderEmail
+      ? (contactNameByEmail.get(result.lastSenderEmail) ?? result.lastSenderEmail)
+      : "Unknown";
+
+    const classification = await classifyThread(result.summary, senderName);
+
+    if (!classification) continue;
+
+    const lastMsg = thread.messages[thread.messages.length - 1];
+    const counterpartyEmail = result.lastSenderEmail;
+    const contactId = counterpartyEmail
+      ? contactByEmail.get(counterpartyEmail) ?? null
+      : null;
+
+    if (!ACTIONABLE_CLASSIFICATIONS.has(classification.classification)) {
+      await prisma.actionItem.create({
+        data: {
+          userId,
+          contactId,
+          status: "DISMISSED",
+          title: classification.title || "FYI",
+          context: result.summary.slice(0, 200),
+          sourceId: `email:${lastMsg.id}`,
+          threadId: thread.id,
+        },
+      });
+      continue;
+    }
+
+    actionsFound++;
+
+    const preview = getMessageBody(lastMsg);
+    const cleanPreview = cleanEmailBody(preview).slice(0, 200);
+
+    await prisma.actionItem.create({
+      data: {
+        userId,
+        contactId,
+        status: "OPEN",
+        title: classification.title || "Action needed",
+        context: JSON.stringify({
+          classification: classification.classification,
+          urgency: classification.urgency ?? "medium",
+          reasoning: classification.reasoning,
+          channel: "gmail",
+          preview: cleanPreview,
+          occurredAt: new Date(parseInt(lastMsg.internalDate)).toISOString(),
+        }),
+        sourceId: `email:${lastMsg.id}`,
+        threadId: thread.id,
+      },
+    });
+    actionsSaved++;
+  }
+
+  console.log(`[extract-actions] Backfill complete: ${threadsAnalyzed} analyzed, ${actionsFound} found, ${actionsSaved} saved`);
+
+  return { threadsAnalyzed, actionsFound, actionsSaved };
 }

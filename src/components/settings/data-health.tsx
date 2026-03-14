@@ -325,12 +325,12 @@ export function DataHealth() {
     },
     onSuccess: (result) => {
       const parts: string[] = [];
-      if (result.interactionsLogged > 0) parts.push(`${result.interactionsLogged} conversations logged`);
+      if (result.messagesCreated > 0) parts.push(`${result.messagesCreated} messages logged`);
       if (result.contactsMatched > 0) parts.push(`${result.contactsMatched} contacts matched`);
       if (parts.length > 0) {
         toast(`iMessage: ${parts.join(", ")}`);
       } else {
-        toast(`Scanned ${result.conversationsScanned} conversations — all already synced`);
+        toast(`Scanned ${result.handlesScanned} conversations — all already synced`);
       }
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
@@ -618,18 +618,18 @@ export function DataHealth() {
             {syncIMessage.isSuccess && syncIMessage.data ? (
               <div className="mt-1.5">
                 <p className="text-[12px] text-[#7B8189]">
-                  {(syncIMessage.data.interactionsLogged > 0 || syncIMessage.data.contactsMatched > 0) ? (
+                  {(syncIMessage.data.messagesCreated > 0 || syncIMessage.data.contactsMatched > 0) ? (
                     <>
                       {syncIMessage.data.contactsMatched > 0 && (
                         <>Matched <span className="font-medium text-[#4A8C5E]">{syncIMessage.data.contactsMatched}</span> contacts</>
                       )}
-                      {syncIMessage.data.contactsMatched > 0 && syncIMessage.data.interactionsLogged > 0 && <> &middot; </>}
-                      {syncIMessage.data.interactionsLogged > 0 && (
-                        <>Logged <span className="font-medium text-[#6366F1]">{syncIMessage.data.interactionsLogged}</span> conversations</>
+                      {syncIMessage.data.contactsMatched > 0 && syncIMessage.data.messagesCreated > 0 && <> &middot; </>}
+                      {syncIMessage.data.messagesCreated > 0 && (
+                        <>Logged <span className="font-medium text-[#6366F1]">{syncIMessage.data.messagesCreated}</span> messages</>
                       )}
                     </>
                   ) : (
-                    <>Scanned {syncIMessage.data.conversationsScanned} conversations — all already synced.</>
+                    <>Scanned {syncIMessage.data.handlesScanned} conversations — all already synced.</>
                   )}
                 </p>
               </div>

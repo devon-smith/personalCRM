@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ contactId: string }> },
 ) {
   try {
     const session = await auth();
@@ -12,9 +12,12 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { contactId } = await params;
     const body = await req.json();
-    const { action } = body as { action: "dismiss" | "respond" };
+    const { action, interactionId } = body as {
+      action: "dismiss" | "respond";
+      interactionId?: string;
+    };
 
     if (!["dismiss", "respond"].includes(action)) {
       return NextResponse.json(
@@ -23,12 +26,15 @@ export async function POST(
       );
     }
 
-    if (action === "dismiss") {
-      // Mark the interaction as dismissed using raw SQL for PrismaPg compat
+    // If an interactionId is provided, operate on that specific interaction
+    // Otherwise, operate on the contact level
+    const targetId = interactionId ?? contactId;
+
+    if (action === "dismiss" && interactionId) {
       const rowsUpdated = await prisma.$executeRaw`
         UPDATE "Interaction"
         SET "dismissedAt" = NOW()
-        WHERE "id" = ${id} AND "userId" = ${session.user.id}
+        WHERE "id" = ${targetId} AND "userId" = ${session.user.id}
       `;
 
       if (rowsUpdated === 0) {
@@ -39,22 +45,29 @@ export async function POST(
     }
 
     if (action === "respond") {
-      // Mark as responded — dismiss the inbound + log outbound interaction
-      const interaction = await prisma.interaction.findFirst({
-        where: { id, userId: session.user.id },
-        select: { contactId: true, type: true, subject: true },
-      });
+      const interaction = interactionId
+        ? await prisma.interaction.findFirst({
+            where: { id: interactionId, userId: session.user.id },
+            select: { contactId: true, type: true, subject: true },
+          })
+        : await prisma.interaction.findFirst({
+            where: { contactId, userId: session.user.id, direction: "INBOUND" },
+            orderBy: { occurredAt: "desc" },
+            select: { contactId: true, type: true, subject: true },
+          });
 
       if (!interaction) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
 
-      // Dismiss the original
-      await prisma.$executeRaw`
-        UPDATE "Interaction"
-        SET "dismissedAt" = NOW()
-        WHERE "id" = ${id} AND "userId" = ${session.user.id}
-      `;
+      // Dismiss the original if we have a specific interaction
+      if (interactionId) {
+        await prisma.$executeRaw`
+          UPDATE "Interaction"
+          SET "dismissedAt" = NOW()
+          WHERE "id" = ${interactionId} AND "userId" = ${session.user.id}
+        `;
+      }
 
       // Log a reply interaction
       await prisma.interaction.create({
@@ -81,7 +94,7 @@ export async function POST(
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error) {
-    console.error("[POST /api/needs-response/[id]]", error);
+    console.error("[POST /api/needs-response/[contactId]/action]", error);
     return NextResponse.json(
       { error: "Failed to process action" },
       { status: 500 },

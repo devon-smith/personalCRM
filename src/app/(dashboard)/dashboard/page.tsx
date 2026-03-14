@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -14,17 +15,17 @@ import {
   ChevronRight,
   Plus,
 } from "lucide-react";
-import { formatDistanceToNow } from "@/lib/date-utils";
 import Link from "next/link";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
-import { ActionItems } from "@/components/dashboard/action-items";
+
 import { UpcomingMeetings } from "@/components/dashboard/upcoming-meetings";
 import { ReviewQueue } from "@/components/sightings/review-queue";
 import { UpcomingBirthdays } from "@/components/dashboard/upcoming-birthdays";
 import { SmartScheduling } from "@/components/dashboard/smart-scheduling";
 import { LifeUpdates } from "@/components/dashboard/life-updates";
 import { DraftQueue } from "@/components/dashboard/draft-queue";
-
+import { Inbox, ActionItemsCard } from "@/components/dashboard/inbox";
+import { SyncAlerts } from "@/components/dashboard/sync-alerts";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -65,21 +66,6 @@ interface DashboardStats {
   contactsThisMonth: number;
   interactionsThisWeek: number;
   totalContacts: number;
-  recentInteractions: {
-    id: string;
-    type: string;
-    subject: string | null;
-    summary: string | null;
-    occurredAt: string;
-    contact: {
-      id: string;
-      name: string;
-      company: string | null;
-      tier: string;
-      source: string;
-      circles: { circle: CircleBadge }[];
-    };
-  }[];
   overdueContacts: {
     id: string;
     name: string;
@@ -100,6 +86,13 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
+  // Auto-sync on page load
+  useEffect(() => {
+    fetch("/api/notion-messages", { method: "POST" }).catch(() => {});
+    fetch("/api/imessage", { method: "POST" }).catch(() => {});
+    fetch("/api/gmail/sync", { method: "POST" }).catch(() => {});
+  }, []);
+
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["dashboard"],
     queryFn: async () => {
@@ -115,14 +108,20 @@ export default function DashboardPage() {
       <div className="space-y-8">
         <div>
           <h1 className="ds-display-xl">{getGreeting()}</h1>
-          <p className="ds-body-lg mt-2" style={{ color: "var(--text-tertiary)" }}>
+          <p
+            className="ds-body-lg mt-2"
+            style={{ color: "var(--text-tertiary)" }}
+          >
             Loading your dashboard...
           </p>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="crm-card p-6">
-              <div className="h-20 animate-pulse rounded-[10px]" style={{ backgroundColor: "var(--surface-sunken)" }} />
+              <div
+                className="h-20 animate-pulse rounded-[10px]"
+                style={{ backgroundColor: "var(--surface-sunken)" }}
+              />
             </div>
           ))}
         </div>
@@ -135,16 +134,23 @@ export default function DashboardPage() {
       {/* Hero greeting */}
       <div className="crm-animate-enter">
         <h1 className="ds-display-xl">{getGreeting()}</h1>
-        <p className="ds-body-lg mt-2" style={{ color: "var(--text-secondary)" }}>
+        <p
+          className="ds-body-lg mt-2"
+          style={{ color: "var(--text-secondary)" }}
+        >
           {stats.overdueCount > 0 ? (
             <>
               You have{" "}
-              <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                {stats.overdueCount} overdue follow-up{stats.overdueCount !== 1 ? "s" : ""}
+              <span
+                className="font-medium"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {stats.overdueCount} overdue follow-up
+                {stats.overdueCount !== 1 ? "s" : ""}
               </span>
             </>
           ) : (
-            "You're all caught up. Nice work."
+            "You\u2019re all caught up. Nice work."
           )}
         </p>
       </div>
@@ -171,126 +177,51 @@ export default function DashboardPage() {
           icon={MessageSquare}
           description="this week"
           href="/activity"
-          zeroAction={stats.interactionsThisWeek === 0 ? { label: "Log an interaction", href: "/activity" } : undefined}
+          zeroAction={
+            stats.interactionsThisWeek === 0
+              ? { label: "Log an interaction", href: "/activity" }
+              : undefined
+          }
         />
       </div>
 
+      {/* Sync alerts */}
+      <SyncAlerts />
+
+      {/* Unified Inbox + Activity */}
+      <Inbox />
+
+      {/* Action Items — separate from inbox */}
+      <ActionItemsCard />
+
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Action Items */}
-        <Card className="crm-card border-0">
-          <CardContent className="px-6 py-6">
-            <ActionItems />
-          </CardContent>
-        </Card>
-
         {/* Draft Queue */}
         <DraftQueueCard />
 
         {/* Smart Scheduling */}
         <SmartSchedulingCard />
 
-        {/* Life Updates (job changes) */}
+        {/* Life Updates */}
         <LifeUpdatesCard />
 
-        {/* Review Queue (self-hides when empty) */}
+        {/* Review Queue */}
         <ReviewQueueCard />
-
-        {/* Recent Interactions */}
-        <Card className="crm-card border-0">
-          <CardHeader className="px-6 pt-6 pb-0">
-            <CardTitle className="crm-section-label">Recent interactions</CardTitle>
-          </CardHeader>
-          <CardContent className="px-6 pb-6 pt-4">
-            {stats.recentInteractions.length === 0 ? (
-              <div className="flex flex-col items-center py-8 text-center">
-                <div
-                  className="mb-3 flex h-12 w-12 items-center justify-center rounded-full"
-                  style={{ backgroundColor: "var(--surface-sunken)" }}
-                >
-                  <MessageSquare className="h-5 w-5" style={{ color: "var(--text-tertiary)" }} />
-                </div>
-                <p className="ds-body-md font-medium" style={{ color: "var(--text-primary)" }}>
-                  No interactions yet
-                </p>
-                <Link
-                  href="/activity"
-                  className="mt-2 inline-flex items-center gap-1 ds-body-sm font-medium transition-colors"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Log your first interaction
-                </Link>
-              </div>
-            ) : (
-              <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
-                {stats.recentInteractions.map((interaction) => {
-                  const Icon = typeIcons[interaction.type] ?? StickyNote;
-                  const color = getAvatarColor(interaction.contact.name);
-                  return (
-                    <Link
-                      key={interaction.id}
-                      href={`/people?contact=${interaction.contact.id}`}
-                      className="group flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
-                      style={{ transitionDuration: "var(--duration-fast)" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
-                    >
-                      <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback
-                          className="text-[10px] font-semibold"
-                          style={{ backgroundColor: color.bg, color: color.text }}
-                        >
-                          {getInitials(interaction.contact.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                            {interaction.contact.name}
-                          </span>
-                          {interaction.contact.circles?.slice(0, 2).map((cc) => (
-                            <span
-                              key={cc.circle.id}
-                              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
-                              style={{ backgroundColor: `${cc.circle.color}15`, color: cc.circle.color }}
-                            >
-                              {cc.circle.name}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
-                          <p className="ds-caption truncate">
-                            {interaction.subject ?? interaction.summary ?? interaction.type.toLowerCase()}
-                          </p>
-                        </div>
-                        {interaction.contact.company && (
-                          <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                            {interaction.contact.company}
-                          </p>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                        {formatDistanceToNow(new Date(interaction.occurredAt))}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Strongest relationships */}
         {stats.recentlyActive.length > 0 && (
           <Card className="crm-card border-0">
             <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
-              <CardTitle className="crm-section-label">Strongest relationships</CardTitle>
+              <CardTitle className="crm-section-label">
+                Strongest relationships
+              </CardTitle>
               <span className="ds-caption">Last 30 days</span>
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-4">
-              <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+              <div
+                className="divide-y"
+                style={{ borderColor: "var(--border-subtle)" }}
+              >
                 {stats.recentlyActive.map((contact) => {
                   const color = getAvatarColor(contact.name);
                   const Icon = contact.lastInteractionType
@@ -301,51 +232,80 @@ export default function DashboardPage() {
                       key={contact.id}
                       href={`/people?contact=${contact.id}`}
                       className="group flex items-center gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
-                      style={{ transitionDuration: "var(--duration-fast)" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+                      style={{
+                        transitionDuration: "var(--duration-fast)",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor =
+                          "var(--surface-sunken)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "";
+                      }}
                     >
                       <Avatar className="h-9 w-9">
                         <AvatarFallback
                           className="text-[11px] font-semibold"
-                          style={{ backgroundColor: color.bg, color: color.text }}
+                          style={{
+                            backgroundColor: color.bg,
+                            color: color.text,
+                          }}
                         >
                           {getInitials(contact.name)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                          <span
+                            className="ds-body-md font-medium truncate"
+                            style={{ color: "var(--text-primary)" }}
+                          >
                             {contact.name}
                           </span>
                           {contact.circles?.slice(0, 2).map((c) => (
                             <span
                               key={c.id}
                               className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
-                              style={{ backgroundColor: `${c.color}15`, color: c.color }}
+                              style={{
+                                backgroundColor: `${c.color}15`,
+                                color: c.color,
+                              }}
                             >
                               {c.name}
                             </span>
                           ))}
                         </div>
                         {contact.company && (
-                          <p className="ds-caption truncate">{contact.company}</p>
+                          <p className="ds-caption truncate">
+                            {contact.company}
+                          </p>
                         )}
                         {contact.lastInteractionSummary && (
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
-                            <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                            <Icon
+                              className="h-3 w-3 shrink-0"
+                              style={{ color: "var(--text-tertiary)" }}
+                            />
+                            <p
+                              className="text-[11px] truncate"
+                              style={{ color: "var(--text-tertiary)" }}
+                            >
                               {contact.lastInteractionSummary}
                             </p>
                           </div>
                         )}
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="ds-heading-sm" style={{ color: "var(--text-secondary)" }}>
+                        <p
+                          className="ds-heading-sm"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
                           {contact.interactionCount}
                         </p>
                         <p className="ds-caption">
-                          {contact.interactionCount === 1 ? "interaction" : "interactions"}
+                          {contact.interactionCount === 1
+                            ? "interaction"
+                            : "interactions"}
                         </p>
                       </div>
                       <ChevronRight
@@ -378,8 +338,12 @@ export default function DashboardPage() {
               href="/circles"
               className="ds-caption font-medium transition-colors"
               style={{ color: "var(--text-tertiary)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text-primary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-tertiary)";
+              }}
             >
               Manage
             </Link>
@@ -387,7 +351,12 @@ export default function DashboardPage() {
           <CardContent className="px-6 pb-6 pt-4">
             {stats.circles.length === 0 ? (
               <div className="flex flex-col items-center py-6 text-center">
-                <p className="ds-body-md" style={{ color: "var(--text-tertiary)" }}>No circles yet</p>
+                <p
+                  className="ds-body-md"
+                  style={{ color: "var(--text-tertiary)" }}
+                >
+                  No circles yet
+                </p>
                 <Link
                   href="/circles"
                   className="mt-1.5 ds-body-sm font-medium transition-colors"
@@ -403,9 +372,16 @@ export default function DashboardPage() {
                     key={circle.id}
                     href={`/people?circle=${circle.id}`}
                     className="group flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-colors"
-                    style={{ transitionDuration: "var(--duration-fast)" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+                    style={{
+                      transitionDuration: "var(--duration-fast)",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor =
+                        "var(--surface-sunken)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "";
+                    }}
                   >
                     <div
                       className="h-3 w-3 rounded-full shrink-0"
@@ -417,7 +393,10 @@ export default function DashboardPage() {
                     >
                       {circle.name}
                     </span>
-                    <span className="ds-body-sm font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                    <span
+                      className="ds-body-sm font-semibold"
+                      style={{ color: "var(--text-tertiary)" }}
+                    >
                       {circle.contactCount}
                     </span>
                   </Link>
@@ -425,11 +404,17 @@ export default function DashboardPage() {
               </div>
             )}
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-[10px] p-4 text-center" style={{ backgroundColor: "var(--surface-sunken)" }}>
+              <div
+                className="rounded-[10px] p-4 text-center"
+                style={{ backgroundColor: "var(--surface-sunken)" }}
+              >
                 <p className="ds-stat-md">{stats.contactsThisMonth}</p>
                 <p className="ds-caption mt-1">Added this month</p>
               </div>
-              <div className="rounded-[10px] p-4 text-center" style={{ backgroundColor: "var(--surface-sunken)" }}>
+              <div
+                className="rounded-[10px] p-4 text-center"
+                style={{ backgroundColor: "var(--surface-sunken)" }}
+              >
                 <p className="ds-stat-md">{stats.interactionsThisWeek}</p>
                 <p className="ds-caption mt-1">Interactions this week</p>
               </div>
@@ -440,6 +425,8 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+// ─── Stat Card ───────────────────────────────────────────────
 
 function StatCard({
   title,
@@ -461,16 +448,30 @@ function StatCard({
       <div className="flex items-center gap-2.5">
         <div
           className="flex h-9 w-9 items-center justify-center rounded-[10px] transition-colors"
-          style={{ backgroundColor: "var(--surface-sunken)", transitionDuration: "var(--duration-fast)" }}
+          style={{
+            backgroundColor: "var(--surface-sunken)",
+            transitionDuration: "var(--duration-fast)",
+          }}
         >
-          <Icon className="h-[18px] w-[18px]" style={{ color: "var(--text-tertiary)" }} />
+          <Icon
+            className="h-[18px] w-[18px]"
+            style={{ color: "var(--text-tertiary)" }}
+          />
         </div>
         <p className="ds-caption">{title}</p>
       </div>
       {value === 0 && zeroAction ? (
         <div className="mt-4">
-          <p className="ds-body-md" style={{ color: "var(--text-tertiary)" }}>No interactions this week</p>
-          <span className="mt-1.5 inline-flex items-center gap-1 ds-body-sm font-medium transition-colors" style={{ color: "var(--text-secondary)" }}>
+          <p
+            className="ds-body-md"
+            style={{ color: "var(--text-tertiary)" }}
+          >
+            No interactions this week
+          </p>
+          <span
+            className="mt-1.5 inline-flex items-center gap-1 ds-body-sm font-medium transition-colors"
+            style={{ color: "var(--text-secondary)" }}
+          >
             <Plus className="h-3.5 w-3.5" />
             {zeroAction.label}
           </span>
@@ -485,10 +486,16 @@ function StatCard({
   );
 
   if (href) {
-    return <Link href={href} className="block">{content}</Link>;
+    return (
+      <Link href={href} className="block">
+        {content}
+      </Link>
+    );
   }
   return content;
 }
+
+// ─── Supporting cards ────────────────────────────────────────
 
 function ReviewQueueCard() {
   const { data } = useQuery<{ items: unknown[]; totalPending: number }>({

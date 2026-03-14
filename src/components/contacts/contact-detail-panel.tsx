@@ -72,6 +72,12 @@ export function ContactDetailPanel({
   const [howWeMetValue, setHowWeMetValue] = useState("");
   const [journalInput, setJournalInput] = useState("");
   const [journalMood, setJournalMood] = useState<string>("NEUTRAL");
+  const [aliasInput, setAliasInput] = useState("");
+  const [showAliasInput, setShowAliasInput] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [showPhoneInput, setShowPhoneInput] = useState(false);
 
   // Momentum
   const { data: momentumData } = useMomentum(contactId ? [contactId] : []);
@@ -166,6 +172,84 @@ export function ContactDetailPanel({
     updateContact.mutate(
       { id: contact.id, howWeMet: howWeMetValue || null } as Parameters<typeof updateContact.mutate>[0],
       { onSuccess: () => { setEditingHowWeMet(false); toast.success("Saved"); } },
+    );
+  }
+
+  const updateAliases = useMutation({
+    mutationFn: async (data: {
+      aliases?: string[];
+      additionalEmails?: string[];
+      additionalPhones?: string[];
+    }) => {
+      const res = await fetch(`/api/contacts/${contactId}/aliases`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "Failed to update");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function handleAddAlias() {
+    if (!contact || !aliasInput.trim()) return;
+    const current = (contactAny.aliases as string[]) ?? [];
+    updateAliases.mutate(
+      { aliases: [...current, aliasInput.trim()] },
+      { onSuccess: () => { setAliasInput(""); setShowAliasInput(false); toast.success("Alias added"); } },
+    );
+  }
+
+  function handleRemoveAlias(alias: string) {
+    if (!contact) return;
+    const current = (contactAny.aliases as string[]) ?? [];
+    updateAliases.mutate(
+      { aliases: current.filter((a: string) => a !== alias) },
+      { onSuccess: () => toast.success("Alias removed") },
+    );
+  }
+
+  function handleAddEmail() {
+    if (!contact || !emailInput.trim()) return;
+    const current = (contactAny.additionalEmails as string[]) ?? [];
+    updateAliases.mutate(
+      { additionalEmails: [...current, emailInput.trim()] },
+      { onSuccess: () => { setEmailInput(""); setShowEmailInput(false); toast.success("Email added"); } },
+    );
+  }
+
+  function handleRemoveEmail(email: string) {
+    if (!contact) return;
+    const current = (contactAny.additionalEmails as string[]) ?? [];
+    updateAliases.mutate(
+      { additionalEmails: current.filter((e: string) => e !== email) },
+      { onSuccess: () => toast.success("Email removed") },
+    );
+  }
+
+  function handleAddPhone() {
+    if (!contact || !phoneInput.trim()) return;
+    const current = (contactAny.additionalPhones as string[]) ?? [];
+    updateAliases.mutate(
+      { additionalPhones: [...current, phoneInput.trim()] },
+      { onSuccess: () => { setPhoneInput(""); setShowPhoneInput(false); toast.success("Phone added"); } },
+    );
+  }
+
+  function handleRemovePhone(phone: string) {
+    if (!contact) return;
+    const current = (contactAny.additionalPhones as string[]) ?? [];
+    updateAliases.mutate(
+      { additionalPhones: current.filter((p: string) => p !== phone) },
+      { onSuccess: () => toast.success("Phone removed") },
     );
   }
 
@@ -383,6 +467,140 @@ export function ContactDetailPanel({
                 </div>
               </div>
             )}
+
+            {/* Aliases */}
+            <div>
+              <SectionLabel>Also known as</SectionLabel>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {((contactAny.aliases as string[]) ?? []).map((alias: string) => (
+                  <span
+                    key={alias}
+                    className="group inline-flex items-center gap-1 rounded-lg bg-[#F3F4F6] px-2 py-1 text-[12px] text-[#4A4E54]"
+                  >
+                    {alias}
+                    <button
+                      onClick={() => handleRemoveAlias(alias)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                {showAliasInput ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={aliasInput}
+                      onChange={(e) => setAliasInput(e.target.value)}
+                      placeholder="Nickname or alias"
+                      className="rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500 w-32"
+                      onKeyDown={(e) => e.key === "Enter" && handleAddAlias()}
+                      autoFocus
+                    />
+                    <button onClick={handleAddAlias} disabled={!aliasInput.trim()} className="text-[11px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50">Save</button>
+                    <button onClick={() => { setShowAliasInput(false); setAliasInput(""); }} className="text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowAliasInput(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add alias
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Other emails */}
+            <div>
+              <SectionLabel>Other emails</SectionLabel>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {((contactAny.additionalEmails as string[]) ?? []).map((email: string) => (
+                  <span
+                    key={email}
+                    className="group inline-flex items-center gap-1 rounded-lg bg-[#F3F4F6] px-2 py-1 text-[12px] text-[#4A4E54]"
+                  >
+                    <Mail className="h-3 w-3 text-gray-400" />
+                    {email}
+                    <button
+                      onClick={() => handleRemoveEmail(email)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                {showEmailInput ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="email@example.com"
+                      className="rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500 w-44"
+                      onKeyDown={(e) => e.key === "Enter" && handleAddEmail()}
+                      autoFocus
+                    />
+                    <button onClick={handleAddEmail} disabled={!emailInput.trim()} className="text-[11px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50">Save</button>
+                    <button onClick={() => { setShowEmailInput(false); setEmailInput(""); }} className="text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowEmailInput(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add email
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Other phones */}
+            <div>
+              <SectionLabel>Other phones</SectionLabel>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {((contactAny.additionalPhones as string[]) ?? []).map((phone: string) => (
+                  <span
+                    key={phone}
+                    className="group inline-flex items-center gap-1 rounded-lg bg-[#F3F4F6] px-2 py-1 text-[12px] text-[#4A4E54]"
+                  >
+                    <Phone className="h-3 w-3 text-gray-400" />
+                    {phone}
+                    <button
+                      onClick={() => handleRemovePhone(phone)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                {showPhoneInput ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="tel"
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      placeholder="+1 (555) 123-4567"
+                      className="rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500 w-40"
+                      onKeyDown={(e) => e.key === "Enter" && handleAddPhone()}
+                      autoFocus
+                    />
+                    <button onClick={handleAddPhone} disabled={!phoneInput.trim()} className="text-[11px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50">Save</button>
+                    <button onClick={() => { setShowPhoneInput(false); setPhoneInput(""); }} className="text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowPhoneInput(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add phone
+                  </button>
+                )}
+              </div>
+            </div>
 
             {/* How you know them */}
             <div>

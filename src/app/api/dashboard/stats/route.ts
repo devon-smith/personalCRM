@@ -40,22 +40,46 @@ export async function GET() {
     prisma.interaction.count({
       where: { userId, occurredAt: { gte: startOfWeek } },
     }),
-    prisma.interaction.findMany({
-      where: { userId },
-      orderBy: { occurredAt: "desc" },
-      take: 5,
-      include: {
-        contact: {
+    // Recent interactions — one per contact, showing latest
+    prisma.contact.findMany({
+      where: {
+        userId,
+        lastInteraction: { not: null },
+      },
+      orderBy: { lastInteraction: "desc" },
+      take: 8,
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        tier: true,
+        source: true,
+        lastInteraction: true,
+        circles: {
+          select: {
+            circle: { select: { id: true, name: true, color: true } },
+          },
+        },
+        interactions: {
+          where: {
+            sourceId: { not: { startsWith: "manual-reply:" } },
+          },
+          orderBy: { occurredAt: "desc" },
+          take: 1,
           select: {
             id: true,
-            name: true,
-            company: true,
-            tier: true,
-            source: true,
-            circles: {
-              select: {
-                circle: { select: { id: true, name: true, color: true } },
-              },
+            type: true,
+            direction: true,
+            channel: true,
+            subject: true,
+            summary: true,
+            occurredAt: true,
+          },
+        },
+        _count: {
+          select: {
+            interactions: {
+              where: { sourceId: { not: { startsWith: "manual-reply:" } } },
             },
           },
         },
@@ -140,12 +164,37 @@ export async function GET() {
     sourceCounts[s.source] = s._count;
   }
 
+  // Transform recent contacts into the recentInteractions shape the frontend expects
+  const recentInteractionsFormatted = recentInteractions
+    .filter((c) => c.interactions.length > 0)
+    .map((c) => {
+      const latest = c.interactions[0];
+      return {
+        id: latest.id,
+        type: latest.type,
+        subject: latest.subject,
+        summary: latest.summary,
+        occurredAt: latest.occurredAt.toISOString(),
+        direction: latest.direction,
+        channel: latest.channel,
+        messageCount: c._count.interactions,
+        contact: {
+          id: c.id,
+          name: c.name,
+          company: c.company,
+          tier: c.tier,
+          source: c.source,
+          circles: c.circles,
+        },
+      };
+    });
+
   return NextResponse.json({
     tierCounts,
     contactsThisMonth,
     interactionsThisWeek,
     totalContacts: Object.values(tierCounts).reduce((a, b) => a + b, 0),
-    recentInteractions,
+    recentInteractions: recentInteractionsFormatted,
     overdueContacts: overdueContacts.slice(0, 5),
     overdueCount: overdueContacts.length,
     circles: circleSummary,

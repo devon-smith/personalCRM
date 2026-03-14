@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { googleFetch } from "./client";
+import { googleFetchWithToken, getAllGoogleAccessTokens } from "./client";
 import { createBatchContext, processOneSighting, type SightingInput } from "@/lib/sightings";
 
 interface GmailMessage {
@@ -315,8 +315,8 @@ function isHumanSender(email: string, displayName: string): boolean {
 
 // ─── Core Discovery ───
 
-async function fetchAllMessageIds(
-  userId: string,
+async function fetchAllMessageIdsForToken(
+  token: string,
   afterDays: number,
   maxMessages: number,
 ): Promise<GmailMessage[]> {
@@ -334,8 +334,11 @@ async function fetchAllMessageIds(
     url.searchParams.set("maxResults", "100");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-    const res = await googleFetch(userId, url.toString());
-    if (!res.ok) throw new Error(`Gmail API error: ${res.status}`);
+    const res = await googleFetchWithToken(token, url.toString());
+    if (!res.ok) {
+      console.error(`[discover] Gmail list messages error: ${res.status}`);
+      break;
+    }
 
     const data = (await res.json()) as GmailListResponse;
     const messages = data.messages ?? [];
@@ -348,12 +351,12 @@ async function fetchAllMessageIds(
   return allMessages.slice(0, maxMessages);
 }
 
-async function fetchMessageDetail(
-  userId: string,
+async function fetchMessageDetailWithToken(
+  token: string,
   messageId: string,
 ): Promise<GmailMessageDetail | null> {
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`;
-  const res = await googleFetch(userId, url);
+  const res = await googleFetchWithToken(token, url);
   if (!res.ok) return null;
   return (await res.json()) as GmailMessageDetail;
 }
@@ -362,7 +365,7 @@ async function fetchMessageDetail(
  * Fetch message details in parallel batches to stay within rate limits.
  */
 async function fetchMessagesBatched(
-  userId: string,
+  token: string,
   messageIds: GmailMessage[],
   batchSize: number = 10,
 ): Promise<GmailMessageDetail[]> {
@@ -371,7 +374,7 @@ async function fetchMessagesBatched(
   for (let i = 0; i < messageIds.length; i += batchSize) {
     const batch = messageIds.slice(i, i + batchSize);
     const details = await Promise.all(
-      batch.map((msg) => fetchMessageDetail(userId, msg.id)),
+      batch.map((msg) => fetchMessageDetailWithToken(token, msg.id)),
     );
     for (const d of details) {
       if (d) results.push(d);
@@ -412,14 +415,34 @@ export async function discoverContactsFromGmail(
     });
   }
 
-  // 1. Fetch all message IDs from the time window
-  const messageIds = await fetchAllMessageIds(userId, days, maxMessages);
+  // 1. Get valid tokens for ALL Google accounts
+  const accountTokens = await getAllGoogleAccessTokens(userId);
+  if (accountTokens.length === 0) {
+    console.error("[discover] No valid Google tokens for user", userId);
+    return { contactsCreated: 0, contactsExisted: 0, contactsCleaned: junkContactIds.length, interactionsLogged: 0, interactionsExisted: 0, totalEmails: 0, peopleFound: 0 };
+  }
+
+  // 2. Fetch messages from ALL accounts
+  const allMessageIds: GmailMessage[] = [];
+  for (const { token } of accountTokens) {
+    const ids = await fetchAllMessageIdsForToken(token, days, maxMessages);
+    allMessageIds.push(...ids);
+  }
+
+  // Dedup by message ID (same message could appear in multiple accounts)
+  const seenIds = new Set<string>();
+  const messageIds = allMessageIds.filter((m) => {
+    if (seenIds.has(m.id)) return false;
+    seenIds.add(m.id);
+    return true;
+  });
+
   if (messageIds.length === 0) {
     return { contactsCreated: 0, contactsExisted: 0, contactsCleaned: junkContactIds.length, interactionsLogged: 0, interactionsExisted: 0, totalEmails: 0, peopleFound: 0 };
   }
 
-  // 2. Fetch message details in batches
-  const messages = await fetchMessagesBatched(userId, messageIds);
+  // 3. Fetch message details in batches (use first working token)
+  const messages = await fetchMessagesBatched(accountTokens[0].token, messageIds);
 
   // 3. First pass: discover all unique people and their best display name
   const peopleMap = new Map<
@@ -612,6 +635,7 @@ export async function discoverContactsFromGmail(
           contactId,
           type: "EMAIL",
           direction: cp.direction,
+          channel: "gmail",
           subject: subject?.slice(0, 255) ?? null,
           summary: detail.snippet?.slice(0, 500) ?? null,
           occurredAt,
@@ -645,8 +669,8 @@ export async function discoverContactsFromGmail(
   }
 
   // 8. Update sync state
-  const profileRes = await googleFetch(
-    userId,
+  const profileRes = await googleFetchWithToken(
+    accountTokens[0].token,
     "https://gmail.googleapis.com/gmail/v1/users/me/profile",
   );
   if (profileRes.ok) {

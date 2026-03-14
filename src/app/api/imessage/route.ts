@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import {
-  getConversations,
-  getDailyConversationSummaries,
-} from "@/lib/imessage";
+import { getConversations, getMessagesForHandle } from "@/lib/imessage";
 import { normalizePhone } from "@/lib/name-utils";
 
+// ─── Types ───────────────────────────────────────────────────
+
 export interface IMessageSyncResult {
-  conversationsScanned: number;
-  interactionsLogged: number;
-  interactionsExisted: number;
-  contactsMatched: number;
+  readonly handlesScanned: number;
+  readonly messagesCreated: number;
+  readonly messagesSkipped: number;
+  readonly contactsMatched: number;
+  readonly errors: readonly string[];
 }
 
-/** GET — Preview iMessage conversations (how many messages, who with) */
+// ─── GET — Preview iMessage conversations ────────────────────
+
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -22,8 +23,7 @@ export async function GET() {
   }
 
   try {
-    const result = await getConversations(90);
-
+    const result = await getConversations(60);
     if (result.error) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
@@ -41,7 +41,8 @@ export async function GET() {
   }
 }
 
-/** POST — Sync iMessage conversations as MESSAGE interactions */
+// ─── POST — Sync individual iMessages as Interactions ────────
+
 export async function POST() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -51,20 +52,18 @@ export async function POST() {
   const userId = session.user.id;
 
   try {
-    // 1. Get daily conversation summaries (one interaction per day per person)
-    const { summaries, error } = await getDailyConversationSummaries(90);
-
-    if (error) {
-      return NextResponse.json({ error }, { status: 500 });
+    // 1. Get all conversations from last 14 days
+    const { conversations, error: convError } = await getConversations(60);
+    if (convError) {
+      return NextResponse.json({ error: convError }, { status: 500 });
     }
 
-    // 2. Load all contacts with phone numbers and emails for matching
+    // 2. Load contacts for matching
     const contacts = await prisma.contact.findMany({
       where: { userId },
-      select: { id: true, phone: true, email: true },
+      select: { id: true, phone: true, email: true, additionalEmails: true },
     });
 
-    // Build lookup maps: normalized phone → contactId, email → contactId
     const byPhone = new Map<string, string>();
     const byEmail = new Map<string, string>();
 
@@ -75,42 +74,50 @@ export async function POST() {
       if (c.email) {
         byEmail.set(c.email.toLowerCase(), c.id);
       }
+      for (const extra of c.additionalEmails) {
+        byEmail.set(extra.toLowerCase(), c.id);
+      }
     }
 
-    // 3. Match handles to contacts and log interactions
-    let interactionsLogged = 0;
-    let interactionsExisted = 0;
-    const matchedContactIds = new Set<string>();
+    // 3. Load existing sync states for this user
+    const syncStates = await prisma.iMessageSyncState.findMany({
+      where: { userId },
+    });
+    const syncStateMap = new Map(syncStates.map((s) => [s.handleId, s]));
 
-    // Get existing iMessage sourceIds to skip duplicates
+    // 4. Get existing iMessage sourceIds to skip duplicates
     const existingSourceIds = new Set(
       (
         await prisma.interaction.findMany({
-          where: { userId, sourceId: { startsWith: "imsg:" } },
+          where: { userId, sourceId: { startsWith: "imsg-ind:" } },
           select: { sourceId: true },
         })
       ).map((i) => i.sourceId),
     );
 
-    for (const summary of summaries) {
-      // Try to match handle to a contact
+    let messagesCreated = 0;
+    let messagesSkipped = 0;
+    const matchedContactIds = new Set<string>();
+    const errors: string[] = [];
+
+    // 5. Process each conversation handle
+    for (const conv of conversations) {
+      const handleId = conv.handleId;
+
+      // Match handle to contact
       let contactId: string | undefined;
-
-      // Handle could be a phone number or email
-      if (summary.handleId.includes("@")) {
-        // Email handle
-        contactId = byEmail.get(summary.handleId.toLowerCase());
+      if (handleId.includes("@")) {
+        contactId = byEmail.get(handleId.toLowerCase());
       } else {
-        // Phone handle
-        const normalized = normalizePhone(summary.handleId);
+        const normalized = normalizePhone(handleId);
         contactId = byPhone.get(normalized);
-
-        // Try without country code if no match
-        if (!contactId && normalized.startsWith("+1")) {
-          const withoutCountry = normalized.slice(2);
-          // Check all stored phones for a suffix match
+        // Try suffix match for numbers without country code
+        if (!contactId) {
+          const digits = normalized.replace(/\D/g, "");
+          const last10 = digits.slice(-10);
           for (const [storedPhone, id] of byPhone) {
-            if (storedPhone.endsWith(withoutCountry)) {
+            const storedDigits = storedPhone.replace(/\D/g, "");
+            if (storedDigits.slice(-10) === last10) {
               contactId = id;
               break;
             }
@@ -119,72 +126,116 @@ export async function POST() {
       }
 
       if (!contactId) continue;
-
       matchedContactIds.add(contactId);
 
-      // sourceId format: imsg:{handleId}:{date}
-      const sourceId = `imsg:${summary.handleId}:${summary.date}`;
+      // Fetch individual messages for this handle (14 days)
+      const { messages, error: msgError } = await getMessagesForHandle(
+        handleId,
+        60,
+      );
 
-      if (existingSourceIds.has(sourceId)) {
-        interactionsExisted++;
+      if (msgError) {
+        errors.push(`${handleId}: ${msgError}`);
         continue;
       }
 
-      // Determine direction: more sent than received → OUTBOUND
-      const direction =
-        summary.sentCount > summary.receivedCount ? "OUTBOUND" : "INBOUND";
+      let handleMessagesCreated = 0;
+      let latestGuid: string | null = null;
 
-      const msgLabel = `${summary.messageCount} message${summary.messageCount !== 1 ? "s" : ""}`;
-      const channelLabel =
-        summary.service === "SMS" ? "SMS" : "iMessage";
+      for (const msg of messages) {
+        if (!msg.text || msg.text.trim().length === 0) continue;
 
-      await prisma.interaction.create({
-        data: {
-          userId,
-          contactId,
-          type: "MESSAGE",
-          direction,
-          channel: channelLabel,
-          subject: `${channelLabel} conversation`,
-          summary: `${msgLabel} (${summary.sentCount} sent, ${summary.receivedCount} received)`,
-          occurredAt: new Date(`${summary.date}T12:00:00`),
-          sourceId,
-        },
-      });
+        // sourceId uses "imsg-ind:" prefix to distinguish from old daily summaries
+        const sourceId = `imsg-ind:${msg.guid}`;
 
-      interactionsLogged++;
-    }
+        if (existingSourceIds.has(sourceId)) {
+          messagesSkipped++;
+          continue;
+        }
 
-    // 4. Update lastInteraction for matched contacts
-    if (matchedContactIds.size > 0) {
-      for (const contactId of matchedContactIds) {
-        const latest = await prisma.interaction.findFirst({
-          where: { contactId },
-          orderBy: { occurredAt: "desc" },
-          select: { occurredAt: true },
+        const direction = msg.isFromMe ? "OUTBOUND" : "INBOUND";
+        const channelLabel = msg.service === "SMS" ? "SMS" : "iMessage";
+
+        // Truncate long messages for summary (keep first 200 chars)
+        const summary =
+          msg.text.length > 200
+            ? msg.text.slice(0, 200) + "..."
+            : msg.text;
+
+        await prisma.interaction.create({
+          data: {
+            userId,
+            contactId,
+            type: "MESSAGE",
+            direction,
+            channel: channelLabel,
+            subject: `${channelLabel} message`,
+            summary,
+            occurredAt: msg.date,
+            sourceId,
+          },
         });
 
-        if (latest) {
-          await prisma.contact.update({
-            where: { id: contactId },
-            data: { lastInteraction: latest.occurredAt },
-          });
-        }
+        existingSourceIds.add(sourceId);
+        messagesCreated++;
+        handleMessagesCreated++;
+
+        // Track latest guid for sync state
+        if (!latestGuid) latestGuid = msg.guid;
+      }
+
+      // Update sync state for this handle
+      await prisma.iMessageSyncState.upsert({
+        where: {
+          userId_handleId: { userId, handleId },
+        },
+        create: {
+          userId,
+          handleId,
+          service: conv.service,
+          lastMessageGuid: latestGuid ?? syncStateMap.get(handleId)?.lastMessageGuid,
+          lastSyncAt: new Date(),
+          messageCount: (syncStateMap.get(handleId)?.messageCount ?? 0) + handleMessagesCreated,
+        },
+        update: {
+          lastMessageGuid: latestGuid ?? undefined,
+          lastSyncAt: new Date(),
+          messageCount: {
+            increment: handleMessagesCreated,
+          },
+        },
+      });
+    }
+
+    // 6. Update lastInteraction for matched contacts
+    for (const contactId of matchedContactIds) {
+      const latest = await prisma.interaction.findFirst({
+        where: { contactId, userId },
+        orderBy: { occurredAt: "desc" },
+        select: { occurredAt: true },
+      });
+      if (latest) {
+        await prisma.contact.update({
+          where: { id: contactId },
+          data: { lastInteraction: latest.occurredAt },
+        });
       }
     }
 
     const result: IMessageSyncResult = {
-      conversationsScanned: summaries.length,
-      interactionsLogged,
-      interactionsExisted,
+      handlesScanned: conversations.length,
+      messagesCreated,
+      messagesSkipped,
       contactsMatched: matchedContactIds.size,
+      errors,
     };
 
     return NextResponse.json(result);
   } catch (error) {
     console.error("iMessage sync error:", error);
+    const message = error instanceof Error ? error.message : "Failed to sync iMessages";
     return NextResponse.json(
-      { error: "Failed to sync iMessages" },
+      { error: message },
       { status: 500 },
     );
   }

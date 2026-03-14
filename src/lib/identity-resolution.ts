@@ -8,6 +8,7 @@
  *   1. Email exact match  → 0.95 confidence (auto-merge)
  *   2. Phone exact match  → 0.90 confidence (auto-merge)
  *   3. Name + Company     → 0.50-0.80 confidence (review queue)
+ *   3b. Nickname + Last name → 0.55-0.75 confidence (review queue)
  *   4. No match           → create new contact
  */
 
@@ -21,6 +22,7 @@ import {
   companiesMatch,
   parseFirstLast,
 } from "./name-utils";
+import { namesAreRelated } from "./nicknames";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -41,7 +43,9 @@ export interface CandidateContact {
   id: string;
   name: string;
   email: string | null;
+  additionalEmails?: string[];
   phone: string | null;
+  additionalPhones?: string[];
   company: string | null;
   role: string | null;
   city: string | null;
@@ -49,6 +53,7 @@ export interface CandidateContact {
   country: string | null;
   linkedinUrl: string | null;
   avatarUrl: string | null;
+  aliases?: string[];
 }
 
 export type ResolutionOutcome = "AUTO_MERGED" | "REVIEW_NEEDED" | "NEW_CONTACT";
@@ -107,19 +112,43 @@ export function buildContactIndex(contacts: CandidateContact[]): ContactIndex {
   const byLastNameCompany = new Map<string, CandidateContact[]>();
 
   for (const c of contacts) {
+    // Primary email
     if (c.email) {
       byEmail.set(normalizeEmail(c.email), c);
     }
+    // Additional emails
+    for (const ae of c.additionalEmails ?? []) {
+      byEmail.set(normalizeEmail(ae), c);
+    }
+    // Primary phone
     if (c.phone) {
       byPhone.set(normalizePhone(c.phone), c);
+    }
+    // Additional phones
+    for (const ap of c.additionalPhones ?? []) {
+      byPhone.set(normalizePhone(ap), c);
     }
     if (c.linkedinUrl) {
       byLinkedInUrl.set(normalizeLinkedInUrl(c.linkedinUrl), c);
     }
+    // Primary name
     for (const key of nameMatchKeys(c.name)) {
       const existing = byNameKeys.get(key) ?? [];
       existing.push(c);
       byNameKeys.set(key, existing);
+    }
+    // Aliases — index each alias as a name match key
+    for (const alias of c.aliases ?? []) {
+      // Build a synthetic full name: "alias lastName" for name key indexing
+      const { last } = parseFirstLast(c.name);
+      const aliasFullName = last ? `${alias} ${last}` : alias;
+      for (const key of nameMatchKeys(aliasFullName)) {
+        const existing = byNameKeys.get(key) ?? [];
+        if (!existing.some((e) => e.id === c.id)) {
+          existing.push(c);
+        }
+        byNameKeys.set(key, existing);
+      }
     }
     // Index by lastName + normalized company for LinkedIn matching
     if (c.company) {
@@ -233,6 +262,50 @@ export function resolveSighting(
             enrichment: buildEnrichment(candidate, sighting),
             matchReason: "name_only",
           };
+        }
+      }
+    }
+  }
+
+  // ── Tier 3b: Nickname + last name match (confidence 0.55-0.75) ──
+  if (sighting.name) {
+    const sightingParsed = parseFirstLast(sighting.name);
+    const sightingFirst = sightingParsed.first.toLowerCase();
+    const sightingLast = normalizeName(sightingParsed.last);
+
+    if (sightingFirst && sightingLast) {
+      // Search all contacts by last name via the name keys index
+      for (const [, candidates] of index.byNameKeys) {
+        for (const candidate of candidates) {
+          if (matchedIds.has(candidate.id)) continue;
+
+          const candidateParsed = parseFirstLast(candidate.name);
+          const candidateFirst = candidateParsed.first.toLowerCase();
+          const candidateLast = normalizeName(candidateParsed.last);
+
+          // Must share last name, different first name, and be nickname-related
+          if (
+            candidateLast === sightingLast &&
+            candidateFirst !== sightingFirst &&
+            namesAreRelated(sightingFirst, candidateFirst)
+          ) {
+            const sightingCompany = sighting.company?.toLowerCase().trim();
+            const candidateCompany = candidate.company?.toLowerCase().trim();
+            const sameCompany =
+              sightingCompany &&
+              candidateCompany &&
+              sightingCompany === candidateCompany;
+
+            return {
+              outcome: "REVIEW_NEEDED" as const,
+              contactId: candidate.id,
+              confidence: sameCompany ? 0.75 : 0.55,
+              enrichment: buildEnrichment(candidate, sighting),
+              matchReason: sameCompany
+                ? "nickname_and_company"
+                : "nickname_last_name",
+            };
+          }
         }
       }
     }

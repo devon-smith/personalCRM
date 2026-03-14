@@ -15,6 +15,7 @@ import {
   Loader2,
   Copy,
   FileEdit,
+  Linkedin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "@/lib/date-utils";
@@ -34,30 +35,39 @@ function decodeEntities(text: string): string {
     .replace(/&apos;/g, "'");
 }
 
+// ─── Types matching the actual API response ─────────────────
+
+interface InboundMessage {
+  readonly summary: string;
+  readonly subject: string | null;
+  readonly occurredAt: string;
+}
+
 interface NeedsResponseItem {
-  readonly id: string;
   readonly contactId: string;
   readonly contactName: string;
-  readonly contactCompany: string | null;
-  readonly contactTier: string | null;
-  readonly contactAvatarUrl: string | null;
-  readonly channel: "email" | "imessage";
-  readonly subject: string | null;
-  readonly preview: string | null;
-  readonly daysWaiting: number;
-  readonly lastMessageAt: string;
-  readonly priority: "high" | "medium" | "low";
-  readonly priorityReason: string;
+  readonly company: string | null;
+  readonly tier: string;
+  readonly channel: string;
+  readonly lastInboundSubject: string | null;
+  readonly messages: readonly InboundMessage[];
+  readonly messageCount: number;
+  readonly lastInboundAt: string;
+  readonly waitingHours: number;
+  readonly urgency: "high" | "medium" | "low";
+  readonly urgencyScore: number;
+  readonly confidence: "certain" | "likely" | "possible";
+  readonly circles: readonly string[];
+  readonly contactEmail: string | null;
+  readonly contactPhone: string | null;
+  readonly contactLinkedinUrl: string | null;
 }
 
 interface NeedsResponseData {
   readonly items: NeedsResponseItem[];
-  readonly counts: {
-    readonly high: number;
-    readonly medium: number;
-    readonly low: number;
-    readonly total: number;
-  };
+  readonly totalWaiting: number;
+  readonly scannedContacts: number;
+  readonly channelCoverage: Record<string, { inbound: boolean; outbound: boolean }>;
 }
 
 type ChannelFilter = "all" | "email" | "imessage";
@@ -80,12 +90,31 @@ const PRIORITY_STYLES: Record<string, { bg: string; text: string; dot: string }>
   },
 };
 
+function getChannelGroup(channel: string): "email" | "imessage" | "other" {
+  if (channel === "gmail" || channel === "email") return "email";
+  if (channel === "iMessage" || channel === "SMS") return "imessage";
+  return "other";
+}
+
+function ChannelIcon({ channel }: { channel: string }) {
+  if (channel === "gmail" || channel === "email") return <Mail className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />;
+  if (channel === "linkedin") return <Linkedin className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />;
+  return <MessageSquare className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />;
+}
+
+function channelLabel(channel: string): string {
+  if (channel === "gmail" || channel === "email") return "Email";
+  if (channel === "iMessage" || channel === "SMS") return "iMessage";
+  if (channel === "linkedin") return "LinkedIn";
+  return channel;
+}
+
 export function NeedsResponse() {
   const queryClient = useQueryClient();
   const { openComposer } = useDraftComposer();
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<NeedsResponseData>({
     queryKey: ["needs-response"],
@@ -97,40 +126,57 @@ export function NeedsResponse() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const actionMutation = useMutation({
-    mutationFn: async ({ id, action }: { id: string; action: "dismiss" | "respond" }) => {
-      const res = await fetch(`/api/needs-response/${id}`, {
+  const repliedMutation = useMutation({
+    mutationFn: async ({ contactId, channel }: { contactId: string; channel: string }) => {
+      const res = await fetch(`/api/needs-response/${contactId}/replied`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ channel }),
       });
-      if (!res.ok) throw new Error("Failed to process action");
-      return res.json();
+      if (!res.ok) throw new Error("Failed");
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["needs-response"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      if (variables.action === "dismiss") toast("Dismissed");
-      if (variables.action === "respond") toast.success("Marked as responded");
+      toast.success("Marked as responded");
     },
-    onError: (err) => toast.error(err.message),
+    onError: () => toast.error("Failed to mark as replied"),
   });
 
-  const copyPreview = useCallback(async (id: string, text: string) => {
+  const dismissMutation = useMutation({
+    mutationFn: async ({ contactId, channel }: { contactId: string; channel: string }) => {
+      const res = await fetch(`/api/needs-response/${contactId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "dismiss", channel }),
+      });
+      if (!res.ok) throw new Error("Failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["needs-response"] });
+      toast("Dismissed");
+    },
+    onError: () => toast.error("Failed to dismiss"),
+  });
+
+  const copyPreview = useCallback(async (key: string, text: string) => {
     await navigator.clipboard.writeText(text);
-    setCopiedId(id);
+    setCopiedKey(key);
     toast.success("Copied to clipboard");
-    setTimeout(() => setCopiedId(null), 2000);
+    setTimeout(() => setCopiedKey(null), 2000);
   }, []);
 
   const items = data?.items ?? [];
   const filteredItems = channelFilter === "all"
     ? items
-    : items.filter((i) => i.channel === channelFilter);
+    : items.filter((i) => getChannelGroup(i.channel) === channelFilter);
 
-  const hasEmail = items.some((i) => i.channel === "email");
-  const hasImessage = items.some((i) => i.channel === "imessage");
+  const hasEmail = items.some((i) => getChannelGroup(i.channel) === "email");
+  const hasImessage = items.some((i) => getChannelGroup(i.channel) === "imessage");
   const showFilters = hasEmail && hasImessage;
+
+  // Compute counts from items
+  const highCount = items.filter((i) => i.urgency === "high").length;
 
   return (
     <div className="crm-animate-enter">
@@ -138,18 +184,18 @@ export function NeedsResponse() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="ds-heading-sm">Needs response</h3>
-          {data && data.counts.high > 0 && (
+          {highCount > 0 && (
             <span
               className="rounded-full px-2 py-0.5 text-[10px] font-bold"
               style={{ backgroundColor: PRIORITY_STYLES.high.bg, color: PRIORITY_STYLES.high.text }}
             >
-              {data.counts.high} urgent
+              {highCount} urgent
             </span>
           )}
         </div>
         {data && (
           <span className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
-            {data.counts.total} awaiting reply
+            {data.totalWaiting} awaiting reply
           </span>
         )}
       </div>
@@ -194,14 +240,16 @@ export function NeedsResponse() {
       ) : (
         <div className="mt-3 space-y-0.5">
           {filteredItems.map((item) => {
-            const isExpanded = expandedId === item.id;
+            const itemKey = `${item.contactId}-${item.channel}`;
+            const isExpanded = expandedKey === itemKey;
             const color = getAvatarColor(item.contactName);
-            const style = PRIORITY_STYLES[item.priority];
-            const ChannelIcon = item.channel === "email" ? Mail : MessageSquare;
+            const style = PRIORITY_STYLES[item.urgency] ?? PRIORITY_STYLES.low;
+            const preview = item.messages[0]?.summary ?? "";
+            const daysWaiting = Math.floor(item.waitingHours / 24);
 
             return (
               <div
-                key={item.id}
+                key={itemKey}
                 className="rounded-[10px] transition-colors"
                 style={{
                   backgroundColor: isExpanded ? "var(--surface-sunken)" : "",
@@ -218,7 +266,7 @@ export function NeedsResponse() {
                   onMouseLeave={(e) => {
                     if (!isExpanded) e.currentTarget.style.backgroundColor = "";
                   }}
-                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                  onClick={() => setExpandedKey(isExpanded ? null : itemKey)}
                 >
                   {/* Priority dot */}
                   <div
@@ -241,10 +289,10 @@ export function NeedsResponse() {
                       <span className="ds-body-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
                         {item.contactName}
                       </span>
-                      <ChannelIcon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+                      <ChannelIcon channel={item.channel} />
                     </div>
                     <p className="ds-caption truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                      {decodeEntities(item.subject ?? item.preview ?? "No preview")}
+                      {decodeEntities(item.lastInboundSubject ?? (preview || "No preview"))}
                     </p>
                   </div>
 
@@ -253,7 +301,7 @@ export function NeedsResponse() {
                     className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10px] font-medium"
                     style={{ backgroundColor: style.bg, color: style.text }}
                   >
-                    {item.daysWaiting === 0 ? "Today" : `${item.daysWaiting}d`}
+                    {daysWaiting === 0 ? "Today" : `${daysWaiting}d`}
                   </span>
 
                   {isExpanded ? (
@@ -267,32 +315,39 @@ export function NeedsResponse() {
                 {isExpanded && (
                   <div className="px-3 pb-3">
                     <div className="ml-[52px]">
-                      {/* Priority reason */}
-                      <p className="ds-caption font-medium mb-2" style={{ color: style.text }}>
-                        {item.priorityReason}
-                      </p>
-
-                      {/* Preview */}
-                      {item.preview && (
+                      {/* Messages preview */}
+                      {item.messages.length > 0 && (
                         <div
-                          className="rounded-[8px] p-3 ds-body-sm leading-relaxed mb-2"
+                          className="rounded-[8px] p-3 ds-body-sm leading-relaxed mb-2 space-y-1"
                           style={{ backgroundColor: "var(--background)", color: "var(--text-secondary)" }}
                         >
-                          {item.subject && (
+                          {item.lastInboundSubject && (
                             <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>
-                              {decodeEntities(item.subject)}
+                              {decodeEntities(item.lastInboundSubject)}
                             </p>
                           )}
-                          {decodeEntities(item.preview)}
+                          {item.messages.slice(0, 3).map((msg, i) => (
+                            <p
+                              key={i}
+                              style={{ color: i === 0 ? "var(--text-secondary)" : "var(--text-tertiary)" }}
+                            >
+                              {decodeEntities(msg.summary || "")}
+                            </p>
+                          ))}
+                          {item.messageCount > 3 && (
+                            <p className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
+                              +{item.messageCount - 3} more message{item.messageCount - 3 !== 1 ? "s" : ""}
+                            </p>
+                          )}
                         </div>
                       )}
 
                       {/* Meta */}
                       <p className="ds-caption mb-2" style={{ color: "var(--text-tertiary)" }}>
-                        {item.channel === "email" ? "Email" : "iMessage"}
+                        {channelLabel(item.channel)}
                         {" · "}
-                        {formatDistanceToNow(new Date(item.lastMessageAt))} ago
-                        {item.contactCompany && ` · ${item.contactCompany}`}
+                        {formatDistanceToNow(new Date(item.lastInboundAt))} ago
+                        {item.company && ` · ${item.company}`}
                       </p>
 
                       {/* Actions */}
@@ -305,18 +360,18 @@ export function NeedsResponse() {
                             openComposer({
                               contactId: item.contactId,
                               presetContext: "reply_email",
-                              threadSubject: item.subject ?? undefined,
-                              threadSnippet: item.preview ?? undefined,
+                              threadSubject: item.lastInboundSubject ?? undefined,
+                              threadSnippet: preview || undefined,
                             })
                           }
                         />
 
                         {/* Copy preview */}
-                        {item.preview && (
+                        {preview && (
                           <ActionButton
-                            icon={copiedId === item.id ? Check : Copy}
-                            label={copiedId === item.id ? "Copied" : "Copy"}
-                            onClick={() => copyPreview(item.id, item.preview!)}
+                            icon={copiedKey === itemKey ? Check : Copy}
+                            label={copiedKey === itemKey ? "Copied" : "Copy"}
+                            onClick={() => copyPreview(itemKey, preview)}
                           />
                         )}
 
@@ -340,8 +395,8 @@ export function NeedsResponse() {
                         <ActionButton
                           icon={Check}
                           label="Responded"
-                          onClick={() => actionMutation.mutate({ id: item.id, action: "respond" })}
-                          disabled={actionMutation.isPending}
+                          onClick={() => repliedMutation.mutate({ contactId: item.contactId, channel: item.channel })}
+                          disabled={repliedMutation.isPending}
                           variant="success"
                         />
 
@@ -349,8 +404,8 @@ export function NeedsResponse() {
                         <ActionButton
                           icon={X}
                           label="Dismiss"
-                          onClick={() => actionMutation.mutate({ id: item.id, action: "dismiss" })}
-                          disabled={actionMutation.isPending}
+                          onClick={() => dismissMutation.mutate({ contactId: item.contactId, channel: item.channel })}
+                          disabled={dismissMutation.isPending}
                           variant="danger"
                         />
                       </div>
