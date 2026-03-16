@@ -44,6 +44,7 @@ interface InboxItemData {
   contactPhone: string | null;
   contactLinkedinUrl: string | null;
   triggerAt: string;
+  lastInboundAt?: string;
   messagePreview: MessagePreview[] | null;
   messageCount: number;
   status: string;
@@ -222,8 +223,6 @@ export function Inbox() {
         fetch("/api/message-actions", { method: "POST" }),
         fetch("/api/gmail/extract-actions", { method: "POST" }),
       ]);
-      // Retroactive sweep: catch any outbound replies the real-time hooks missed
-      await fetch("/api/inbox-items/sweep", { method: "POST" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
@@ -236,13 +235,15 @@ export function Inbox() {
   });
 
   const resolveMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      const res = await fetch(`/api/inbox-items/${itemId}/resolve`, {
+    mutationFn: async ({ itemId, channel }: { itemId: string; channel: string }) => {
+      const res = await fetch(`/api/inbox-items/${encodeURIComponent(itemId)}/resolve`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel }),
       });
       if (!res.ok) throw new Error("Failed");
     },
-    onMutate: async (itemId) => {
+    onMutate: async ({ itemId }) => {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
       const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
       if (prev) {
@@ -267,13 +268,15 @@ export function Inbox() {
   });
 
   const dismissMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      const res = await fetch(`/api/inbox-items/${itemId}/dismiss`, {
+    mutationFn: async ({ itemId, channel }: { itemId: string; channel: string }) => {
+      const res = await fetch(`/api/inbox-items/${encodeURIComponent(itemId)}/dismiss`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel }),
       });
       if (!res.ok) throw new Error("Failed");
     },
-    onMutate: async (itemId) => {
+    onMutate: async ({ itemId }) => {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
       const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
       if (prev) {
@@ -297,11 +300,11 @@ export function Inbox() {
   });
 
   const snoozeMutation = useMutation({
-    mutationFn: async (args: { itemId: string; hours: number }) => {
-      const res = await fetch(`/api/inbox-items/${args.itemId}/snooze`, {
+    mutationFn: async (args: { itemId: string; hours: number; channel: string }) => {
+      const res = await fetch(`/api/inbox-items/${encodeURIComponent(args.itemId)}/snooze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hours: args.hours }),
+        body: JSON.stringify({ hours: args.hours, channel: args.channel }),
       });
       if (!res.ok) throw new Error("Failed");
     },
@@ -483,10 +486,10 @@ export function Inbox() {
             waitingItems={waitingItems}
             showAll={showAll}
             onToggleShowAll={() => setShowAll(!showAll)}
-            onResolve={(itemId) => resolveMutation.mutate(itemId)}
-            onDismiss={(itemId) => dismissMutation.mutate(itemId)}
-            onSnooze={(itemId, hours) =>
-              snoozeMutation.mutate({ itemId, hours })
+            onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
+            onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
+            onSnooze={(itemId, hours, channel) =>
+              snoozeMutation.mutate({ itemId, hours, channel })
             }
             onBulkResolve={() => bulkResolveMutation.mutate()}
           />
@@ -514,9 +517,9 @@ function InboxTab({
   waitingItems: InboxItemData[];
   showAll: boolean;
   onToggleShowAll: () => void;
-  onResolve: (itemId: string) => void;
-  onDismiss: (itemId: string) => void;
-  onSnooze: (itemId: string, hours: number) => void;
+  onResolve: (itemId: string, channel: string) => void;
+  onDismiss: (itemId: string, channel: string) => void;
+  onSnooze: (itemId: string, hours: number, channel: string) => void;
   onBulkResolve: () => void;
 }) {
   if (waitingItems.length === 0) {
@@ -599,9 +602,9 @@ function InboxTab({
                 <InboxRow
                   key={item.id}
                   item={item}
-                  onResolve={() => onResolve(item.id)}
-                  onDismiss={() => onDismiss(item.id)}
-                  onSnooze={(hours) => onSnooze(item.id, hours)}
+                  onResolve={() => onResolve(item.id, item.channel)}
+                  onDismiss={() => onDismiss(item.id, item.channel)}
+                  onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
                 />
               ))}
             </div>

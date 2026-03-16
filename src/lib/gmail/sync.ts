@@ -499,6 +499,7 @@ async function processMessage(
       summary: detail.snippet ? decodeHtmlEntities(detail.snippet).slice(0, 500) : null,
       occurredAt,
       sourceId: detail.id,
+      chatId: detail.threadId ? `gmail:${detail.threadId}` : `1:1:${contactId}:email`,
     },
   });
 

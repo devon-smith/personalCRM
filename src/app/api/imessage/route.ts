@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getConversations, getMessagesForHandle } from "@/lib/imessage";
+import { getConversations, getMessagesForHandle, getChatLookup } from "@/lib/imessage";
 import { normalizePhone } from "@/lib/name-utils";
 import { autoResolveOnOutbound } from "@/lib/auto-resolve";
 import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
@@ -60,6 +60,9 @@ export async function POST() {
     if (convError) {
       return NextResponse.json({ error: convError }, { status: 500 });
     }
+
+    // 1b. Load canonical ROWID map for chat deduplication
+    const { canonicalRowId } = await getChatLookup();
 
     // 2. Load contacts for matching
     const contacts = await prisma.contact.findMany({
@@ -182,21 +185,38 @@ export async function POST() {
         const sourceId = `imsg-ind:${msg.guid}`;
 
         if (existingSourceIds.has(sourceId) || backfillGuids.has(msg.guid)) {
-          // Backfill group chat name on existing messages with generic subjects
-          if (msg.chatName) {
-            const lookupId = existingSourceIds.has(sourceId)
-              ? sourceId
-              : `imsg:${msg.guid}`;
-            const existing = await prisma.interaction.findFirst({
-              where: { userId, sourceId: lookupId },
-              select: { id: true, subject: true },
-            });
-            if (existing && (!existing.subject || GENERIC_SUBJECT_RE.test(existing.subject))) {
+          // Backfill chatId and group chat name on existing messages
+          const lookupId = existingSourceIds.has(sourceId)
+            ? sourceId
+            : `imsg:${msg.guid}`;
+          const existing = await prisma.interaction.findFirst({
+            where: { userId, sourceId: lookupId },
+            select: { id: true, subject: true, chatId: true },
+          });
+          if (existing) {
+            const rawRowId = msg.chatRowId;
+            const canonicalRow = rawRowId ? (canonicalRowId.get(rawRowId) ?? rawRowId) : null;
+            const backfillChatId = canonicalRow
+              ? `imsg-chat:${canonicalRow}`
+              : `1:1:${contactId}:text`;
+            const updates: Record<string, unknown> = {};
+            // Always update chatId to the canonical value from chat.db —
+            // the message's actual chat_message_join is the source of truth,
+            // not the migrate's per-contact guess.
+            if (existing.chatId !== backfillChatId) {
+              updates.chatId = backfillChatId;
+              updates.isGroupChat = msg.isGroupChat;
+              updates.chatName = msg.isGroupChat ? (msg.chatName ?? null) : null;
+            }
+            if (msg.chatName && (!existing.subject || GENERIC_SUBJECT_RE.test(existing.subject))) {
+              updates.subject = msg.chatName;
+            }
+            if (Object.keys(updates).length > 0) {
               await prisma.interaction.update({
                 where: { id: existing.id },
-                data: { subject: msg.chatName },
+                data: updates,
               });
-              subjectsBackfilled++;
+              if (updates.subject) subjectsBackfilled++;
             }
           }
           messagesSkipped++;
@@ -221,6 +241,13 @@ export async function POST() {
             ? "Group message"
             : `${channelLabel} message`;
 
+        // Stable chat identifier: use canonical iMessage chat ROWID, or synthesize for 1:1
+        const rawRow = msg.chatRowId;
+        const canonRow = rawRow ? (canonicalRowId.get(rawRow) ?? rawRow) : null;
+        const chatId = canonRow
+          ? `imsg-chat:${canonRow}`
+          : `1:1:${contactId}:text`;
+
         const createdIx = await prisma.interaction.create({
           data: {
             userId,
@@ -232,6 +259,9 @@ export async function POST() {
             summary,
             occurredAt: msg.date,
             sourceId,
+            chatId,
+            isGroupChat: msg.isGroupChat,
+            chatName: msg.isGroupChat ? (msg.chatName ?? null) : null,
           },
         });
 

@@ -402,6 +402,8 @@ export async function syncNotionMessages(
           summary: summary.slice(0, 500),
           occurredAt: new Date(msg.timestamp),
           sourceId,
+          chatId: `1:1:${contact.id}:text`,
+          isGroupChat: msg.isGroupChat ?? false,
         },
       });
 

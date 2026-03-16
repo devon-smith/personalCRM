@@ -91,6 +91,7 @@ export async function POST(request: Request) {
           summary: msg.text.slice(0, 500),
           occurredAt: timestamp,
           sourceId,
+          chatId: `1:1:${contact.id}:linkedin`,
         },
       });
 

@@ -35,6 +35,7 @@ model User {
   drafts               Draft[]
   extensionTokens      ExtensionToken[]
   inboxItems           InboxItem[]
+  inboxDismissals      InboxDismissal[]
 }
 
 model Account {
@@ -177,6 +178,11 @@ model Interaction {
   dismissedAt DateTime?
   createdAt   DateTime             @default(now())
 
+  // Stable conversation identifier (iMessage chat.ROWID, Gmail threadId, etc.)
+  chatId      String?
+  isGroupChat Boolean              @default(false)
+  chatName    String?
+
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -184,6 +190,23 @@ model Interaction {
   @@index([occurredAt])
   @@index([userId, occurredAt])
   @@index([userId, contactId, occurredAt])
+  @@index([userId, chatId, occurredAt])
+}
+
+// ─── Inbox Dismissals ──────────────────────────────────────
+
+model InboxDismissal {
+  id           String    @id @default(uuid())
+  userId       String
+  chatId       String
+  channel      String
+  dismissedAt  DateTime  @default(now())
+  snoozeUntil  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chatId, channel])
+  @@index([userId])
 }
 
 // ─── AI Insights Models ────────────────────────────────────

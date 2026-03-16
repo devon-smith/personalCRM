@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+/**
+ * POST /api/inbox-items/:chatId/resolve
+ * Manually mark a conversation as replied to.
+ * Creates a synthetic OUTBOUND interaction with the same chatId,
+ * which makes the computed inbox query automatically exclude it.
+ * In v2, itemId IS the chatId.
+ */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },
 ) {
   try {
@@ -12,41 +19,43 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { itemId } = await params;
+    const { itemId: chatId } = await params;
+    const body = await req.json().catch(() => ({})) as { channel?: string };
+    const channel = body.channel ?? "text";
 
-    const item = await prisma.inboxItem.findFirst({
-      where: { id: itemId, userId: session.user.id },
+    // Find the latest inbound interaction for this chat to get contactId
+    const latestInbound = await prisma.interaction.findFirst({
+      where: {
+        userId: session.user.id,
+        chatId,
+        direction: "INBOUND",
+      },
+      orderBy: { occurredAt: "desc" },
+      select: { contactId: true, channel: true, isGroupChat: true },
     });
 
-    if (!item) {
-      return NextResponse.json({ error: "Item not found" }, { status: 404 });
+    if (!latestInbound) {
+      return NextResponse.json({ error: "Chat not found" }, { status: 404 });
     }
 
-    await prisma.inboxItem.update({
-      where: { id: itemId },
-      data: {
-        status: "RESOLVED",
-        resolvedAt: new Date(),
-        resolvedBy: "manual",
-      },
-    });
-
-    // Also create a synthetic outbound interaction so cross-channel
-    // resolution and the old system (if still running) also see it
+    // Create a synthetic outbound interaction with the same chatId.
+    // This makes the computed inbox query see "last message = OUTBOUND" → excluded.
     await prisma.interaction.create({
       data: {
         userId: session.user.id,
-        contactId: item.contactId,
+        contactId: latestInbound.contactId,
         type: "NOTE",
         direction: "OUTBOUND",
-        channel: item.channel === "text" ? "iMessage" : item.channel,
+        channel: latestInbound.channel ?? channel,
         summary: "Replied (marked manually)",
         occurredAt: new Date(),
-        sourceId: `manual-reply:${item.contactId}:${Date.now()}`,
+        sourceId: `manual-reply:${chatId}:${Date.now()}`,
+        chatId,
+        isGroupChat: latestInbound.isGroupChat,
       },
     });
 
-    console.log(`[inbox] Manually resolved item ${itemId} for contact ${item.contactId} on ${item.channel}`);
+    console.log(`[inbox] Manually resolved chat ${chatId}`);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

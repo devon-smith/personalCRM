@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
+import { getChatLookup, getMessageChatMapping, ChatInfo } from "@/lib/imessage";
+import { normalizePhone } from "@/lib/name-utils";
+
+export const maxDuration = 120;
 
 /**
  * POST /api/inbox-items/migrate
- * One-time migration: scan existing interactions and populate InboxItem table.
- * Clears all existing InboxItems first, then replays interactions chronologically.
- * Deduplicates imsg:/imsg-ind: interactions and filters self-contact.
+ *
+ * Backfills chatId on ALL Interactions.
+ *
+ * For iMessage/SMS: uses per-message GUID lookup from chat.db (source of truth),
+ * falling back to per-contact handle lookup for messages not found by GUID.
+ * For Gmail: uses EmailMessage.threadId.
+ * For LinkedIn: synthesizes from contactId.
  */
 export async function POST() {
   try {
@@ -18,132 +25,186 @@ export async function POST() {
 
     const userId = session.user.id;
 
-    // Clear existing inbox items for a clean slate
-    await prisma.inboxItem.deleteMany({ where: { userId } });
-
-    // Find self-contact (contact whose email matches the user's email)
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true },
-    });
-    let selfContactIds = new Set<string>();
-    if (user?.email) {
-      const selfContacts = await prisma.contact.findMany({
-        where: {
-          userId,
-          OR: [
-            { email: user.email },
-            { name: user.name ?? "__impossible__" },
-          ],
-        },
-        select: { id: true },
-      });
-      selfContactIds = new Set(selfContacts.map((c) => c.id));
+    // 1. Get chat lookup (canonical ROWIDs via group_id dedup)
+    const { handleToChats, canonicalRowId, error: chatError } = await getChatLookup();
+    if (chatError) {
+      console.warn(`[migrate] Chat lookup warning: ${chatError}`);
     }
 
-    // Fetch all interactions from the last 30 days
-    const since = new Date();
-    since.setDate(since.getDate() - 30);
+    // 2. Get per-message GUID → chatRowId mapping from chat.db (90 days)
+    const { guidToChat, error: guidError } = await getMessageChatMapping(90, canonicalRowId);
+    if (guidError) {
+      console.warn(`[migrate] GUID mapping warning: ${guidError}`);
+    }
+    console.log(`[migrate] Loaded ${guidToChat.size} GUID→chat mappings from chat.db`);
 
-    const interactions = await prisma.interaction.findMany({
-      where: {
-        userId,
-        occurredAt: { gte: since },
-        type: { not: "NOTE" },
-        dismissedAt: null,
-      },
-      orderBy: { occurredAt: "asc" },
-      select: {
-        id: true,
-        contactId: true,
-        direction: true,
-        channel: true,
-        subject: true,
-        summary: true,
-        occurredAt: true,
-        sourceId: true,
-      },
+    // 3. Load contacts for handle-based fallback
+    const contacts = await prisma.contact.findMany({
+      where: { userId },
+      select: { id: true, phone: true, email: true, additionalEmails: true },
     });
 
-    // Deduplicate: collect all imsg-ind: GUIDs first, then filter out imsg: duplicates
-    const canonicalGuids = new Set<string>();
-    for (const ix of interactions) {
-      const sourceId = ix.sourceId ?? "";
-      if (sourceId.startsWith("imsg-ind:")) {
-        canonicalGuids.add(sourceId.replace("imsg-ind:", ""));
+    const contactHandles = new Map<string, string[]>();
+    for (const c of contacts) {
+      const handles: string[] = [];
+      if (c.phone) {
+        handles.push(c.phone);
+        handles.push(normalizePhone(c.phone));
+        const digits = c.phone.replace(/\D/g, "");
+        if (digits.length >= 10) handles.push(`+1${digits.slice(-10)}`);
       }
+      if (c.email) handles.push(c.email.toLowerCase());
+      for (const e of c.additionalEmails) handles.push(e.toLowerCase());
+      contactHandles.set(c.id, handles);
     }
 
-    // Also deduplicate by content: same contact + summary + timestamp (within 1s)
-    const seenContent = new Set<string>();
-    const deduped = interactions.filter((ix) => {
-      const sourceId = ix.sourceId ?? "";
-
-      // Skip imsg: if imsg-ind: exists for the same GUID
-      if (sourceId.startsWith("imsg:")) {
-        const guid = sourceId.replace("imsg:", "");
-        if (canonicalGuids.has(guid)) return false;
+    function findChatsForContact(contactId: string): {
+      oneToOne: ChatInfo | null;
+      groups: ChatInfo[];
+    } {
+      const handles = contactHandles.get(contactId) ?? [];
+      const allChats = new Map<number, ChatInfo>();
+      for (const handle of handles) {
+        for (const chat of (handleToChats.get(handle) ?? [])) {
+          allChats.set(chat.chatRowId, chat);
+        }
+        const digits = handle.replace(/\D/g, "");
+        if (digits.length >= 10) {
+          const last10 = digits.slice(-10);
+          for (const [h, chats] of handleToChats) {
+            const hDigits = h.replace(/\D/g, "");
+            if (hDigits.length >= 10 && hDigits.slice(-10) === last10) {
+              for (const chat of chats) allChats.set(chat.chatRowId, chat);
+            }
+          }
+        }
       }
+      let oneToOne: ChatInfo | null = null;
+      const groups: ChatInfo[] = [];
+      for (const chat of allChats.values()) {
+        if (chat.isGroupChat) groups.push(chat);
+        else if (!oneToOne) oneToOne = chat;
+      }
+      return { oneToOne, groups };
+    }
 
-      // Content-based dedup: same contact + direction + summary + timestamp
-      const ts = Math.floor(ix.occurredAt.getTime() / 1000); // 1-second granularity
-      const contentKey = `${ix.contactId}:${ix.direction}:${ts}:${(ix.summary ?? "").slice(0, 50)}`;
-      if (seenContent.has(contentKey)) return false;
-      seenContent.add(contentKey);
+    // 4. Load Gmail thread IDs
+    const emailInteractions = await prisma.interaction.findMany({
+      where: { userId, channel: { in: ["gmail", "email"] }, sourceId: { not: null } },
+      select: { id: true, sourceId: true },
+    });
+    const gmailIds = emailInteractions.map((i) => i.sourceId!).filter(Boolean);
+    const emailMessages = gmailIds.length > 0
+      ? await prisma.emailMessage.findMany({
+          where: { userId, gmailId: { in: gmailIds } },
+          select: { gmailId: true, threadId: true },
+        })
+      : [];
+    const threadByGmailId = new Map(
+      emailMessages.filter((e) => e.threadId).map((e) => [e.gmailId, e.threadId!]),
+    );
 
-      return true;
+    // 5. Get ALL interactions
+    const allInteractions = await prisma.interaction.findMany({
+      where: { userId },
+      select: { id: true, contactId: true, channel: true, summary: true, subject: true, sourceId: true },
     });
 
-    let inboundProcessed = 0;
-    let outboundProcessed = 0;
-    let skippedSelf = 0;
+    let updated = 0;
+    let skipped = 0;
+    let guidHits = 0;
+    let handleFallbacks = 0;
 
-    for (const ix of deduped) {
-      if (!ix.channel) continue;
+    const batchSize = 25;
+    const updates: { id: string; chatId: string; isGroupChat: boolean; chatName: string | null }[] = [];
 
-      // Skip self-contact
-      if (selfContactIds.has(ix.contactId)) {
-        skippedSelf++;
+    for (const ix of allInteractions) {
+      const ch = (ix.channel ?? "").toLowerCase();
+
+      let chatId: string | null = null;
+      let isGroupChat = false;
+      let chatName: string | null = null;
+
+      if (ch === "gmail" || ch === "email") {
+        const threadId = ix.sourceId ? threadByGmailId.get(ix.sourceId) : null;
+        chatId = threadId ? `gmail:${threadId}` : `1:1:${ix.contactId}:email`;
+      } else if (ch === "linkedin") {
+        chatId = `1:1:${ix.contactId}:linkedin`;
+      } else if (ch === "imessage" || ch === "sms" || ch === "text") {
+        // PRIMARY: look up message GUID in chat.db for exact chatRowId
+        const guid = extractGuid(ix.sourceId);
+        const chatMapping = guid ? guidToChat.get(guid) : null;
+
+        if (chatMapping) {
+          chatId = `imsg-chat:${chatMapping.chatRowId}`;
+          isGroupChat = chatMapping.isGroupChat;
+          chatName = chatMapping.chatName;
+          guidHits++;
+        } else {
+          // FALLBACK: per-contact handle lookup (for messages not in chat.db)
+          const { oneToOne, groups } = findChatsForContact(ix.contactId);
+          const isGroupSummary = (ix.summary ?? "").startsWith("(in group chat)");
+
+          if (isGroupSummary) {
+            isGroupChat = true;
+            const subject = ix.subject;
+            const matched = (subject && subject !== "Group message")
+              ? groups.find((g) => g.chatName === subject || g.chatIdentifier === subject)
+              : null;
+            if (matched) {
+              chatId = `imsg-chat:${matched.chatRowId}`;
+              chatName = matched.chatName;
+            } else {
+              const first = groups[0];
+              if (first) {
+                chatId = `imsg-chat:${first.chatRowId}`;
+                chatName = first.chatName;
+              } else {
+                chatId = `imsg-group:${ix.contactId}`;
+                chatName = (subject && subject !== "Group message") ? subject : null;
+              }
+            }
+          } else {
+            if (oneToOne) {
+              chatId = `imsg-chat:${oneToOne.chatRowId}`;
+            } else {
+              chatId = `1:1:${ix.contactId}:text`;
+            }
+          }
+          handleFallbacks++;
+        }
+      } else {
+        chatId = `1:1:${ix.contactId}:${ch}`;
+      }
+
+      if (!chatId) {
+        skipped++;
         continue;
       }
 
-      const isGroupChat = (ix.summary ?? "").startsWith("(in group chat)");
-      const threadKey = isGroupChat
-        ? (ix.subject && ix.subject !== "Group message" ? ix.subject : "group")
-        : undefined;
+      updates.push({ id: ix.id, chatId, isGroupChat, chatName });
 
-      if (ix.direction === "OUTBOUND") {
-        await onOutboundInteraction(userId, ix.contactId, ix.channel, ix.occurredAt, {
-          threadKey,
-          isGroupChat,
-        });
-        outboundProcessed++;
-      } else if (ix.direction === "INBOUND") {
-        await onInboundInteraction(userId, ix.contactId, ix.channel, {
-          id: ix.id,
-          summary: ix.summary,
-          occurredAt: ix.occurredAt,
-          subject: ix.subject,
-        }, {
-          threadKey,
-          isGroupChat,
-        });
-        inboundProcessed++;
+      if (updates.length >= batchSize) {
+        const batch = updates.splice(0, batchSize);
+        await flushUpdates(batch);
+        updated += batch.length;
       }
     }
 
-    console.log(
-      `[inbox-migrate] Processed ${inboundProcessed} inbound + ${outboundProcessed} outbound ` +
-      `(${interactions.length - deduped.length} deduped, ${skippedSelf} self-contact skipped)`
-    );
+    if (updates.length > 0) {
+      updated += updates.length;
+      await flushUpdates(updates);
+    }
+
+    console.log(`[inbox-migrate] Updated ${updated} (${skipped} skipped, ${guidHits} GUID hits, ${handleFallbacks} handle fallbacks)`);
 
     return NextResponse.json({
       ok: true,
-      totalInteractions: deduped.length,
-      inboundProcessed,
-      outboundProcessed,
-      duplicatesRemoved: interactions.length - deduped.length,
-      selfContactSkipped: skippedSelf,
+      updated,
+      skipped,
+      total: allInteractions.length,
+      guidHits,
+      handleFallbacks,
     });
   } catch (error) {
     console.error("[POST /api/inbox-items/migrate]", error);
@@ -153,4 +214,32 @@ export async function POST() {
       { status: 500 },
     );
   }
+}
+
+/** Extract message GUID from sourceId formats: "imsg-ind:GUID" or "imsg:GUID" */
+function extractGuid(sourceId: string | null): string | null {
+  if (!sourceId) return null;
+  if (sourceId.startsWith("imsg-ind:")) return sourceId.slice(9);
+  if (sourceId.startsWith("imsg:")) return sourceId.slice(5);
+  return null;
+}
+
+async function flushUpdates(
+  updates: { id: string; chatId: string; isGroupChat: boolean; chatName: string | null }[],
+) {
+  await prisma.$transaction(
+    async (tx) => {
+      for (const u of updates) {
+        await tx.interaction.update({
+          where: { id: u.id },
+          data: {
+            chatId: u.chatId,
+            isGroupChat: u.isGroupChat,
+            chatName: u.chatName,
+          },
+        });
+      }
+    },
+    { timeout: 30000 },
+  );
 }

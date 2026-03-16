@@ -290,18 +290,15 @@ export async function onOutboundInteraction(
   const channel = normalizeChannel(rawChannel);
   const threadKey = options?.threadKey ?? "";
 
-  // For group chats: only resolve the matching thread
-  // For 1:1: resolve all 1:1 items for this contact+channel
-  const threadFilter = options?.isGroupChat
-    ? { threadKey }        // group: only resolve this specific group thread
-    : { threadKey: "" };   // 1:1: only resolve the 1:1 thread (not group threads)
+  // For group chats: resolve ALL contacts in this thread (one reply addresses everyone)
+  // For 1:1: resolve only this contact's 1:1 item
+  const baseFilter = options?.isGroupChat
+    ? { userId, channel, threadKey, isGroupChat: true }   // group: all contacts in thread
+    : { userId, contactId, channel, threadKey: "" };      // 1:1: only this contact
 
   const resolved = await prisma.inboxItem.updateMany({
     where: {
-      userId,
-      contactId,
-      channel,
-      ...threadFilter,
+      ...baseFilter,
       status: "OPEN",
       triggerAt: { lte: occurredAt },
     },
@@ -314,17 +311,14 @@ export async function onOutboundInteraction(
 
   if (resolved.count > 0) {
     console.log(
-      `[inbox] Auto-resolved ${resolved.count} item(s) for contact ${contactId} on ${channel} (thread: ${threadKey || "1:1"})`,
+      `[inbox] Auto-resolved ${resolved.count} item(s) on ${channel} (thread: ${threadKey || "1:1"})`,
     );
   }
 
   // Also resolve snoozed items
   await prisma.inboxItem.updateMany({
     where: {
-      userId,
-      contactId,
-      channel,
-      ...threadFilter,
+      ...baseFilter,
       status: "SNOOZED",
       triggerAt: { lte: occurredAt },
     },

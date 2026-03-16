@@ -52,20 +52,29 @@ export async function POST() {
     const itemsToResolve: string[] = [];
 
     // 2. For each open item, check for a matching outbound
+    // Group chat optimization: once we find an outbound for a threadKey,
+    // resolve ALL items in that thread (not just the one contact)
+    const resolvedThreads = new Set<string>();
+
     for (const item of openItems) {
+      // Skip if this group thread was already resolved by a previous item check
+      if (item.isGroupChat && item.threadKey && resolvedThreads.has(item.threadKey)) {
+        itemsToResolve.push(item.id);
+        continue;
+      }
+
       // For group chats: look for outbound in the same group (subject matches threadKey)
-      // For 1:1: look for any outbound on the same channel
+      // Don't filter by contactId — outbound may be stored under any group member
+      // For 1:1: look for outbound from this specific contact
       const outbound = await prisma.interaction.findFirst({
         where: {
           userId,
-          contactId: item.contactId,
+          ...(item.isGroupChat
+            ? { subject: item.threadKey }       // group: match by thread name, any contact
+            : { contactId: item.contactId }),   // 1:1: match by contact
           direction: "OUTBOUND",
           type: { not: "NOTE" },
           occurredAt: { gt: item.triggerAt },
-          // For group chats, match by subject (which stores the group chat name)
-          ...(item.isGroupChat && item.threadKey
-            ? { subject: item.threadKey }
-            : {}),
         },
         orderBy: { occurredAt: "desc" },
         select: { channel: true, occurredAt: true },
@@ -83,6 +92,10 @@ export async function POST() {
 
       if (sameChannel || isCrossChannel) {
         itemsToResolve.push(item.id);
+        // Mark this group thread as resolved so other members get resolved too
+        if (item.isGroupChat && item.threadKey) {
+          resolvedThreads.add(item.threadKey);
+        }
       }
     }
 

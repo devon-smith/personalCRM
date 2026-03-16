@@ -33,6 +33,8 @@ export interface IMessageDetail {
   chatName: string | null;
   /** Whether this message is from a group chat */
   isGroupChat: boolean;
+  /** Stable chat identifier from iMessage (chat.ROWID) */
+  chatRowId: number | null;
 }
 
 export interface IMessageResult {
@@ -208,8 +210,9 @@ export async function getMessagesForHandle(
       m.is_from_me AS isFromMe,
       '${safeHandle}' AS handleId,
       COALESCE(h.service, 'iMessage') AS service,
-      c.display_name AS chatName,
-      CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 1 ELSE 0 END AS isGroupChat
+      COALESCE(NULLIF(c.display_name, ''), CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 'gc:' || c.chat_identifier ELSE NULL END) AS chatName,
+      CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 1 ELSE 0 END AS isGroupChat,
+      c.ROWID AS chatRowId
     FROM message m
     LEFT JOIN handle h ON m.handle_id = h.ROWID
     LEFT JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
@@ -243,6 +246,7 @@ export async function getMessagesForHandle(
     service: string;
     chatName: string | null;
     isGroupChat: number;
+    chatRowId: number | null;
   }
 
   try {
@@ -257,6 +261,7 @@ export async function getMessagesForHandle(
       service: row.service,
       chatName: row.chatName || null,
       isGroupChat: row.isGroupChat === 1,
+      chatRowId: row.chatRowId ?? null,
     }));
 
     return { messages, total: messages.length, error: null };
@@ -290,8 +295,9 @@ export async function getAllMessages(
       m.is_from_me AS isFromMe,
       h.id AS handleId,
       h.service AS service,
-      c.display_name AS chatName,
-      CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 1 ELSE 0 END AS isGroupChat
+      COALESCE(NULLIF(c.display_name, ''), CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 'gc:' || c.chat_identifier ELSE NULL END) AS chatName,
+      CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 1 ELSE 0 END AS isGroupChat,
+      c.ROWID AS chatRowId
     FROM message m
     JOIN handle h ON m.handle_id = h.ROWID
     LEFT JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
@@ -317,6 +323,7 @@ export async function getAllMessages(
     service: string;
     chatName: string | null;
     isGroupChat: number;
+    chatRowId: number | null;
   }
 
   try {
@@ -331,6 +338,7 @@ export async function getAllMessages(
       service: row.service,
       chatName: row.chatName || null,
       isGroupChat: row.isGroupChat === 1,
+      chatRowId: row.chatRowId ?? null,
     }));
 
     return { messages, total: messages.length, error: null };
@@ -416,5 +424,326 @@ export async function getDailyConversationSummaries(
     const message =
       err instanceof Error ? err.message : "Failed to read messages";
     return { summaries: [], error: message };
+  }
+}
+
+// ─── Chat Lookup ──────────────────────────────────────────────
+
+export interface ChatInfo {
+  chatRowId: number;
+  chatName: string | null;
+  chatIdentifier: string;
+  isGroupChat: boolean;
+  memberCount: number;
+}
+
+/**
+ * Get a mapping of handle → chat ROWIDs from iMessage's chat.db.
+ * Used to backfill correct chatId on existing Interactions.
+ *
+ * Deduplicates chats using group_id: iMessage creates separate chat ROWIDs
+ * for the same conversation when switching between iMessage and SMS services.
+ * These share the same group_id but have different chat_identifiers.
+ * The ROWID with the most messages becomes canonical; all others map to it.
+ *
+ * Returns:
+ * - handleToChats: Map from handle (phone/email) → list of ChatInfo (canonical only)
+ * - chatById: Map from chatRowId → ChatInfo (includes canonical mapping)
+ * - canonicalRowId: Map from any ROWID → the canonical ROWID for that conversation
+ */
+export async function getChatLookup(): Promise<{
+  handleToChats: Map<string, ChatInfo[]>;
+  chatById: Map<number, ChatInfo>;
+  canonicalRowId: Map<number, number>;
+  error: string | null;
+}> {
+  const accessError = checkIMessageAccess();
+  if (accessError) {
+    return {
+      handleToChats: new Map(),
+      chatById: new Map(),
+      canonicalRowId: new Map(),
+      error: accessError,
+    };
+  }
+
+  const query = `
+    SELECT
+      c.ROWID AS chatRowId,
+      COALESCE(NULLIF(c.display_name, ''), NULL) AS chatName,
+      c.chat_identifier AS chatIdentifier,
+      c.group_id AS groupId,
+      h.id AS handleId,
+      (SELECT COUNT(DISTINCT chj2.handle_id)
+       FROM chat_handle_join chj2
+       WHERE chj2.chat_id = c.ROWID) AS memberCount,
+      (SELECT COUNT(*)
+       FROM chat_message_join cmj
+       WHERE cmj.chat_id = c.ROWID) AS msgCount
+    FROM chat c
+    JOIN chat_handle_join chj ON chj.chat_id = c.ROWID
+    JOIN handle h ON h.ROWID = chj.handle_id;
+  `.trim();
+
+  interface RawRow {
+    chatRowId: number;
+    chatName: string | null;
+    chatIdentifier: string;
+    groupId: string | null;
+    handleId: string;
+    memberCount: number;
+    msgCount: number;
+  }
+
+  try {
+    const rows = await runQuery<RawRow>(query);
+
+    // Step 1: Build canonical ROWID map using group_id as the dedup key.
+    // group_id is a UUID that stays consistent across iMessage/SMS service splits.
+    // For chats without group_id, fall back to chat_identifier.
+    interface ChatEntry {
+      rowId: number;
+      msgCount: number;
+      chatName: string | null;
+      memberCount: number;
+      chatIdentifier: string;
+    }
+
+    const byGroupKey = new Map<string, ChatEntry[]>();
+    for (const row of rows) {
+      const groupKey = (row.groupId && row.groupId !== "")
+        ? `gid:${row.groupId}`
+        : `ci:${row.chatIdentifier}`;
+      const group = byGroupKey.get(groupKey) ?? [];
+      if (!group.some((g) => g.rowId === row.chatRowId)) {
+        group.push({
+          rowId: row.chatRowId,
+          msgCount: row.msgCount,
+          chatName: row.chatName,
+          memberCount: row.memberCount,
+          chatIdentifier: row.chatIdentifier,
+        });
+      }
+      byGroupKey.set(groupKey, group);
+    }
+
+    // For each group, pick the ROWID with most messages as canonical
+    const canonicalRowId = new Map<number, number>();
+    // Also track the aggregate memberCount across all ROWIDs in a group
+    const canonicalMemberCount = new Map<number, number>();
+    for (const [, group] of byGroupKey) {
+      const sorted = [...group].sort((a, b) => b.msgCount - a.msgCount);
+      const canonical = sorted[0];
+      // Use the max memberCount from any ROWID in the group
+      const maxMembers = Math.max(...sorted.map((e) => e.memberCount));
+      canonicalMemberCount.set(canonical.rowId, maxMembers);
+      for (const entry of sorted) {
+        canonicalRowId.set(entry.rowId, canonical.rowId);
+      }
+    }
+
+    // Step 2: Build maps using canonical ROWIDs only
+    const handleToChats = new Map<string, ChatInfo[]>();
+    const chatById = new Map<number, ChatInfo>();
+
+    for (const row of rows) {
+      const canonical = canonicalRowId.get(row.chatRowId) ?? row.chatRowId;
+
+      // Only build ChatInfo for canonical ROWIDs
+      if (canonical !== row.chatRowId) continue;
+
+      // Use aggregated memberCount for group chat detection
+      const effectiveMembers = canonicalMemberCount.get(canonical) ?? row.memberCount;
+
+      const info: ChatInfo = {
+        chatRowId: canonical,
+        chatName: row.chatName || null,
+        chatIdentifier: row.chatIdentifier,
+        isGroupChat: effectiveMembers > 1,
+        memberCount: effectiveMembers,
+      };
+
+      chatById.set(canonical, info);
+
+      const handle = row.handleId;
+      const existing = handleToChats.get(handle) ?? [];
+      if (!existing.some((c) => c.chatRowId === canonical)) {
+        existing.push(info);
+      }
+      handleToChats.set(handle, existing);
+    }
+
+    // Also register non-canonical ROWIDs' handles pointing to canonical ChatInfo
+    for (const row of rows) {
+      const canonical = canonicalRowId.get(row.chatRowId) ?? row.chatRowId;
+      if (canonical === row.chatRowId) continue; // already handled above
+
+      const info = chatById.get(canonical);
+      if (!info) continue;
+
+      const handle = row.handleId;
+      const existing = handleToChats.get(handle) ?? [];
+      if (!existing.some((c) => c.chatRowId === canonical)) {
+        existing.push(info);
+      }
+      handleToChats.set(handle, existing);
+    }
+
+    return { handleToChats, chatById, canonicalRowId, error: null };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to read chat lookup";
+    return {
+      handleToChats: new Map(),
+      chatById: new Map(),
+      canonicalRowId: new Map(),
+      error: message,
+    };
+  }
+}
+
+/**
+ * Bulk lookup: get GUID → chatRowId mapping for all messages in chat.db
+ * from the last N days. Used by the migrate endpoint to assign correct
+ * chatIds based on per-message data instead of per-contact guesses.
+ *
+ * Returns canonical ROWIDs (deduped by group_id).
+ */
+export async function getMessageChatMapping(
+  days: number,
+  canonicalRowId: Map<number, number>,
+): Promise<{ guidToChat: Map<string, { chatRowId: number; isGroupChat: boolean; chatName: string | null }>; error: string | null }> {
+  const accessError = checkIMessageAccess();
+  if (accessError) return { guidToChat: new Map(), error: accessError };
+
+  const minDate = daysAgoAppleTimestamp(days);
+
+  const query = `
+    SELECT
+      m.guid AS guid,
+      c.ROWID AS chatRowId,
+      COALESCE(NULLIF(c.display_name, ''), NULL) AS chatName,
+      (SELECT COUNT(DISTINCT chj2.handle_id)
+       FROM chat_handle_join chj2
+       WHERE chj2.chat_id = c.ROWID) AS memberCount
+    FROM message m
+    JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+    JOIN chat c ON c.ROWID = cmj.chat_id
+    WHERE m.date > ${minDate}
+    ORDER BY m.date DESC;
+  `.trim();
+
+  interface Row {
+    guid: string;
+    chatRowId: number;
+    chatName: string | null;
+    memberCount: number;
+  }
+
+  try {
+    const rows = await runQuery<Row>(query);
+    const guidToChat = new Map<string, { chatRowId: number; isGroupChat: boolean; chatName: string | null }>();
+
+    for (const row of rows) {
+      const canonical = canonicalRowId.get(row.chatRowId) ?? row.chatRowId;
+      guidToChat.set(row.guid, {
+        chatRowId: canonical,
+        isGroupChat: row.memberCount > 1,
+        chatName: row.chatName || null,
+      });
+    }
+
+    return { guidToChat, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to query message-chat mapping";
+    return { guidToChat: new Map(), error: message };
+  }
+}
+
+/**
+ * Diagnostic: return chat.db duplication info for debugging.
+ * Checks BOTH chat_identifier and group_id as potential dedup keys.
+ */
+export async function getChatDuplicates(): Promise<{
+  byIdentifier: { key: string; rowIds: number[]; msgCounts: number[]; services: string[] }[];
+  byGroupId: { key: string; rowIds: number[]; msgCounts: number[]; chatIdentifiers: string[]; services: string[] }[];
+  allChats: {
+    rowId: number; chatIdentifier: string; groupId: string | null;
+    service: string; displayName: string | null; msgCount: number; memberCount: number;
+  }[];
+  error: string | null;
+}> {
+  const accessError = checkIMessageAccess();
+  if (accessError) return { byIdentifier: [], byGroupId: [], allChats: [], error: accessError };
+
+  const query = `
+    SELECT
+      c.ROWID AS rowId,
+      c.chat_identifier AS chatIdentifier,
+      c.group_id AS groupId,
+      c.service_name AS service,
+      c.display_name AS displayName,
+      (SELECT COUNT(*) FROM chat_message_join cmj WHERE cmj.chat_id = c.ROWID) AS msgCount,
+      (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) AS memberCount
+    FROM chat c
+    ORDER BY msgCount DESC;
+  `.trim();
+
+  interface Row {
+    rowId: number;
+    chatIdentifier: string;
+    groupId: string | null;
+    service: string;
+    displayName: string | null;
+    msgCount: number;
+    memberCount: number;
+  }
+
+  try {
+    const rows = await runQuery<Row>(query);
+
+    // Group by chat_identifier
+    const byIdent = new Map<string, { rowIds: number[]; msgCounts: number[]; services: string[] }>();
+    for (const r of rows) {
+      const entry = byIdent.get(r.chatIdentifier) ?? { rowIds: [], msgCounts: [], services: [] };
+      entry.rowIds.push(r.rowId);
+      entry.msgCounts.push(r.msgCount);
+      entry.services.push(r.service);
+      byIdent.set(r.chatIdentifier, entry);
+    }
+
+    // Group by group_id (non-null/non-empty only)
+    const byGroup = new Map<string, { rowIds: number[]; msgCounts: number[]; chatIdentifiers: string[]; services: string[] }>();
+    for (const r of rows) {
+      if (!r.groupId || r.groupId === "") continue;
+      const entry = byGroup.get(r.groupId) ?? { rowIds: [], msgCounts: [], chatIdentifiers: [], services: [] };
+      entry.rowIds.push(r.rowId);
+      entry.msgCounts.push(r.msgCount);
+      entry.chatIdentifiers.push(r.chatIdentifier);
+      entry.services.push(r.service);
+      byGroup.set(r.groupId, entry);
+    }
+
+    return {
+      byIdentifier: [...byIdent.entries()]
+        .filter(([, v]) => v.rowIds.length > 1)
+        .map(([key, v]) => ({ key, ...v })),
+      byGroupId: [...byGroup.entries()]
+        .filter(([, v]) => v.rowIds.length > 1)
+        .map(([key, v]) => ({ key, ...v })),
+      allChats: rows.map((r) => ({
+        rowId: r.rowId,
+        chatIdentifier: r.chatIdentifier,
+        groupId: r.groupId,
+        service: r.service,
+        displayName: r.displayName,
+        msgCount: r.msgCount,
+        memberCount: r.memberCount,
+      })),
+      error: null,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to query chat duplicates";
+    return { byIdentifier: [], byGroupId: [], allChats: [], error: message };
   }
 }
