@@ -136,24 +136,29 @@ export async function onInboundInteraction(
   });
 
   if (existing) {
-    // Append new message to the preview (prepend newest first)
     const previews = (existing.messagePreview as unknown as Array<Record<string, unknown>>) ?? [];
+
+    // Deduplicate: skip if this exact message is already in previews
+    const isDuplicate = previews.some((p) =>
+      p.summary === summary &&
+      p.occurredAt === interaction.occurredAt.toISOString()
+    );
+    if (isDuplicate) return;
+
     const newPreview = {
       summary,
       occurredAt: interaction.occurredAt.toISOString(),
       channel: rawChannel,
     };
 
-    // Insert in chronological position (newest first in the array)
+    // Sort newest first, cap at 10
     const allPreviews = [newPreview, ...previews];
-    // Sort newest first to handle out-of-order processing
     allPreviews.sort((a, b) =>
       new Date(b.occurredAt as string).getTime() - new Date(a.occurredAt as string).getTime()
     );
     const trimmed = allPreviews.slice(0, 10) as unknown as Prisma.InputJsonValue;
 
     // Only advance triggerAt forward, never backward
-    // This prevents DESC-ordered message processing from corrupting the trigger time
     const newTriggerAt = interaction.occurredAt > existing.triggerAt
       ? interaction.occurredAt
       : existing.triggerAt;
