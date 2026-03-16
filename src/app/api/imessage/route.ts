@@ -247,7 +247,10 @@ export async function POST() {
             isGroupChat: msg.isGroupChat,
           });
         } else {
-          await onOutboundInteraction(userId, contactId, channelLabel, msg.date);
+          await onOutboundInteraction(userId, contactId, channelLabel, msg.date, {
+            threadKey: msg.isGroupChat ? (msg.chatName ?? "group") : undefined,
+            isGroupChat: msg.isGroupChat,
+          });
         }
 
         existingSourceIds.add(sourceId);

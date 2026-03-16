@@ -7,13 +7,10 @@ import { prisma } from "@/lib/prisma";
  *
  * Retroactive sweep: for every OPEN/SNOOZED InboxItem, check if there's
  * an OUTBOUND interaction AFTER triggerAt for the same contact.
- * If yes → resolve as "auto_sweep".
  *
- * This catches all failure modes:
- * - Gmail CC/BCC replies not firing onOutboundInteraction
- * - iMessage/iCloud sync lag (replies from iPhone)
- * - Race conditions in 2-min sync intervals
- * - Any missed real-time hooks
+ * Thread-aware: for group chats, checks if the outbound is in the same
+ * group chat (by matching the interaction's subject to the threadKey).
+ * For 1:1 items, any outbound on the same channel resolves.
  */
 export async function POST() {
   try {
@@ -34,6 +31,8 @@ export async function POST() {
         id: true,
         contactId: true,
         channel: true,
+        threadKey: true,
+        isGroupChat: true,
         triggerAt: true,
         status: true,
       },
@@ -43,56 +42,43 @@ export async function POST() {
       return NextResponse.json({ resolved: 0, checked: 0 });
     }
 
-    // 2. For each open item, check if there's an outbound AFTER triggerAt
+    const normalizeChannel = (ch: string) => {
+      const c = ch.toLowerCase();
+      if (["imessage", "sms", "text"].includes(c)) return "text";
+      if (["gmail", "email"].includes(c)) return "email";
+      return c;
+    };
+
     const itemsToResolve: string[] = [];
 
-    // Batch: get unique contactIds and find their latest outbound
-    const contactIds = [...new Set(openItems.map((i) => i.contactId))];
-
-    // Get the latest outbound interaction per contact (excluding NOTEs)
-    const latestOutbounds = await prisma.interaction.findMany({
-      where: {
-        userId,
-        contactId: { in: contactIds },
-        direction: "OUTBOUND",
-        type: { not: "NOTE" },
-      },
-      orderBy: { occurredAt: "desc" },
-      distinct: ["contactId"],
-      select: {
-        contactId: true,
-        channel: true,
-        occurredAt: true,
-      },
-    });
-
-    const outboundByContact = new Map(
-      latestOutbounds.map((o) => [o.contactId, o])
-    );
-
+    // 2. For each open item, check for a matching outbound
     for (const item of openItems) {
-      const outbound = outboundByContact.get(item.contactId);
+      // For group chats: look for outbound in the same group (subject matches threadKey)
+      // For 1:1: look for any outbound on the same channel
+      const outbound = await prisma.interaction.findFirst({
+        where: {
+          userId,
+          contactId: item.contactId,
+          direction: "OUTBOUND",
+          type: { not: "NOTE" },
+          occurredAt: { gt: item.triggerAt },
+          // For group chats, match by subject (which stores the group chat name)
+          ...(item.isGroupChat && item.threadKey
+            ? { subject: item.threadKey }
+            : {}),
+        },
+        orderBy: { occurredAt: "desc" },
+        select: { channel: true, occurredAt: true },
+      });
+
       if (!outbound) continue;
 
-      // Outbound must be AFTER the inbox item's trigger
-      if (outbound.occurredAt <= item.triggerAt) continue;
-
-      // Cross-channel: a meeting/call resolves any channel
       const outChannel = outbound.channel?.toLowerCase() ?? "";
       const isCrossChannel =
         outChannel === "meeting" ||
         outChannel === "calendar" ||
         outChannel === "phone" ||
         outChannel === "call";
-
-      // Same-channel check (normalized)
-      const normalizeChannel = (ch: string) => {
-        const c = ch.toLowerCase();
-        if (["imessage", "sms", "text"].includes(c)) return "text";
-        if (["gmail", "email"].includes(c)) return "email";
-        return c;
-      };
-
       const sameChannel = normalizeChannel(outChannel) === normalizeChannel(item.channel);
 
       if (sameChannel || isCrossChannel) {

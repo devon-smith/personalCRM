@@ -413,7 +413,10 @@ export async function syncNotionMessages(
       // Feed into persistent inbox system + auto-resolve
       if (direction === "OUTBOUND") {
         await autoResolveOnOutbound(userId, contact.id, channel, new Date(msg.timestamp));
-        await onOutboundInteraction(userId, contact.id, channel, new Date(msg.timestamp));
+        await onOutboundInteraction(userId, contact.id, channel, new Date(msg.timestamp), {
+          threadKey: msg.isGroupChat ? "group" : undefined,
+          isGroupChat: msg.isGroupChat,
+        });
       } else {
         await onInboundInteraction(userId, contact.id, channel, {
           id: createdIx.id,

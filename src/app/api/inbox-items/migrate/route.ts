@@ -65,26 +65,33 @@ export async function POST() {
       },
     });
 
-    // Deduplicate: for iMessages with both imsg: and imsg-ind: sourceIds,
-    // keep only the imsg-ind: version (canonical)
-    const seenGuids = new Set<string>();
+    // Deduplicate: collect all imsg-ind: GUIDs first, then filter out imsg: duplicates
+    const canonicalGuids = new Set<string>();
+    for (const ix of interactions) {
+      const sourceId = ix.sourceId ?? "";
+      if (sourceId.startsWith("imsg-ind:")) {
+        canonicalGuids.add(sourceId.replace("imsg-ind:", ""));
+      }
+    }
+
+    // Also deduplicate by content: same contact + summary + timestamp (within 1s)
+    const seenContent = new Set<string>();
     const deduped = interactions.filter((ix) => {
       const sourceId = ix.sourceId ?? "";
 
-      // Extract GUID from iMessage sourceIds
-      if (sourceId.startsWith("imsg-ind:")) {
-        const guid = sourceId.replace("imsg-ind:", "");
-        seenGuids.add(guid);
-        return true; // Always keep imsg-ind: (canonical)
-      }
+      // Skip imsg: if imsg-ind: exists for the same GUID
       if (sourceId.startsWith("imsg:")) {
         const guid = sourceId.replace("imsg:", "");
-        if (seenGuids.has(guid)) return false; // Skip duplicate
-        seenGuids.add(guid);
-        return true;
+        if (canonicalGuids.has(guid)) return false;
       }
 
-      return true; // Keep non-iMessage interactions
+      // Content-based dedup: same contact + direction + summary + timestamp
+      const ts = Math.floor(ix.occurredAt.getTime() / 1000); // 1-second granularity
+      const contentKey = `${ix.contactId}:${ix.direction}:${ts}:${(ix.summary ?? "").slice(0, 50)}`;
+      if (seenContent.has(contentKey)) return false;
+      seenContent.add(contentKey);
+
+      return true;
     });
 
     let inboundProcessed = 0;
@@ -106,7 +113,10 @@ export async function POST() {
         : undefined;
 
       if (ix.direction === "OUTBOUND") {
-        await onOutboundInteraction(userId, ix.contactId, ix.channel, ix.occurredAt);
+        await onOutboundInteraction(userId, ix.contactId, ix.channel, ix.occurredAt, {
+          threadKey,
+          isGroupChat,
+        });
         outboundProcessed++;
       } else if (ix.direction === "INBOUND") {
         await onInboundInteraction(userId, ix.contactId, ix.channel, {

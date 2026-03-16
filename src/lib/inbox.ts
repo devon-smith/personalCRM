@@ -282,16 +282,26 @@ export async function onOutboundInteraction(
   contactId: string,
   rawChannel: string,
   occurredAt: Date,
+  options?: {
+    threadKey?: string | null;
+    isGroupChat?: boolean;
+  },
 ): Promise<void> {
   const channel = normalizeChannel(rawChannel);
+  const threadKey = options?.threadKey ?? "";
 
-  // Resolve ALL open inbox items for this contact on this channel
-  // that were triggered BEFORE this outbound
+  // For group chats: only resolve the matching thread
+  // For 1:1: resolve all 1:1 items for this contact+channel
+  const threadFilter = options?.isGroupChat
+    ? { threadKey }        // group: only resolve this specific group thread
+    : { threadKey: "" };   // 1:1: only resolve the 1:1 thread (not group threads)
+
   const resolved = await prisma.inboxItem.updateMany({
     where: {
       userId,
       contactId,
       channel,
+      ...threadFilter,
       status: "OPEN",
       triggerAt: { lte: occurredAt },
     },
@@ -304,16 +314,17 @@ export async function onOutboundInteraction(
 
   if (resolved.count > 0) {
     console.log(
-      `[inbox] Auto-resolved ${resolved.count} item(s) for contact ${contactId} on ${channel}`,
+      `[inbox] Auto-resolved ${resolved.count} item(s) for contact ${contactId} on ${channel} (thread: ${threadKey || "1:1"})`,
     );
   }
 
-  // Also resolve snoozed items (user replied, snooze is moot)
+  // Also resolve snoozed items
   await prisma.inboxItem.updateMany({
     where: {
       userId,
       contactId,
       channel,
+      ...threadFilter,
       status: "SNOOZED",
       triggerAt: { lte: occurredAt },
     },
