@@ -55,10 +55,37 @@ export async function GET(req: NextRequest) {
           ? { createdAt: "desc" }
           : { name: "asc" };
 
+    const limit = Math.min(
+      Number(searchParams.get("limit")) || 500,
+      1000,
+    );
+
     const contacts = await prisma.contact.findMany({
       where,
       orderBy,
-      include: {
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        additionalEmails: true,
+        phone: true,
+        company: true,
+        role: true,
+        tier: true,
+        source: true,
+        tags: true,
+        linkedinUrl: true,
+        avatarUrl: true,
+        city: true,
+        state: true,
+        country: true,
+        notes: true,
+        followUpDays: true,
+        lastInteraction: true,
+        importedAt: true,
+        createdAt: true,
+        updatedAt: true,
         _count: { select: { interactions: true } },
         circles: {
           select: {

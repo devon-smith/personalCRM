@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { autoResolveOnOutbound } from "@/lib/auto-resolve";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -47,6 +48,11 @@ export async function POST(req: NextRequest) {
     where: { id: contactId },
     data: { lastInteraction: now },
   });
+
+  // Auto-resolve inbox/action items for outbound interactions
+  if (direction === "OUTBOUND" && channel) {
+    await autoResolveOnOutbound(session.user.id, contactId, channel, now);
+  }
 
   return NextResponse.json(interaction, { status: 201 });
 }

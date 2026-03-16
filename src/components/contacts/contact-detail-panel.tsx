@@ -17,6 +17,7 @@ import { useMomentum } from "@/lib/hooks/use-momentum";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import { Sparkline, SparklineBadge } from "@/components/ui/sparkline";
 import { InteractionTimeline } from "@/components/contacts/interaction-timeline";
+import { ConversationView } from "@/components/contacts/conversation-view";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
@@ -430,8 +431,9 @@ export function ContactDetailPanel({
       <Separator />
 
       {/* Tabs */}
-      <Tabs defaultValue="timeline" className="flex-1 overflow-hidden flex flex-col">
+      <Tabs defaultValue="chat" className="flex-1 overflow-hidden flex flex-col">
         <TabsList className="mx-6 mt-2">
+          <TabsTrigger value="chat" className="text-[13px]">Chat</TabsTrigger>
           <TabsTrigger value="timeline" className="text-[13px]">
             Timeline ({totalInteractions})
           </TabsTrigger>
@@ -440,6 +442,11 @@ export function ContactDetailPanel({
             Journal{journalData?.entries.length ? ` (${journalData.entries.length})` : ""}
           </TabsTrigger>
         </TabsList>
+
+        {/* ═══ CHAT TAB ═══ */}
+        <TabsContent value="chat" className="flex-1 overflow-hidden flex flex-col px-4 pb-2">
+          <ConversationView contactId={contactId} />
+        </TabsContent>
 
         {/* ═══ TIMELINE TAB ═══ */}
         <TabsContent value="timeline" className="flex-1 overflow-y-auto px-6 pb-6">

@@ -1,7 +1,6 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { NeedsResponse } from "@/components/dashboard/needs-response";
+import { Inbox } from "@/components/dashboard/inbox";
 
 export default function ActivityPage() {
   return (
@@ -14,12 +13,7 @@ export default function ActivityPage() {
         </p>
       </div>
 
-      {/* Needs Response */}
-      <Card className="crm-card border-0">
-        <CardContent className="px-6 py-6">
-          <NeedsResponse />
-        </CardContent>
-      </Card>
+      <Inbox />
     </div>
   );
 }

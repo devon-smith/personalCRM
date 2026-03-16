@@ -60,15 +60,53 @@ export async function POST(req: NextRequest) {
     ] as const;
 
     for (const field of fieldsToEnrich) {
-      if (!primary[field]) {
+      if (!primary[field as keyof typeof primary]) {
         for (const m of merged) {
-          if (m[field]) {
-            enrichment[field] = m[field];
+          const val = m[field as keyof typeof m];
+          if (val) {
+            enrichment[field] = val as string;
             break;
           }
         }
       }
     }
+
+    // Fill birthday if primary doesn't have one
+    let mergedBirthday: Date | null = null;
+    if (!primary.birthday) {
+      for (const m of merged) {
+        if (m.birthday) {
+          mergedBirthday = m.birthday;
+          break;
+        }
+      }
+    }
+
+    // Merge array fields: additionalEmails, additionalPhones, aliases, nicknames
+    const mergeArrayField = (field: "additionalEmails" | "additionalPhones" | "aliases" | "nicknames") => {
+      const allValues = new Set([
+        ...(primary[field] ?? []),
+        ...merged.flatMap((m) => m[field] ?? []),
+      ]);
+      return [...allValues];
+    };
+
+    const mergedAdditionalEmails = mergeArrayField("additionalEmails");
+    const mergedAdditionalPhones = mergeArrayField("additionalPhones");
+    const mergedAliases = mergeArrayField("aliases");
+    const mergedNicknames = mergeArrayField("nicknames");
+
+    // If primary has no email but merged contact does, and primary's email
+    // was the one we just set via enrichment, collect the other emails as additional
+    const allEmails = new Set<string>();
+    for (const c of [primary, ...merged]) {
+      if (c.email) allEmails.add(c.email.toLowerCase());
+      for (const e of c.additionalEmails ?? []) allEmails.add(e.toLowerCase());
+    }
+    // The primary email (after enrichment) should not be in additionalEmails
+    const primaryEmail = (enrichment.email ?? primary.email)?.toLowerCase();
+    if (primaryEmail) allEmails.delete(primaryEmail);
+    const finalAdditionalEmails = [...new Set([...mergedAdditionalEmails.map(e => e.toLowerCase()), ...allEmails])];
 
     // Use the highest tier
     const tierOrder = { INNER_CIRCLE: 0, PROFESSIONAL: 1, ACQUAINTANCE: 2 } as const;
@@ -144,6 +182,11 @@ export async function POST(req: NextRequest) {
           ...enrichment,
           tier: bestTier,
           tags: [...allTags],
+          additionalEmails: finalAdditionalEmails,
+          additionalPhones: mergedAdditionalPhones,
+          aliases: mergedAliases,
+          nicknames: mergedNicknames,
+          ...(mergedBirthday && { birthday: mergedBirthday }),
           ...(latestInteraction && { lastInteraction: latestInteraction }),
           ...(bestFollowUpDays !== null && { followUpDays: bestFollowUpDays }),
         },

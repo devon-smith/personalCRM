@@ -18,7 +18,9 @@ export async function GET(req: NextRequest) {
   }
 
   const state = crypto.randomBytes(16).toString("hex");
-  const redirectUri = `${req.nextUrl.origin}/api/auth/add-google-account/callback`;
+  // Ensure HTTPS in production (reverse proxies may report http://)
+  const origin = process.env.NEXTAUTH_URL ?? req.nextUrl.origin;
+  const redirectUri = `${origin}/api/auth/add-google-account/callback`;
 
   // Store state in a short-lived cookie for CSRF protection
   const params = new URLSearchParams({

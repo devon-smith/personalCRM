@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { autoResolveOnOutbound } from "@/lib/auto-resolve";
+import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -389,7 +391,7 @@ export async function syncNotionMessages(
     }
 
     try {
-      await prisma.interaction.create({
+      const createdIx = await prisma.interaction.create({
         data: {
           userId,
           contactId: contact.id,
@@ -407,6 +409,22 @@ export async function syncNotionMessages(
         where: { id: contact.id },
         data: { lastInteraction: new Date(msg.timestamp) },
       });
+
+      // Feed into persistent inbox system + auto-resolve
+      if (direction === "OUTBOUND") {
+        await autoResolveOnOutbound(userId, contact.id, channel, new Date(msg.timestamp));
+        await onOutboundInteraction(userId, contact.id, channel, new Date(msg.timestamp));
+      } else {
+        await onInboundInteraction(userId, contact.id, channel, {
+          id: createdIx.id,
+          summary: summary.slice(0, 500),
+          occurredAt: new Date(msg.timestamp),
+          subject: msg.isGroupChat ? "Group message" : null,
+        }, {
+          threadKey: msg.isGroupChat ? "group" : undefined,
+          isGroupChat: msg.isGroupChat,
+        });
+      }
 
       result.matched++;
     } catch (error) {

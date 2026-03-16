@@ -36,6 +36,7 @@ export function useCircles() {
   return useQuery<CircleWithContacts[]>({
     queryKey: ["circles"],
     queryFn: () => fetchJson("/api/circles"),
+    staleTime: 60_000,
   });
 }
 

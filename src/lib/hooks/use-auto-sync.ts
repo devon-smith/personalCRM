@@ -38,6 +38,7 @@ export function useAutoSync() {
 
       queryClient.invalidateQueries({ queryKey: ["unresponded-threads"] });
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
 
       if (data.processed > 0) {
         queryClient.invalidateQueries({ queryKey: ["contacts"] });
@@ -86,12 +87,26 @@ export function useAutoSync() {
     queryClient.invalidateQueries({ queryKey: ["data-health"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+  }, [queryClient]);
+
+  const runImessageSync = useCallback(async () => {
+    try {
+      await fetch("/api/imessage", { method: "POST" });
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } catch {
+      // ignore
+    }
   }, [queryClient]);
 
   useEffect(() => {
     // Run Gmail sync after 3s, then every 2 minutes
     const initialTimer = setTimeout(runGmailSync, 3000);
-    const interval = setInterval(runGmailSync, SYNC_INTERVAL);
+    const gmailInterval = setInterval(runGmailSync, SYNC_INTERVAL);
+
+    // Run iMessage sync every 2 minutes (catches new texts automatically)
+    const imessageInterval = setInterval(runImessageSync, SYNC_INTERVAL);
 
     // Run full sync (all sources) once after 5s
     const fullSyncTimer = setTimeout(runFullSync, 5000);
@@ -100,6 +115,7 @@ export function useAutoSync() {
       if (document.visibilityState === "visible") {
         failureCountRef.current = 0;
         runGmailSync();
+        runImessageSync();
       }
     }
     document.addEventListener("visibilitychange", handleVisibility);
@@ -107,8 +123,9 @@ export function useAutoSync() {
     return () => {
       clearTimeout(initialTimer);
       clearTimeout(fullSyncTimer);
-      clearInterval(interval);
+      clearInterval(gmailInterval);
+      clearInterval(imessageInterval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [runGmailSync, runFullSync]);
+  }, [runGmailSync, runFullSync, runImessageSync]);
 }

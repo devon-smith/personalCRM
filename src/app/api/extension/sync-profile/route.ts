@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { authExtension } from "@/lib/extension-auth";
 import { prisma } from "@/lib/prisma";
 import { createBatchContext, processOneSighting } from "@/lib/sightings";
 import { detectChanges } from "@/lib/changelog";
@@ -27,11 +27,9 @@ interface SyncProfileBody {
  */
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = session.user.id;
+    const authResult = await authExtension(request);
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult.userId;
 
     const body = (await request.json()) as SyncProfileBody;
 

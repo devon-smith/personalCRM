@@ -1,24 +1,45 @@
 // ═══════════════════════════════════════════════════════════════
 // Content Script — LinkedIn Messaging (/messaging/*)
+// Passively captures conversations with CRM contacts.
 // ═══════════════════════════════════════════════════════════════
 
 (() => {
   "use strict";
 
-  let lastInjectedThread = null;
+  if (!window.location.pathname.startsWith("/messaging")) return;
 
-  // ─── CRM fetch via background ──────────────────────────────
+  let contextValid = true;
+  const capturedFingerprints = new Set();
 
-  function crmFetch(path, options = {}) {
+  // ─── Context guard ──────────────────────────────────────────
+
+  function isContextValid() {
+    try {
+      return contextValid && chrome.runtime?.id != null;
+    } catch { contextValid = false; return false; }
+  }
+
+  function safeSendMessage(msg) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(
-        { type: "CRM_FETCH", path, ...options },
-        resolve
-      );
+      if (!isContextValid()) return resolve({ error: "context invalidated" });
+      try {
+        chrome.runtime.sendMessage(msg, (response) => {
+          if (chrome.runtime.lastError) { contextValid = false; resolve({ error: chrome.runtime.lastError.message }); }
+          else resolve(response);
+        });
+      } catch { contextValid = false; resolve({ error: "context invalidated" }); }
     });
   }
 
-  // ─── Toast ─────────────────────────────────────────────────
+  function crmFetch(path, options = {}) {
+    return safeSendMessage({ type: "CRM_FETCH", path, ...options });
+  }
+
+  function notifyCapture(count) {
+    safeSendMessage({ type: "ITEM_CAPTURED", category: "message", count });
+  }
+
+  // ─── Toast ────────────────────────────────────────────────
 
   function showToast(message) {
     const existing = document.querySelector(".crm-toast");
@@ -47,10 +68,9 @@
     }, 2500);
   }
 
-  // ─── Extract conversation data ─────────────────────────────
+  // ─── Extract conversation data ────────────────────────────
 
   function extractConversation() {
-    // Get conversation partner info
     const partnerName = (
       document.querySelector(".msg-conversation-card__participant-names") ||
       document.querySelector(".msg-thread__link-to-profile") ||
@@ -70,7 +90,6 @@
 
     if (!partnerName) return null;
 
-    // Extract visible messages
     const messageEls = document.querySelectorAll(
       ".msg-s-message-list__event, .msg-s-event-listitem"
     );
@@ -93,7 +112,6 @@
       const senderName = senderEl?.textContent?.trim() || "Unknown";
       const timestamp = timeEl?.getAttribute("datetime") || new Date().toISOString();
 
-      // Heuristic: if sender name matches partner, it's inbound
       const isFromMe = !senderName.toLowerCase().includes(
         (partnerName || "").split(" ")[0].toLowerCase()
       );
@@ -115,10 +133,43 @@
     };
   }
 
-  // ─── Inject sync button ────────────────────────────────────
+  // ─── Passive capture ──────────────────────────────────────
+
+  async function passiveCapture() {
+    if (!isContextValid()) return;
+
+    const conversation = extractConversation();
+    if (!conversation || conversation.messages.length === 0) return;
+
+    // Fingerprint: partner name + message count + last message snippet
+    const lastMsg = conversation.messages[conversation.messages.length - 1];
+    const fingerprint = `${conversation.conversationWith.name}:${conversation.messages.length}:${lastMsg?.text?.slice(0, 30) || ""}`;
+
+    if (capturedFingerprints.has(fingerprint)) return;
+    capturedFingerprints.add(fingerprint);
+
+    // Only sync the last 5 messages for passive capture
+    const recentMessages = conversation.messages.slice(-5);
+    const payload = {
+      conversationWith: conversation.conversationWith,
+      messages: recentMessages,
+    };
+
+    console.log("[CRM]", "✅ Messaging: Passive sync —", conversation.conversationWith.name, `(${recentMessages.length} msgs)`);
+
+    const result = await crmFetch("/api/extension/sync-messages", {
+      method: "POST",
+      body: payload,
+    });
+
+    if (result.data?.synced > 0) {
+      notifyCapture(result.data.synced);
+    }
+  }
+
+  // ─── Inject sync button ───────────────────────────────────
 
   function injectSyncButton() {
-    // Don't double-inject
     if (document.getElementById("crm-sync-messages-btn")) return;
 
     const header = document.querySelector(
@@ -138,12 +189,8 @@
       transition: background 0.15s;
     `;
 
-    btn.addEventListener("mouseenter", () => {
-      btn.style.background = "#f5f6f8";
-    });
-    btn.addEventListener("mouseleave", () => {
-      btn.style.background = "#fff";
-    });
+    btn.addEventListener("mouseenter", () => { btn.style.background = "#f5f6f8"; });
+    btn.addEventListener("mouseleave", () => { btn.style.background = "#fff"; });
 
     btn.addEventListener("click", async () => {
       btn.disabled = true;
@@ -167,7 +214,9 @@
       } else {
         const msg = result.data?.message || `Synced ${result.data?.synced || 0} messages`;
         showToast(msg);
-        chrome.runtime.sendMessage({ type: "INCREMENT_STAT", key: "messagesSynced" });
+        if (result.data?.synced > 0) {
+          notifyCapture(result.data.synced);
+        }
       }
 
       btn.disabled = false;
@@ -177,23 +226,37 @@
     header.appendChild(btn);
   }
 
-  // ─── Observe navigation / conversation switches ────────────
+  // ─── Init ─────────────────────────────────────────────────
 
   function init() {
-    // Try to inject immediately and on DOM changes
     injectSyncButton();
 
+    // Debounced passive capture on conversation changes
+    let captureTimer = null;
     const observer = new MutationObserver(() => {
-      // Re-inject if button was removed (LinkedIn rebuilds DOM on navigation)
+      if (!isContextValid()) { observer.disconnect(); return; }
+
+      // Re-inject button if removed
       if (!document.getElementById("crm-sync-messages-btn")) {
         injectSyncButton();
       }
+
+      // Debounced passive capture
+      if (!captureTimer) {
+        captureTimer = setTimeout(() => {
+          captureTimer = null;
+          passiveCapture();
+        }, 3000);
+      }
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    const msgContainer = document.querySelector(".msg-conversations-container") || document.querySelector("main") || document.body;
+    observer.observe(msgContainer, { childList: true, subtree: true });
+
+    // Initial passive capture after delay
+    setTimeout(passiveCapture, 3000);
   }
 
-  // Wait for page to be ready
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {

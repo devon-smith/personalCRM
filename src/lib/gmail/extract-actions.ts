@@ -524,6 +524,8 @@ export async function extractActionItems(
         contactId,
         status: "OPEN",
         title: classification.title || "Action needed",
+        channel: "gmail",
+        classification: classification.classification,
         context: JSON.stringify({
           classification: classification.classification,
           urgency: classification.urgency ?? "medium",
@@ -684,6 +686,8 @@ export async function extractActionItemsBackfill(
         contactId,
         status: "OPEN",
         title: classification.title || "Action needed",
+        channel: "gmail",
+        classification: classification.classification,
         context: JSON.stringify({
           classification: classification.classification,
           urgency: classification.urgency ?? "medium",

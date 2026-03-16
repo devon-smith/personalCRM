@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { authExtension } from "@/lib/extension-auth";
 import { prisma } from "@/lib/prisma";
+import { autoResolveOnOutbound } from "@/lib/auto-resolve";
+import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
 
 interface SyncMessagesBody {
   conversationWith: {
@@ -21,11 +23,9 @@ interface SyncMessagesBody {
  */
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = session.user.id;
+    const authResult = await authExtension(request);
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult.userId;
 
     const body = (await request.json()) as SyncMessagesBody;
 
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      await prisma.interaction.create({
+      const createdIx = await prisma.interaction.create({
         data: {
           userId,
           contactId: contact.id,
@@ -93,6 +93,18 @@ export async function POST(request: Request) {
           sourceId,
         },
       });
+
+      // Feed into persistent inbox system
+      if (msg.isFromMe) {
+        await onOutboundInteraction(userId, contact.id, "linkedin", timestamp);
+      } else {
+        await onInboundInteraction(userId, contact.id, "linkedin", {
+          id: createdIx.id,
+          summary: msg.text.slice(0, 500),
+          occurredAt: timestamp,
+        });
+      }
+
       synced++;
     }
 
@@ -109,6 +121,16 @@ export async function POST(request: Request) {
           data: { lastInteraction: latest.occurredAt },
         });
       }
+    }
+
+    // Auto-resolve for outbound messages
+    const latestOutbound = body.messages
+      .filter((m) => m.isFromMe)
+      .map((m) => new Date(m.timestamp))
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+
+    if (latestOutbound) {
+      await autoResolveOnOutbound(userId, contact.id, "linkedin", latestOutbound);
     }
 
     return NextResponse.json({

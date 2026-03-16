@@ -67,6 +67,17 @@
     .stat-label { font-size: 12px; color: #4a4e54; }
     .stat-value { font-size: 12px; font-weight: 600; color: #1a1a1a; }
 
+    .session-badge {
+      display: inline-block;
+      background: #059669;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      margin-left: 6px;
+    }
+
     .url-row {
       display: flex;
       gap: 6px;
@@ -122,39 +133,6 @@
     .link-btn:hover { background: #f5f6f8; }
     .link-btn:last-child { margin-bottom: 0; }
 
-    .toggle-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 4px 0;
-    }
-
-    .toggle-label { font-size: 12px; color: #4a4e54; }
-
-    .toggle {
-      width: 36px;
-      height: 20px;
-      border-radius: 10px;
-      background: #d1d5db;
-      position: relative;
-      cursor: pointer;
-      border: none;
-      transition: background 0.2s;
-    }
-    .toggle.active { background: #059669; }
-    .toggle::after {
-      content: "";
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: #fff;
-      transition: transform 0.2s;
-    }
-    .toggle.active::after { transform: translateX(16px); }
-
     .footer {
       padding: 8px 16px 12px;
       text-align: center;
@@ -168,7 +146,7 @@
 </head>
 <body>
   <div class="header">
-    <h1>Personal CRM</h1>
+    <h1>Personal CRM <span class="session-badge" id="session-badge" style="display:none">0</span></h1>
     <div class="status">
       <div class="status-dot" id="status-dot"></div>
       <span class="status-text" id="status-text">Checking...</span>
@@ -186,8 +164,16 @@
       <span class="stat-value" id="stat-messages">0</span>
     </div>
     <div class="stat-row">
+      <span class="stat-label">Feed items captured</span>
+      <span class="stat-value" id="stat-feed">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Enrichments</span>
+      <span class="stat-value" id="stat-enrichments">0</span>
+    </div>
+    <div class="stat-row">
       <span class="stat-label">Contacts in CRM</span>
-      <span class="stat-value" id="stat-contacts">–</span>
+      <span class="stat-value" id="stat-contacts">&ndash;</span>
     </div>
   </div>
 
@@ -199,13 +185,21 @@
     </div>
   </div>
 
+  <div class="section">
+    <div class="section-label">API Token <span id="token-status" style="font-size:10px;text-transform:none;letter-spacing:0"></span></div>
+    <div class="url-row">
+      <input type="password" class="url-input" id="token-input" placeholder="Paste token from CRM settings" />
+      <button class="btn-save" id="token-save">Set</button>
+    </div>
+  </div>
+
   <div class="links">
-    <a class="link-btn" id="open-crm" href="#" target="_blank">Open CRM ↗</a>
-    <button class="link-btn" id="open-followups">Follow-ups (<span id="followup-count">–</span>)</button>
+    <a class="link-btn" id="open-crm" href="#" target="_blank">Open CRM &#8599;</a>
+    <button class="link-btn" id="open-followups">Follow-ups (<span id="followup-count">&ndash;</span>)</button>
   </div>
 
   <div class="footer">
-    <span class="footer-text">Personal CRM v1.0</span>
+    <span class="footer-text">Personal CRM v1.1</span>
   </div>
 
   <script src="popup.js"></script>

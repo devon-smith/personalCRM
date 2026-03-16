@@ -72,7 +72,7 @@ export function SyncAlerts() {
       toast(`Removed ${data.deleted} old summary interactions`);
       queryClient.invalidateQueries({ queryKey: ["health"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["needs-response"] });
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
     },
     onError: () => toast.error("Interaction cleanup failed"),
   });

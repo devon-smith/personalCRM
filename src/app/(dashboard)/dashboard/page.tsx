@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useCallback, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
+import { formatDistanceToNow } from "@/lib/date-utils";
 
 import { UpcomingMeetings } from "@/components/dashboard/upcoming-meetings";
 import { ReviewQueue } from "@/components/sightings/review-queue";
@@ -61,11 +62,31 @@ interface RecentlyActiveContact {
   circles: CircleBadge[];
 }
 
+interface RecentInteraction {
+  id: string;
+  type: string;
+  subject: string | null;
+  summary: string | null;
+  occurredAt: string;
+  direction: string;
+  channel: string | null;
+  messageCount: number;
+  contact: {
+    id: string;
+    name: string;
+    company: string | null;
+    tier: string;
+    source: string;
+    circles: { circle: CircleBadge }[];
+  };
+}
+
 interface DashboardStats {
   tierCounts: Record<string, number>;
   contactsThisMonth: number;
   interactionsThisWeek: number;
   totalContacts: number;
+  recentInteractions: RecentInteraction[];
   overdueContacts: {
     id: string;
     name: string;
@@ -85,13 +106,38 @@ interface DashboardStats {
   sourceCounts: Record<string, number>;
 }
 
+const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
 export default function DashboardPage() {
-  // Auto-sync on page load
+  const queryClient = useQueryClient();
+  const syncInFlight = useRef(false);
+
+  const runSync = useCallback(async () => {
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
+    try {
+      await Promise.allSettled([
+        fetch("/api/notion-messages", { method: "POST" }),
+        fetch("/api/imessage", { method: "POST" }),
+        fetch("/api/gmail/sync", { method: "POST" }),
+      ]);
+      // Refresh inbox and dashboard data after sync completes
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } finally {
+      syncInFlight.current = false;
+    }
+  }, [queryClient]);
+
+  // Initial sync (deferred 3s) + recurring every 10 minutes
   useEffect(() => {
-    fetch("/api/notion-messages", { method: "POST" }).catch(() => {});
-    fetch("/api/imessage", { method: "POST" }).catch(() => {});
-    fetch("/api/gmail/sync", { method: "POST" }).catch(() => {});
-  }, []);
+    const initialTimer = setTimeout(runSync, 3000);
+    const interval = setInterval(runSync, SYNC_INTERVAL_MS);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [runSync]);
 
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["dashboard"],
@@ -100,6 +146,7 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch stats");
       return res.json();
     },
+    staleTime: 60_000,
     refetchInterval: 60_000,
   });
 
@@ -196,6 +243,72 @@ export default function DashboardPage() {
 
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Recent Interactions */}
+        {stats.recentInteractions?.length > 0 && (
+          <Card className="crm-card border-0">
+            <CardHeader className="px-6 pt-6 pb-0">
+              <CardTitle className="crm-section-label">Recent interactions</CardTitle>
+            </CardHeader>
+            <CardContent className="px-6 pb-6 pt-4">
+              <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+                {stats.recentInteractions.map((interaction) => {
+                  const Icon = typeIcons[interaction.type] ?? StickyNote;
+                  const color = getAvatarColor(interaction.contact.name);
+                  return (
+                    <Link
+                      key={interaction.id}
+                      href={`/people?contact=${interaction.contact.id}`}
+                      className="group flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
+                      style={{ transitionDuration: "var(--duration-fast)" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+                    >
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarFallback
+                          className="text-[10px] font-semibold"
+                          style={{ backgroundColor: color.bg, color: color.text }}
+                        >
+                          {getInitials(interaction.contact.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                            {interaction.contact.name}
+                          </span>
+                          {interaction.contact.circles?.slice(0, 2).map((cc) => (
+                            <span
+                              key={cc.circle.id}
+                              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
+                              style={{ backgroundColor: `${cc.circle.color}15`, color: cc.circle.color }}
+                            >
+                              {cc.circle.name}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+                          <p className="ds-caption truncate">
+                            {interaction.subject ?? interaction.summary ?? interaction.type.toLowerCase()}
+                          </p>
+                        </div>
+                        {interaction.contact.company && (
+                          <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                            {interaction.contact.company}
+                          </p>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                        {formatDistanceToNow(new Date(interaction.occurredAt))}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Draft Queue */}
         <DraftQueueCard />
 
@@ -505,6 +618,7 @@ function ReviewQueueCard() {
       if (!res.ok) return { items: [], totalPending: 0 };
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   if (!data || (data.items.length === 0 && data.totalPending === 0)) {
@@ -550,6 +664,7 @@ function LifeUpdatesCard() {
       if (!res.ok) return { entries: [] };
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   if (!data?.entries.length) return null;
@@ -571,6 +686,7 @@ function DraftQueueCard() {
       if (!res.ok) return { drafts: [] };
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   if (!data?.drafts.length) return null;
@@ -592,6 +708,7 @@ function BirthdaysCard() {
       if (!res.ok) return { birthdays: [] };
       return res.json();
     },
+    staleTime: 10 * 60 * 1000,
   });
 
   if (!data?.birthdays.length) return null;

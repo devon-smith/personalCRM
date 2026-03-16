@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Popup Script
+// Popup Script — Live Stats from Background
 // ═══════════════════════════════════════════════════════════════
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -23,8 +23,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     status.stats?.profilesSynced ?? 0;
   document.getElementById("stat-messages").textContent =
     status.stats?.messagesSynced ?? 0;
+  document.getElementById("stat-feed").textContent =
+    status.stats?.feedItemsCaptured ?? 0;
+  document.getElementById("stat-enrichments").textContent =
+    status.stats?.enrichments ?? 0;
   document.getElementById("stat-contacts").textContent =
-    status.contactCount ?? "–";
+    status.contactCount ?? "\u2013";
+
+  // Session badge
+  const sessionBadge = document.getElementById("session-badge");
+  if (status.sessionCount > 0) {
+    sessionBadge.textContent = status.sessionCount;
+    sessionBadge.style.display = "inline-block";
+  }
 
   // CRM URL
   const urlInput = document.getElementById("url-input");
@@ -50,6 +61,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       dot.className = "status-dot disconnected";
       text.textContent = "Disconnected";
+    }
+  });
+
+  // ─── API Token ──────────────────────────────────────────
+
+  const tokenInput = document.getElementById("token-input");
+  const tokenStatus = document.getElementById("token-status");
+  const tokenResult = await chrome.storage.local.get("apiToken");
+  if (tokenResult.apiToken) {
+    tokenStatus.textContent = "(active)";
+    tokenStatus.style.color = "#059669";
+    tokenInput.placeholder = "Token set \u2014 paste new to replace";
+  }
+
+  document.getElementById("token-save").addEventListener("click", async () => {
+    const token = tokenInput.value.trim();
+    if (!token) return;
+    const result = await sendMessage({ type: "SET_TOKEN", token });
+    if (result.ok) {
+      tokenInput.value = "";
+      tokenInput.placeholder = "Token set \u2014 paste new to replace";
+      tokenStatus.textContent = "(active)";
+      tokenStatus.style.color = "#059669";
+      if (result.status === "connected") {
+        dot.className = "status-dot connected";
+        text.textContent = "Connected";
+      }
     }
   });
 

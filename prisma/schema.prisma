@@ -33,6 +33,8 @@ model User {
   imessageSyncStates   IMessageSyncState[]
   emailMessages        EmailMessage[]
   drafts               Draft[]
+  extensionTokens      ExtensionToken[]
+  inboxItems           InboxItem[]
 }
 
 model Account {
@@ -141,8 +143,11 @@ model Contact {
   emailMessages      EmailMessage[]
   drafts             Draft[]
 
+  inboxItems         InboxItem[]
+
   @@index([userId])
   @@index([email])
+  @@index([userId, lastInteraction])
 }
 
 enum InteractionType {
@@ -177,6 +182,8 @@ model Interaction {
 
   @@index([contactId])
   @@index([occurredAt])
+  @@index([userId, occurredAt])
+  @@index([userId, contactId, occurredAt])
 }
 
 // ─── AI Insights Models ────────────────────────────────────
@@ -253,17 +260,20 @@ enum ActionItemStatus {
 }
 
 model ActionItem {
-  id          String           @id @default(uuid())
-  userId      String
-  contactId   String?
-  status      ActionItemStatus @default(OPEN)
-  title       String
-  context     String?          @db.Text  // snippet of the email that triggered it
-  sourceId    String?          // Gmail message ID
-  threadId    String?          // Gmail thread ID for grouping
-  dueDate     DateTime?
-  extractedAt DateTime         @default(now())
-  resolvedAt  DateTime?
+  id             String           @id @default(uuid())
+  userId         String
+  contactId      String?
+  status         ActionItemStatus @default(OPEN)
+  title          String
+  context        String?          @db.Text  // snippet of the email that triggered it
+  sourceId       String?          // Gmail message ID
+  threadId       String?          // Gmail thread ID for grouping
+  channel        String?          // "gmail", "iMessage", "SMS", "linkedin"
+  classification String?          // "action_required", "invitation", "fyi"
+  dueDate        DateTime?
+  extractedAt    DateTime         @default(now())
+  resolvedAt     DateTime?
+  resolvedBy     String?          // "auto" | "manual"
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -464,6 +474,7 @@ model IMessageSyncState {
   id              String    @id @default(uuid())
   userId          String
   handleId        String    // phone number or email
+  contactId       String?   // matched CRM contact ID (for reverse lookup)
   service         String    // "iMessage" or "SMS"
   lastMessageGuid String?   // GUID of the most recent synced message
   lastSyncAt      DateTime?
@@ -475,6 +486,7 @@ model IMessageSyncState {
 
   @@unique([userId, handleId])
   @@index([userId])
+  @@index([userId, contactId])
 }
 
 // ─── Notion Sync State (iMessage/SMS via iOS Shortcuts → Notion) ─────
@@ -494,4 +506,69 @@ model NotionSyncState {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// ─── Extension Auth Tokens (Chrome extension bearer auth) ────
+
+model ExtensionToken {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  label      String    @default("Extension")
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── Inbox Items (persistent needs-response tracker) ─────────
+
+enum InboxItemStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+  SNOOZED
+}
+
+model InboxItem {
+  id          String          @id @default(uuid())
+  userId      String
+  contactId   String
+  channel     String          // normalized: "text", "email", "linkedin"
+  threadKey   String          @default("") // group chat ID or email thread ID
+
+  status      InboxItemStatus @default(OPEN)
+  resolvedAt  DateTime?
+  resolvedBy  String?         // "auto_sync" | "manual" | "dismissed" | "snoozed"
+  snoozeUntil DateTime?
+
+  // Denormalized contact info (avoids JOINs on every render)
+  contactName      String
+  company          String?
+  tier             String
+  isGroupChat      Boolean     @default(false)
+  contactEmail     String?
+  contactPhone     String?
+  contactLinkedinUrl String?
+
+  // The inbound trigger
+  triggerInteractionId String
+  triggerAt            DateTime
+
+  // Cached message previews (JSON array, updated on each new inbound)
+  messagePreview  Json?      // [{summary, occurredAt, channel}]
+  messageCount    Int         @default(1)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId, channel, threadKey])
+  @@index([userId, status])
+  @@index([userId, status, triggerAt])
+  @@index([contactId])
 }

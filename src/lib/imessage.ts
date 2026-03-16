@@ -29,6 +29,10 @@ export interface IMessageDetail {
   isFromMe: boolean;
   handleId: string;
   service: string;
+  /** Group chat display name (null for 1:1 conversations) */
+  chatName: string | null;
+  /** Whether this message is from a group chat */
+  isGroupChat: boolean;
 }
 
 export interface IMessageResult {
@@ -191,20 +195,41 @@ export async function getMessagesForHandle(
   // Escape single quotes in handleId for SQL safety
   const safeHandle = handleId.replace(/'/g, "''");
 
+  // Two queries unioned:
+  // 1) Direct/inbound messages where handle_id matches the contact
+  // 2) Outbound messages in chats that include this handle
+  //    (outbound group chat messages often have handle_id=0 or point to
+  //     a different participant, so the direct handle filter misses them)
   const query = `
     SELECT
       m.guid,
       m.text,
       m.date,
       m.is_from_me AS isFromMe,
-      h.id AS handleId,
-      h.service AS service
+      '${safeHandle}' AS handleId,
+      COALESCE(h.service, 'iMessage') AS service,
+      c.display_name AS chatName,
+      CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 1 ELSE 0 END AS isGroupChat
     FROM message m
-    JOIN handle h ON m.handle_id = h.ROWID
-    WHERE h.id = '${safeHandle}'
+    LEFT JOIN handle h ON m.handle_id = h.ROWID
+    LEFT JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+    LEFT JOIN chat c ON c.ROWID = cmj.chat_id
+    LEFT JOIN chat_handle_join chj2 ON chj2.chat_id = c.ROWID
+    WHERE (
+      h.id = '${safeHandle}'
+      OR (
+        m.is_from_me = 1
+        AND cmj.chat_id IN (
+          SELECT chj3.chat_id FROM chat_handle_join chj3
+          JOIN handle h2 ON h2.ROWID = chj3.handle_id
+          WHERE h2.id = '${safeHandle}'
+        )
+      )
+    )
       AND m.date > ${minDate}
       AND m.is_empty = 0
       AND m.is_service_message = 0
+    GROUP BY m.ROWID
     ORDER BY m.date DESC
     LIMIT 500;
   `.trim();
@@ -216,6 +241,8 @@ export async function getMessagesForHandle(
     isFromMe: number;
     handleId: string;
     service: string;
+    chatName: string | null;
+    isGroupChat: number;
   }
 
   try {
@@ -228,6 +255,8 @@ export async function getMessagesForHandle(
       isFromMe: row.isFromMe === 1,
       handleId: row.handleId,
       service: row.service,
+      chatName: row.chatName || null,
+      isGroupChat: row.isGroupChat === 1,
     }));
 
     return { messages, total: messages.length, error: null };
@@ -260,9 +289,14 @@ export async function getAllMessages(
       m.date,
       m.is_from_me AS isFromMe,
       h.id AS handleId,
-      h.service AS service
+      h.service AS service,
+      c.display_name AS chatName,
+      CASE WHEN COUNT(DISTINCT chj2.handle_id) > 1 THEN 1 ELSE 0 END AS isGroupChat
     FROM message m
     JOIN handle h ON m.handle_id = h.ROWID
+    LEFT JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+    LEFT JOIN chat c ON c.ROWID = cmj.chat_id
+    LEFT JOIN chat_handle_join chj2 ON chj2.chat_id = c.ROWID
     WHERE m.date > ${minDate}
       AND m.is_empty = 0
       AND m.is_service_message = 0
@@ -270,6 +304,7 @@ export async function getAllMessages(
       AND h.id != ''
       AND m.text IS NOT NULL
       AND LENGTH(m.text) > 0
+    GROUP BY m.ROWID
     ORDER BY m.date ASC;
   `.trim();
 
@@ -280,6 +315,8 @@ export async function getAllMessages(
     isFromMe: number;
     handleId: string;
     service: string;
+    chatName: string | null;
+    isGroupChat: number;
   }
 
   try {
@@ -292,6 +329,8 @@ export async function getAllMessages(
       isFromMe: row.isFromMe === 1,
       handleId: row.handleId,
       service: row.service,
+      chatName: row.chatName || null,
+      isGroupChat: row.isGroupChat === 1,
     }));
 
     return { messages, total: messages.length, error: null };

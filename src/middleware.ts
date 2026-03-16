@@ -60,7 +60,10 @@ export function middleware(req: NextRequest) {
 
 function corsHeaders(req: NextRequest): Record<string, string> {
   const origin = req.headers.get("origin") ?? "";
-  const allowed = origin === "https://www.linkedin.com" || origin.startsWith("http://localhost");
+  const allowed =
+    origin === "https://www.linkedin.com" ||
+    origin.startsWith("http://localhost") ||
+    origin.startsWith("chrome-extension://");
   return {
     "Access-Control-Allow-Origin": allowed ? origin : "",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",

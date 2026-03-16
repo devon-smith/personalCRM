@@ -37,7 +37,13 @@ const nextAuth = NextAuth({
     },
   },
   callbacks: {
-    async signIn({ account }) {
+    async signIn({ user, account }) {
+      // Single-user app: restrict to allowed email(s)
+      const ALLOWED_EMAILS = ["devontjsmith@gmail.com"];
+      if (user.email && !ALLOWED_EMAILS.includes(user.email.toLowerCase())) {
+        return false;
+      }
+
       // Persist scopes on every sign-in (linkAccount only fires on first link)
       if (account?.provider === "google" && account.scope) {
         await prisma.account.updateMany({
@@ -61,9 +67,15 @@ const nextAuth = NextAuth({
 
 export const { handlers, signIn, signOut } = nextAuth;
 
-// In development, try real auth first, then fall back to seeded user
-export const auth =
-  process.env.NODE_ENV === "development"
+// In development (and NOT on a hosting platform), try real auth first,
+// then fall back to seeded user. The platform env guards prevent this
+// from ever running in production even if NODE_ENV is misconfigured.
+const isLocalDev =
+  process.env.NODE_ENV === "development" &&
+  !process.env.RAILWAY_ENVIRONMENT &&
+  !process.env.VERCEL;
+
+export const auth = isLocalDev
     ? async () => {
         const realSession = await nextAuth.auth();
         if (realSession?.user?.id) return realSession;

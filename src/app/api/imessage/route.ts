@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getConversations, getMessagesForHandle } from "@/lib/imessage";
 import { normalizePhone } from "@/lib/name-utils";
+import { autoResolveOnOutbound } from "@/lib/auto-resolve";
+import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -10,6 +12,7 @@ export interface IMessageSyncResult {
   readonly handlesScanned: number;
   readonly messagesCreated: number;
   readonly messagesSkipped: number;
+  readonly subjectsBackfilled: number;
   readonly contactsMatched: number;
   readonly errors: readonly string[];
 }
@@ -85,20 +88,45 @@ export async function POST() {
     });
     const syncStateMap = new Map(syncStates.map((s) => [s.handleId, s]));
 
+    // Build reverse map: handleId → contactId from previously-matched sync states
+    // This lets us find contacts even when their phone/email format doesn't match the handle
+    const handleToContact = new Map<string, string>();
+    for (const s of syncStates) {
+      if (s.contactId) {
+        handleToContact.set(s.handleId, s.contactId);
+      }
+    }
+
     // 4. Get existing iMessage sourceIds to skip duplicates
-    const existingSourceIds = new Set(
-      (
-        await prisma.interaction.findMany({
-          where: { userId, sourceId: { startsWith: "imsg-ind:" } },
-          select: { sourceId: true },
-        })
-      ).map((i) => i.sourceId),
+    //    Check both formats: "imsg-ind:{guid}" (regular sync) and "imsg:{guid}" (backfill)
+    const [indRows, backfillRows] = await Promise.all([
+      prisma.interaction.findMany({
+        where: { userId, sourceId: { startsWith: "imsg-ind:" } },
+        select: { sourceId: true },
+      }),
+      prisma.interaction.findMany({
+        where: { userId, sourceId: { startsWith: "imsg:" } },
+        select: { sourceId: true },
+      }),
+    ]);
+    const existingSourceIds = new Set(indRows.map((i) => i.sourceId));
+    // Also track backfill GUIDs so we don't re-create them
+    const backfillGuids = new Set(
+      backfillRows
+        .map((i) => (i.sourceId ?? "").replace("imsg:", ""))
+        .filter((g) => g && !g.startsWith("ind:")),
     );
 
     let messagesCreated = 0;
     let messagesSkipped = 0;
+    let subjectsBackfilled = 0;
     const matchedContactIds = new Set<string>();
+    // Track contacts with outbound messages for auto-resolve
+    const outboundContacts = new Map<string, { channel: string; occurredAt: Date }>();
     const errors: string[] = [];
+
+    // Generic subjects that should be backfilled with real group chat names
+    const GENERIC_SUBJECT_RE = /^(iMessage|SMS|Email|Group)\s*(message)?$/i;
 
     // 5. Process each conversation handle
     for (const conv of conversations) {
@@ -125,6 +153,11 @@ export async function POST() {
         }
       }
 
+      // Fallback: check if this handle was previously matched to a contact
+      if (!contactId) {
+        contactId = handleToContact.get(handleId);
+      }
+
       if (!contactId) continue;
       matchedContactIds.add(contactId);
 
@@ -148,7 +181,24 @@ export async function POST() {
         // sourceId uses "imsg-ind:" prefix to distinguish from old daily summaries
         const sourceId = `imsg-ind:${msg.guid}`;
 
-        if (existingSourceIds.has(sourceId)) {
+        if (existingSourceIds.has(sourceId) || backfillGuids.has(msg.guid)) {
+          // Backfill group chat name on existing messages with generic subjects
+          if (msg.chatName) {
+            const lookupId = existingSourceIds.has(sourceId)
+              ? sourceId
+              : `imsg:${msg.guid}`;
+            const existing = await prisma.interaction.findFirst({
+              where: { userId, sourceId: lookupId },
+              select: { id: true, subject: true },
+            });
+            if (existing && (!existing.subject || GENERIC_SUBJECT_RE.test(existing.subject))) {
+              await prisma.interaction.update({
+                where: { id: existing.id },
+                data: { subject: msg.chatName },
+              });
+              subjectsBackfilled++;
+            }
+          }
           messagesSkipped++;
           continue;
         }
@@ -156,35 +206,67 @@ export async function POST() {
         const direction = msg.isFromMe ? "OUTBOUND" : "INBOUND";
         const channelLabel = msg.service === "SMS" ? "SMS" : "iMessage";
 
-        // Truncate long messages for summary (keep first 200 chars)
-        const summary =
-          msg.text.length > 200
-            ? msg.text.slice(0, 200) + "..."
-            : msg.text;
+        // Build summary — prefix group chat messages for detection
+        let summary = msg.text.length > 200
+          ? msg.text.slice(0, 200) + "..."
+          : msg.text;
+        if (msg.isGroupChat) {
+          summary = `(in group chat) ${summary}`;
+        }
 
-        await prisma.interaction.create({
+        // Use group chat name as subject when available
+        const subject = msg.chatName
+          ? msg.chatName
+          : msg.isGroupChat
+            ? "Group message"
+            : `${channelLabel} message`;
+
+        const createdIx = await prisma.interaction.create({
           data: {
             userId,
             contactId,
             type: "MESSAGE",
             direction,
             channel: channelLabel,
-            subject: `${channelLabel} message`,
+            subject,
             summary,
             occurredAt: msg.date,
             sourceId,
           },
         });
 
+        // Feed into persistent inbox system
+        if (direction === "INBOUND") {
+          await onInboundInteraction(userId, contactId, channelLabel, {
+            id: createdIx.id,
+            summary,
+            occurredAt: msg.date,
+            subject,
+          }, {
+            threadKey: msg.isGroupChat ? (msg.chatName ?? "group") : undefined,
+            isGroupChat: msg.isGroupChat,
+          });
+        } else {
+          await onOutboundInteraction(userId, contactId, channelLabel, msg.date);
+        }
+
         existingSourceIds.add(sourceId);
         messagesCreated++;
         handleMessagesCreated++;
+
+        // Track outbound messages for auto-resolve (keep latest per contact)
+        if (direction === "OUTBOUND") {
+          const existing = outboundContacts.get(contactId);
+          if (!existing || msg.date > existing.occurredAt) {
+            outboundContacts.set(contactId, { channel: channelLabel, occurredAt: msg.date });
+          }
+        }
 
         // Track latest guid for sync state
         if (!latestGuid) latestGuid = msg.guid;
       }
 
-      // Update sync state for this handle
+      // Update sync state for this handle (including contactId for reverse lookup)
       await prisma.iMessageSyncState.upsert({
         where: {
           userId_handleId: { userId, handleId },
@@ -192,12 +274,14 @@ export async function POST() {
         create: {
           userId,
           handleId,
+          contactId,
           service: conv.service,
           lastMessageGuid: latestGuid ?? syncStateMap.get(handleId)?.lastMessageGuid,
           lastSyncAt: new Date(),
           messageCount: (syncStateMap.get(handleId)?.messageCount ?? 0) + handleMessagesCreated,
         },
         update: {
+          contactId,
           lastMessageGuid: latestGuid ?? undefined,
           lastSyncAt: new Date(),
           messageCount: {
@@ -222,10 +306,20 @@ export async function POST() {
       }
     }
 
+    // 7. Auto-resolve inbox/action items for contacts with outbound messages
+    for (const [cId, { channel, occurredAt }] of outboundContacts) {
+      await autoResolveOnOutbound(userId, cId, channel, occurredAt);
+    }
+
+    if (subjectsBackfilled > 0) {
+      console.log(`Backfilled ${subjectsBackfilled} group chat names on existing messages`);
+    }
+
     const result: IMessageSyncResult = {
       handlesScanned: conversations.length,
       messagesCreated,
       messagesSkipped,
+      subjectsBackfilled,
       contactsMatched: matchedContactIds.size,
       errors,
     };

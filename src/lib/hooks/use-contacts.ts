@@ -44,6 +44,7 @@ export function useContacts(filters: ContactFilters = {}) {
   return useQuery<ContactWithCount[]>({
     queryKey: ["contacts", filters],
     queryFn: () => fetchJson(url),
+    staleTime: 60_000,
     refetchInterval: 60_000,
   });
 }

@@ -91,13 +91,21 @@ export async function GET() {
       include: { _count: { select: { contacts: true } } },
       orderBy: { sortOrder: "asc" },
     }),
-    // Strongest relationships — by total interaction volume
+    // Strongest relationships — by recent interaction volume (last 30 days)
     prisma.contact.findMany({
       where: {
         userId,
-        interactions: { some: {} },
+        lastInteraction: { gte: thirtyDaysAgo },
       },
-      include: {
+      orderBy: { lastInteraction: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        tier: true,
+        source: true,
+        lastInteraction: true,
         _count: { select: { interactions: true } },
         interactions: {
           orderBy: { occurredAt: "desc" },

@@ -1,18 +1,16 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { authExtension } from "@/lib/extension-auth";
 import { prisma } from "@/lib/prisma";
 
 /**
  * GET /api/extension/follow-ups
  * Returns contacts that are overdue for follow-up.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = session.user.id;
+    const authResult = await authExtension(request);
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult.userId;
 
     // Get contacts with followUpDays set that have LinkedIn URLs
     const contacts = await prisma.contact.findMany({
