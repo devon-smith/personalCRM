@@ -78,8 +78,9 @@ export async function POST() {
     });
   } catch (error) {
     console.error("[POST /api/inbox-items/migrate]", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Migration failed" },
+      { error: "Migration failed", detail: message },
       { status: 500 },
     );
   }

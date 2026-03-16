@@ -222,6 +222,8 @@ export function Inbox() {
         fetch("/api/message-actions", { method: "POST" }),
         fetch("/api/gmail/extract-actions", { method: "POST" }),
       ]);
+      // Retroactive sweep: catch any outbound replies the real-time hooks missed
+      await fetch("/api/inbox-items/sweep", { method: "POST" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });

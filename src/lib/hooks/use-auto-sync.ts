@@ -38,12 +38,15 @@ export function useAutoSync() {
 
       queryClient.invalidateQueries({ queryKey: ["unresponded-threads"] });
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
 
       if (data.processed > 0) {
         queryClient.invalidateQueries({ queryKey: ["contacts"] });
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       }
+
+      // Retroactive sweep after Gmail sync
+      await fetch("/api/inbox-items/sweep", { method: "POST" }).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
     } catch {
       failureCountRef.current += 1;
     } finally {
@@ -83,6 +86,9 @@ export function useAutoSync() {
 
     await Promise.allSettled(syncs);
 
+    // Retroactive sweep after full sync
+    await fetch("/api/inbox-items/sweep", { method: "POST" }).catch(() => {});
+
     queryClient.invalidateQueries({ queryKey: ["contacts"] });
     queryClient.invalidateQueries({ queryKey: ["data-health"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -93,6 +99,8 @@ export function useAutoSync() {
   const runImessageSync = useCallback(async () => {
     try {
       await fetch("/api/imessage", { method: "POST" });
+      // Retroactive sweep after iMessage sync
+      await fetch("/api/inbox-items/sweep", { method: "POST" }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } catch {
