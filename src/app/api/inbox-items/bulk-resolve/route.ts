@@ -44,27 +44,24 @@ export async function POST() {
 
     const needsReply = inboxChats.filter((r) => r.direction === "INBOUND");
 
-    // Create synthetic outbound for each
-    let resolved = 0;
-    for (const chat of needsReply) {
-      await prisma.interaction.create({
-        data: {
-          userId,
-          contactId: chat.contactId,
-          type: "NOTE",
-          direction: "OUTBOUND",
-          channel: chat.channel,
-          summary: "Replied (bulk cleared)",
-          occurredAt: new Date(),
-          sourceId: `bulk-reply:${chat.chatId}:${Date.now()}`,
-          chatId: chat.chatId,
-          isGroupChat: chat.isGroupChat,
-        },
-      });
-      resolved++;
-    }
+    // Dismiss all non-dismissed INBOUND interactions for these chats
+    const now = new Date();
+    const chatIds = needsReply.map((r) => r.chatId);
 
-    console.log(`[inbox] Bulk-resolved ${resolved} conversation(s)`);
+    const dismissed = chatIds.length > 0
+      ? await prisma.interaction.updateMany({
+          where: {
+            userId,
+            chatId: { in: chatIds },
+            direction: "INBOUND",
+            dismissedAt: null,
+          },
+          data: { dismissedAt: now },
+        })
+      : { count: 0 };
+
+    const resolved = needsReply.length;
+    console.log(`[inbox] Bulk-resolved ${resolved} conversation(s), ${dismissed.count} interactions dismissed`);
     return NextResponse.json({ ok: true, resolved });
   } catch (error) {
     console.error("[POST /api/inbox-items/bulk-resolve]", error);

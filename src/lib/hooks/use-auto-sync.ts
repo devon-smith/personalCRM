@@ -4,6 +4,14 @@ import { useQueryClient } from "@tanstack/react-query";
 const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes
 const MAX_CONSECUTIVE_FAILURES = 3;
 
+async function runClassify() {
+  try {
+    await fetch("/api/inbox-items/classify", { method: "POST" });
+  } catch {
+    // classification is non-blocking — ignore failures
+  }
+}
+
 /**
  * Automatically syncs all data sources.
  *
@@ -45,6 +53,11 @@ export function useAutoSync() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+
+      // Classify any new unclassified inbox items, then refresh
+      runClassify().then(() => {
+        queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+      });
     } catch {
       failureCountRef.current += 1;
     } finally {
@@ -89,6 +102,11 @@ export function useAutoSync() {
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
     queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+
+    // Classify after all syncs complete
+    runClassify().then(() => {
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+    });
   }, [queryClient]);
 
   const runImessageSync = useCallback(async () => {
@@ -96,6 +114,11 @@ export function useAutoSync() {
       await fetch("/api/imessage", { method: "POST" });
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+
+      // Classify any new unclassified inbox items, then refresh
+      runClassify().then(() => {
+        queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+      });
     } catch {
       // ignore
     }

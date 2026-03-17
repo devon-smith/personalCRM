@@ -48,11 +48,21 @@ interface InboxItemData {
   messagePreview: MessagePreview[] | null;
   messageCount: number;
   status: string;
+  needsReplyReason?: string | null;
 }
+
+const REASON_LABELS: Record<string, string> = {
+  question: "Asked you something",
+  request: "Needs something from you",
+  emotional: "Shared something personal",
+  open_thread: "Conversation open",
+};
 
 interface InboxItemsData {
   items: InboxItemData[];
   totalOpen: number;
+  groupChats: InboxItemData[];
+  totalGroupChats: number;
 }
 
 interface ActivityItem {
@@ -181,7 +191,7 @@ const urgencyColors: Record<string, { bg: string; text: string }> = {
 
 export function Inbox() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"inbox" | "activity">("inbox");
+  const [activeTab, setActiveTab] = useState<"inbox" | "groups" | "activity">("inbox");
   const [showAll, setShowAll] = useState(false);
 
   // ─── Data fetching ──────────────────────────────────────────
@@ -191,7 +201,7 @@ export function Inbox() {
       queryKey: ["inbox-items"],
       queryFn: async () => {
         const res = await fetch("/api/inbox-items");
-        if (!res.ok) return { items: [], totalOpen: 0 };
+        if (!res.ok) return { items: [], totalOpen: 0, groupChats: [], totalGroupChats: 0 };
         return res.json();
       },
       staleTime: 30 * 1000,
@@ -247,10 +257,14 @@ export function Inbox() {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
       const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
       if (prev) {
+        const inItems = prev.items.some((i) => i.id === itemId);
+        const inGroups = prev.groupChats?.some((i) => i.id === itemId);
         queryClient.setQueryData<InboxItemsData>(["inbox-items"], {
           ...prev,
           items: prev.items.filter((i) => i.id !== itemId),
-          totalOpen: prev.totalOpen - 1,
+          totalOpen: inItems ? prev.totalOpen - 1 : prev.totalOpen,
+          groupChats: (prev.groupChats ?? []).filter((i) => i.id !== itemId),
+          totalGroupChats: inGroups ? (prev.totalGroupChats ?? 0) - 1 : (prev.totalGroupChats ?? 0),
         });
       }
       return { prev };
@@ -280,10 +294,14 @@ export function Inbox() {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
       const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
       if (prev) {
+        const inItems = prev.items.some((i) => i.id === itemId);
+        const inGroups = prev.groupChats?.some((i) => i.id === itemId);
         queryClient.setQueryData<InboxItemsData>(["inbox-items"], {
           ...prev,
           items: prev.items.filter((i) => i.id !== itemId),
-          totalOpen: prev.totalOpen - 1,
+          totalOpen: inItems ? prev.totalOpen - 1 : prev.totalOpen,
+          groupChats: (prev.groupChats ?? []).filter((i) => i.id !== itemId),
+          totalGroupChats: inGroups ? (prev.totalGroupChats ?? 0) - 1 : (prev.totalGroupChats ?? 0),
         });
       }
       return { prev };
@@ -312,10 +330,14 @@ export function Inbox() {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
       const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
       if (prev) {
+        const inItems = prev.items.some((i) => i.id === itemId);
+        const inGroups = prev.groupChats?.some((i) => i.id === itemId);
         queryClient.setQueryData<InboxItemsData>(["inbox-items"], {
           ...prev,
           items: prev.items.filter((i) => i.id !== itemId),
-          totalOpen: prev.totalOpen - 1,
+          totalOpen: inItems ? prev.totalOpen - 1 : prev.totalOpen,
+          groupChats: (prev.groupChats ?? []).filter((i) => i.id !== itemId),
+          totalGroupChats: inGroups ? (prev.totalGroupChats ?? 0) - 1 : (prev.totalGroupChats ?? 0),
         });
       }
       return { prev };
@@ -365,12 +387,14 @@ export function Inbox() {
   // ─── Derived data ───────────────────────────────────────────
 
   const waitingItems = inboxData?.items ?? [];
+  const groupChatItems = inboxData?.groupChats ?? [];
   const activityItems = activityData?.items ?? [];
   const inboxCount = waitingItems.length;
+  const groupCount = groupChatItems.length;
   const isLoading =
-    activeTab === "inbox"
-      ? loadingNR
-      : loadingActivity;
+    activeTab === "activity"
+      ? loadingActivity
+      : loadingNR;
 
   return (
     <div className="crm-card overflow-hidden">
@@ -413,6 +437,41 @@ export function Inbox() {
                 }}
               >
                 {inboxCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("groups")}
+            className="relative flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-[13px] font-medium transition-all"
+            style={{
+              backgroundColor:
+                activeTab === "groups" ? "var(--surface, #fff)" : "transparent",
+              color:
+                activeTab === "groups"
+                  ? "var(--text-primary)"
+                  : "var(--text-tertiary)",
+              boxShadow:
+                activeTab === "groups"
+                  ? "0 1px 3px rgba(0,0,0,0.06)"
+                  : "none",
+              transitionDuration: "var(--duration-fast)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Groups
+            {groupCount > 0 && (
+              <span
+                className="rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                style={{
+                  backgroundColor:
+                    activeTab === "groups"
+                      ? "var(--text-tertiary)"
+                      : "var(--text-tertiary)",
+                  color: "#fff",
+                  opacity: activeTab === "groups" ? 0.7 : 0.5,
+                }}
+              >
+                {groupCount}
               </span>
             )}
           </button>
@@ -492,6 +551,17 @@ export function Inbox() {
               snoozeMutation.mutate({ itemId, hours, channel })
             }
             onBulkResolve={() => bulkResolveMutation.mutate()}
+          />
+        ) : activeTab === "groups" ? (
+          <GroupsTab
+            groupItems={groupChatItems}
+            showAll={showAll}
+            onToggleShowAll={() => setShowAll(!showAll)}
+            onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
+            onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
+            onSnooze={(itemId, hours, channel) =>
+              snoozeMutation.mutate({ itemId, hours, channel })
+            }
           />
         ) : (
           <ActivityTab items={activityItems} />
@@ -640,6 +710,331 @@ function InboxTab({
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// GROUPS TAB
+// ═══════════════════════════════════════════════════════════════
+
+function GroupsTab({
+  groupItems,
+  showAll,
+  onToggleShowAll,
+  onResolve,
+  onDismiss,
+  onSnooze,
+}: {
+  groupItems: InboxItemData[];
+  showAll: boolean;
+  onToggleShowAll: () => void;
+  onResolve: (itemId: string, channel: string) => void;
+  onDismiss: (itemId: string, channel: string) => void;
+  onSnooze: (itemId: string, hours: number, channel: string) => void;
+}) {
+  if (groupItems.length === 0) {
+    return (
+      <div className="flex flex-col items-center py-12 text-center">
+        <div
+          className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
+          style={{ backgroundColor: "var(--surface-sunken)" }}
+        >
+          <MessageCircle
+            className="h-4 w-4"
+            style={{ color: "var(--text-tertiary)" }}
+          />
+        </div>
+        <p
+          className="text-[14px] font-medium"
+          style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
+        >
+          No active group chats
+        </p>
+        <p
+          className="text-[12px] mt-1"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          Group conversations from the last 7 days will appear here
+        </p>
+      </div>
+    );
+  }
+
+  const itemsForGrouping = groupItems.map((i) => ({
+    ...i,
+    lastInboundAt: i.triggerAt,
+  }));
+  const timeGroups = groupByTime(itemsForGrouping);
+  const displayItems = showAll ? itemsForGrouping : itemsForGrouping.slice(0, 5);
+  const displayGroups = showAll ? timeGroups : groupByTime(displayItems);
+
+  return (
+    <div className="space-y-4">
+      <p
+        className="text-[12px]"
+        style={{ color: "var(--text-tertiary)", letterSpacing: "-0.01em" }}
+      >
+        Group chats with recent inbound activity. Dismiss to hide.
+      </p>
+
+      <div>
+        {displayGroups.map(({ group, items }) => (
+          <div key={group}>
+            <p
+              className="text-[11px] font-semibold uppercase tracking-wider mb-2 mt-4 first:mt-0"
+              style={{
+                color: "var(--text-tertiary)",
+                letterSpacing: "0.06em",
+              }}
+            >
+              {group}
+            </p>
+            <div className="space-y-2">
+              {items.map((item) => (
+                <GroupChatRow
+                  key={item.id}
+                  item={item}
+                  onResolve={() => onResolve(item.id, item.channel)}
+                  onDismiss={() => onDismiss(item.id, item.channel)}
+                  onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {groupItems.length > 5 && (
+          <button
+            onClick={onToggleShowAll}
+            className="flex items-center gap-1 mt-3 w-full justify-center py-2 rounded-xl text-[12px] font-medium transition-colors"
+            style={{
+              color: "var(--text-tertiary)",
+              letterSpacing: "-0.01em",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "";
+            }}
+          >
+            <ChevronDown
+              className="h-3 w-3 transition-transform"
+              style={{
+                transform: showAll ? "rotate(180deg)" : "rotate(0)",
+              }}
+            />
+            {showAll ? "Show less" : `Show ${groupItems.length - 5} more`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Group Chat Row ─────────────────────────────────────────
+
+function GroupChatRow({
+  item,
+  onResolve,
+  onDismiss,
+  onSnooze,
+}: {
+  item: InboxItemData;
+  onResolve: () => void;
+  onDismiss: () => void;
+  onSnooze: (hours: number) => void;
+}) {
+  const [showSnooze, setShowSnooze] = useState(false);
+  const color = getAvatarColor(item.contactName);
+
+  const previews = (item.messagePreview ?? []) as MessagePreview[];
+  const MAX_PREVIEWS = 5;
+  const previewMessages = previews.slice(0, MAX_PREVIEWS);
+  const extraCount = item.messageCount - MAX_PREVIEWS;
+
+  return (
+    <div
+      className="group rounded-2xl p-4 transition-colors"
+      style={{
+        backgroundColor: "transparent",
+        transitionDuration: "var(--duration-fast)",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "#F5F6F8";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "transparent";
+      }}
+    >
+      {/* Top row: avatar + name + time */}
+      <div className="flex items-center gap-3">
+        <div className="relative shrink-0">
+          <Avatar className="h-9 w-9">
+            <AvatarFallback
+              className="text-[11px] font-semibold"
+              style={{ backgroundColor: color.bg, color: color.text }}
+            >
+              {getInitials(item.contactName)}
+            </AvatarFallback>
+          </Avatar>
+          <span
+            className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
+            style={{
+              backgroundColor: "var(--surface, #fff)",
+              color: "var(--text-tertiary)",
+              border: "1.5px solid var(--border, #E8E6E1)",
+            }}
+            title="Group chat"
+          >
+            G
+          </span>
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <span
+            className="text-[15px] font-semibold truncate block"
+            style={{ color: "#1A1A1A", letterSpacing: "-0.02em" }}
+          >
+            {item.contactName}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span style={{ color: "#B5BAC0" }}>
+            <ChannelIcon channel={item.channel} size={13} />
+          </span>
+          <span
+            className="text-[12px] tabular-nums"
+            style={{ color: "#B5BAC0", letterSpacing: "-0.01em" }}
+          >
+            {formatDistanceToNow(new Date(item.triggerAt))}
+          </span>
+        </div>
+      </div>
+
+      {/* Message previews */}
+      {previewMessages.length > 0 && (
+        <div
+          className="mt-2.5 rounded-xl px-3.5 py-2.5 space-y-1.5"
+          style={{
+            backgroundColor: "#F5F6F8",
+            borderLeft: "3px solid #E2E4E8",
+          }}
+        >
+          {previewMessages.map((msg, i) => {
+            const raw = msg.summary || "";
+            const display = raw.replace("(in group chat) ", "");
+            if (!display) return null;
+            return (
+              <p
+                key={i}
+                className="text-[13px]"
+                style={{
+                  color: i === 0 ? "#4A4E54" : "#7B8189",
+                  letterSpacing: "-0.01em",
+                  lineHeight: "1.5",
+                }}
+              >
+                &ldquo;{truncateMessage(display)}&rdquo;
+              </p>
+            );
+          })}
+          {extraCount > 0 && (
+            <p className="text-[11px]" style={{ color: "#B5BAC0" }}>
+              +{extraCount} more message{extraCount !== 1 ? "s" : ""}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* "Already replied?" — prominent green button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onResolve();
+        }}
+        className="w-full flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 mt-2.5 text-[12px] font-medium transition-colors"
+        style={{
+          backgroundColor: "rgba(5,150,105,0.06)",
+          border: "1px solid rgba(5,150,105,0.15)",
+          color: "#059669",
+          letterSpacing: "-0.01em",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.12)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.06)";
+        }}
+      >
+        <Check className="h-3.5 w-3.5" />
+        Already replied? Tap to clear
+      </button>
+
+      {/* Actions: Dismiss + Snooze */}
+      <div className="flex items-center gap-2 mt-2">
+        <button
+          onClick={onDismiss}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+          style={{
+            border: "1px solid #E2E4E8",
+            color: "#4A4E54",
+            backgroundColor: "transparent",
+            letterSpacing: "-0.01em",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "#F5F6F8";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
+        >
+          <X className="h-3 w-3" />
+          Dismiss
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setShowSnooze(!showSnooze)}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+            style={{
+              border: "1px solid #E2E4E8",
+              color: "#4A4E54",
+              backgroundColor: "transparent",
+              letterSpacing: "-0.01em",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "#F5F6F8";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <Bell className="h-3 w-3" />
+            Snooze
+          </button>
+          {showSnooze && (
+            <SnoozeDropdown
+              onSelect={(hours) => {
+                onSnooze(hours);
+                setShowSnooze(false);
+              }}
+              onClose={() => setShowSnooze(false)}
+            />
+          )}
+        </div>
+
+        {item.messageCount > 1 && (
+          <span
+            className="ml-auto text-[11px]"
+            style={{ color: "#B5BAC0" }}
+          >
+            {item.messageCount} messages
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Inbox Row ───────────────────────────────────────────────
 
 function truncateMessage(text: string, maxLen = 80): string {
@@ -729,6 +1124,18 @@ function InboxRow({
                 style={{ color: "#7B8189" }}
               >
                 {item.company}
+              </span>
+            )}
+            {item.needsReplyReason && REASON_LABELS[item.needsReplyReason] && (
+              <span
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full hidden sm:inline"
+                style={{
+                  backgroundColor: "rgba(59,130,246,0.08)",
+                  color: "#3B82F6",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {REASON_LABELS[item.needsReplyReason]}
               </span>
             )}
           </div>

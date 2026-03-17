@@ -330,7 +330,7 @@ export function DataHealth() {
       if (parts.length > 0) {
         toast(`iMessage: ${parts.join(", ")}`);
       } else {
-        toast(`Scanned ${result.handlesScanned} conversations — all already synced`);
+        toast(`Scanned ${result.chatsScanned} chats — all already synced`);
       }
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
@@ -629,7 +629,7 @@ export function DataHealth() {
                       )}
                     </>
                   ) : (
-                    <>Scanned {syncIMessage.data.handlesScanned} conversations — all already synced.</>
+                    <>Scanned {syncIMessage.data.chatsScanned} chats — all already synced.</>
                   )}
                 </p>
               </div>

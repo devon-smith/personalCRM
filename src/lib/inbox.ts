@@ -34,6 +34,7 @@ function isTapbackReaction(summary: string): boolean {
 
 // ─── Conversation-ender detection ───────────────────────────
 
+// Exact-match enders (full message matches one of these)
 const CONVERSATION_ENDERS = new Set([
   "ok", "okay", "k", "kk",
   "thanks", "thank you", "thx", "ty", "tysm",
@@ -53,7 +54,41 @@ const CONVERSATION_ENDERS = new Set([
   "congrats", "congratulations",
 ]);
 
-function isConversationEnder(summary: string | null): boolean {
+// Prefix-match enders: message starts with one of these (+ optional trailing words)
+// e.g. "thanks beast", "thank you dev", "nah all good thanks though"
+const ENDER_PREFIXES = [
+  "thanks", "thank you", "thx", "ty",
+  "sounds good", "sounds great",
+  "all good", "no worries", "no problem",
+  "got it", "gotcha",
+  "will do", "on it",
+  "love you", "love u",
+  "congrats", "congratulations",
+  "nah", "nope",
+  "good night", "goodnight",
+  "bye", "later", "peace", "see ya",
+];
+
+// Pattern-match enders: short messages that are reactions/acknowledgments
+const ENDER_PATTERNS = [
+  /^(ha){2,}/i,            // haha, hahaha, etc.
+  /^l+m+a+o+/i,            // lmao, lmaooo
+  /^huge\b/i,              // "Huge", "Huge stuff"
+  /^nice\b/i,              // "Nice one", "Nice stuff"
+  /^sick\b/i,              // "Sick dude"
+  /^dope\b/i,              // "Dope stuff"
+  /^fire\b/i,              // "Fire bro"
+  /^damn\b/i,              // "Damn dude"
+  /^wow\b/i,               // "Wow that's crazy"
+  /^omg\b/i,               // "Omg no way"
+  /^sheesh\b/i,            // "Sheesh"
+  /^yea(h)?\b/i,           // "Yeah for sure"
+  /^for sure\b/i,          // "For sure"
+  /^of course\b/i,         // "Of course"
+  /^(o?k(ay)?)\b/i,        // "Ok cool", "Okay sounds good"
+];
+
+export function isConversationEnder(summary: string | null): boolean {
   if (!summary) return false;
   const cleaned = summary
     .replace(/^\(in group chat\)\s*/i, "")
@@ -62,15 +97,29 @@ function isConversationEnder(summary: string | null): boolean {
     .replace(/[.!?,]+$/g, "");
   if (!cleaned) return false;
 
-  // Emoji-only
+  // Emoji-only messages (thumbs up, heart, etc.)
   if (/^[\p{Emoji}\s]{1,12}$/u.test(cleaned) && /\p{Emoji}/u.test(cleaned)) return true;
 
   const wordCount = cleaned.split(/\s+/).length;
-  if (wordCount > 6) return false;
+  if (wordCount > 8) return false;
 
+  // Exact match
   if (CONVERSATION_ENDERS.has(cleaned)) return true;
-  if (/^(ha){2,}/i.test(cleaned)) return true;
-  if (/^l+m+a+o+/i.test(cleaned)) return true;
+
+  // Prefix match — message starts with an ender phrase
+  // Only for short messages (≤6 words) to avoid filtering real questions
+  if (wordCount <= 6) {
+    for (const prefix of ENDER_PREFIXES) {
+      if (cleaned === prefix || cleaned.startsWith(prefix + " ")) return true;
+    }
+  }
+
+  // Pattern match — short reactive messages
+  if (wordCount <= 4) {
+    for (const pattern of ENDER_PATTERNS) {
+      if (pattern.test(cleaned)) return true;
+    }
+  }
 
   return false;
 }

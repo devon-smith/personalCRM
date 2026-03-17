@@ -183,9 +183,16 @@ model Interaction {
   isGroupChat Boolean              @default(false)
   chatName    String?
 
+  // Layer 3: AI classification (null = unclassified, fail-open)
+  needsReply           Boolean?
+  needsReplyReason     String?    // "question", "request", "emotional", "open_thread", "acknowledged", "winding_down", "fyi", "not_addressed"
+  needsReplyConfidence Float?     // 0.0 - 1.0
+  classifiedAt         DateTime?
+
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, sourceId])
   @@index([contactId])
   @@index([occurredAt])
   @@index([userId, occurredAt])

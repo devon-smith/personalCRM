@@ -38,24 +38,22 @@ export async function POST(
       return NextResponse.json({ error: "Chat not found" }, { status: 404 });
     }
 
-    // Create a synthetic outbound interaction with the same chatId.
-    // This makes the computed inbox query see "last message = OUTBOUND" → excluded.
-    await prisma.interaction.create({
-      data: {
+    // Dismiss all non-dismissed INBOUND interactions for this chat.
+    // The inbox DISTINCT ON query filters "dismissedAt IS NULL", so
+    // dismissed interactions are hidden. When a NEW inbound arrives
+    // (without dismissedAt), the chat reappears naturally.
+    const now = new Date();
+    const dismissed = await prisma.interaction.updateMany({
+      where: {
         userId: session.user.id,
-        contactId: latestInbound.contactId,
-        type: "NOTE",
-        direction: "OUTBOUND",
-        channel: latestInbound.channel ?? channel,
-        summary: "Replied (marked manually)",
-        occurredAt: new Date(),
-        sourceId: `manual-reply:${chatId}:${Date.now()}`,
         chatId,
-        isGroupChat: latestInbound.isGroupChat,
+        direction: "INBOUND",
+        dismissedAt: null,
       },
+      data: { dismissedAt: now },
     });
 
-    console.log(`[inbox] Manually resolved chat ${chatId}`);
+    console.log(`[inbox] Manually resolved chat ${chatId} (${dismissed.count} interactions dismissed)`);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

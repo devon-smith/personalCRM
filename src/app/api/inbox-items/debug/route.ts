@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { getChatDuplicates } from "@/lib/imessage";
+import { getChatDuplicates, getAttributedBodyStats } from "@/lib/imessage";
 
 const TAPBACK_VERBS = ["Loved", "Liked", "Laughed at", "Emphasized", "Disliked", "Questioned"];
 const TAPBACK_SQL_PATTERNS = [
@@ -93,27 +93,86 @@ export async function GET() {
     JOIN "Contact" c ON c.id = ic."contactId"
   `;
 
-  // 5. Look up specific ROWIDs from the fragmentation data to see if they map to same chat
-  // Extract ROWID numbers from fragmented chatIds
-  const fragChatIds = await prisma.$queryRaw<{ chatId: string; contact_name: string; msg_count: number }[]>`
-    SELECT "chatId" as "chatId", c.name as contact_name, COUNT(*)::int as msg_count
+  // 5. iMessage direction breakdown per chatId — the smoking gun check
+  const imsgDirections = await prisma.$queryRaw<{
+    chatId: string; contact_name: string; inbound: number; outbound: number;
+  }[]>`
+    SELECT i."chatId" as "chatId", c.name as contact_name,
+      SUM(CASE WHEN i.direction = 'INBOUND' THEN 1 ELSE 0 END)::int as inbound,
+      SUM(CASE WHEN i.direction = 'OUTBOUND' THEN 1 ELSE 0 END)::int as outbound
     FROM "Interaction" i
     JOIN "Contact" c ON c.id = i."contactId"
     WHERE i."userId" = ${userId}
-      AND "chatId" LIKE 'imsg-chat:%'
-    GROUP BY "chatId", c.name
-    ORDER BY c.name, "chatId"
+      AND i."chatId" LIKE 'imsg-chat:%'
+    GROUP BY i."chatId", c.name
+    ORDER BY outbound DESC, c.name
   `;
+
+  // 6. Total outbound iMessage count
+  const outboundTotal = await prisma.$queryRaw<{ total: number; with_chatid: number; null_chatid: number }[]>`
+    SELECT COUNT(*)::int as total,
+           COUNT("chatId")::int as with_chatid,
+           (COUNT(*) - COUNT("chatId"))::int as null_chatid
+    FROM "Interaction"
+    WHERE "userId" = ${userId}
+      AND direction = 'OUTBOUND'
+      AND channel IN ('iMessage', 'SMS')
+  `;
+
+  // 7. Sample outbound iMessage interactions
+  const outboundSamples = await prisma.$queryRaw<{
+    chatId: string | null; channel: string; summary: string; contactName: string; occurredAt: Date;
+  }[]>`
+    SELECT i."chatId", i.channel, LEFT(i.summary, 60) as summary, c.name as "contactName", i."occurredAt"
+    FROM "Interaction" i
+    JOIN "Contact" c ON c.id = i."contactId"
+    WHERE i."userId" = ${userId}
+      AND i.direction = 'OUTBOUND'
+      AND i.channel IN ('iMessage', 'SMS')
+    ORDER BY i."occurredAt" DESC
+    LIMIT 15
+  `;
+
+  // 8. attributedBody stats — how many messages have text=NULL but content in attributedBody?
+  const attributedBodyStats = await getAttributedBodyStats(60);
+
+  // 9. Lilian "Coop" investigation — check if group chat messages leaked into 1:1 chatId
+  const lilianContactId = "5a1da19f-f8a0-4a99-b317-2893f6b197c1";
+  const lilianCoopMessages = await prisma.interaction.findMany({
+    where: {
+      userId,
+      contactId: lilianContactId,
+      summary: { contains: "Coop" },
+    },
+    select: { chatId: true, summary: true, direction: true, occurredAt: true, sourceId: true },
+    orderBy: { occurredAt: "desc" },
+    take: 5,
+  });
+  console.log("[debug] Lilian 'Coop' messages:", JSON.stringify(lilianCoopMessages, null, 2));
+
+  // 10. All distinct chatIds for Lilian's interactions
+  const lilianChatIds = await prisma.interaction.groupBy({
+    by: ["chatId"],
+    where: {
+      userId,
+      contactId: lilianContactId,
+      chatId: { not: null },
+    },
+    _count: true,
+    orderBy: { _count: { chatId: "desc" } },
+  });
+  console.log("[debug] Lilian chatId distribution:", JSON.stringify(lilianChatIds, null, 2));
 
   return NextResponse.json({
     chatIdStats: chatIdStats[0],
+    attributedBodyStats,
     chatDbDuplicates: {
       byIdentifier: chatDupes.byIdentifier,
       byGroupId: chatDupes.byGroupId,
       totalChats: chatDupes.allChats.length,
-      // Only show chats that are in our fragmented inbox for cross-reference
+      // Only show chats that are in our DB interactions for cross-reference
       relevantChats: chatDupes.allChats.filter((c) =>
-        fragChatIds.some((f) => f.chatId === `imsg-chat:${c.rowId}`),
+        imsgDirections.some((f: { chatId: string }) => f.chatId === `imsg-chat:${c.rowId}`),
       ),
       error: chatDupes.error,
     },
@@ -122,6 +181,12 @@ export async function GET() {
       withTapbackFilter: filteredInboxCount[0]?.count ?? 0,
     },
     outboundDetectionCheck: outboundCheck,
-    interactionsByChatId: fragChatIds,
+    imsgDirections: imsgDirections,
+    outboundImsgTotal: outboundTotal[0],
+    outboundImsgSamples: outboundSamples,
+    lilianInvestigation: {
+      coopMessages: lilianCoopMessages,
+      chatIdDistribution: lilianChatIds,
+    },
   });
 }

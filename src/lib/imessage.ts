@@ -89,6 +89,49 @@ function runQuery<T>(query: string): Promise<T[]> {
   });
 }
 
+/**
+ * Extract plain text from an iMessage attributedBody BLOB.
+ * On macOS Ventura+, most messages store content as NSAttributedString in
+ * attributedBody (typedstream format) instead of the text column.
+ *
+ * Format: find [0x01, 0x2B] start marker → read length → UTF-8 text.
+ * Length is 1 byte if < 0x81, or 2 bytes little-endian after 0x81 prefix.
+ */
+function extractTextFromAttributedBody(hexString: string): string | null {
+  if (!hexString) return null;
+
+  const buf = Buffer.from(hexString, "hex");
+
+  // Start marker: SOH (0x01) + '+' (0x2B)
+  const startMarker = Buffer.from([0x01, 0x2b]);
+  const startIdx = buf.indexOf(startMarker);
+  if (startIdx === -1) return null;
+
+  const afterMarker = startIdx + startMarker.length;
+  if (afterMarker >= buf.length) return null;
+
+  let textLength: number;
+  let textStart: number;
+
+  if (buf[afterMarker] === 0x81) {
+    // Two-byte little-endian length (for strings > 255 chars)
+    if (afterMarker + 3 > buf.length) return null;
+    textLength = buf.readUInt16LE(afterMarker + 1);
+    textStart = afterMarker + 3;
+  } else {
+    // Single-byte length
+    textLength = buf[afterMarker];
+    textStart = afterMarker + 1;
+  }
+
+  if (textLength === 0 || textStart + textLength > buf.length) return null;
+
+  const text = buf.subarray(textStart, textStart + textLength).toString("utf-8");
+
+  // Remove object replacement chars (U+FFFC, used for attachments) and trim
+  return text.replace(/\uFFFC/g, "").trim() || null;
+}
+
 // normalizePhone is now in src/lib/name-utils.ts
 export { normalizePhone } from "./name-utils";
 
@@ -427,7 +470,245 @@ export async function getDailyConversationSummaries(
   }
 }
 
-// ─── Chat Lookup ──────────────────────────────────────────────
+/**
+ * Diagnostic: check how many messages have text=NULL with content in attributedBody.
+ * On recent macOS (Ventura+), iMessage stores content as NSAttributedString blobs
+ * in attributedBody instead of the text column.
+ */
+export async function getAttributedBodyStats(days: number = 60): Promise<{
+  totalMessages: number;
+  hasText: number;
+  attributedOnly: number;
+  outboundAttributedOnly: number;
+  totalOutbound: number;
+  outboundWithText: number;
+  error: string | null;
+}> {
+  const accessError = checkIMessageAccess();
+  if (accessError) {
+    return { totalMessages: 0, hasText: 0, attributedOnly: 0, outboundAttributedOnly: 0, totalOutbound: 0, outboundWithText: 0, error: accessError };
+  }
+
+  const minDate = daysAgoAppleTimestamp(days);
+
+  const query = `
+    SELECT
+      COUNT(*) as totalMessages,
+      COUNT(text) as hasText,
+      COUNT(CASE WHEN text IS NULL AND attributedBody IS NOT NULL THEN 1 END) as attributedOnly,
+      COUNT(CASE WHEN is_from_me = 1 AND text IS NULL AND attributedBody IS NOT NULL THEN 1 END) as outboundAttributedOnly,
+      COUNT(CASE WHEN is_from_me = 1 THEN 1 END) as totalOutbound,
+      COUNT(CASE WHEN is_from_me = 1 AND text IS NOT NULL THEN 1 END) as outboundWithText
+    FROM message
+    WHERE date > ${minDate}
+      AND is_empty = 0
+      AND is_service_message = 0;
+  `.trim();
+
+  interface Row {
+    totalMessages: number; hasText: number; attributedOnly: number;
+    outboundAttributedOnly: number; totalOutbound: number; outboundWithText: number;
+  }
+
+  try {
+    const rows = await runQuery<Row>(query);
+    return { ...rows[0], error: null };
+  } catch (err) {
+    return { totalMessages: 0, hasText: 0, attributedOnly: 0, outboundAttributedOnly: 0, totalOutbound: 0, outboundWithText: 0, error: err instanceof Error ? err.message : "Failed" };
+  }
+}
+
+// ─── Per-Chat API (v2) ────────────────────────────────────────
+
+export { appleTimestampToDate };
+
+export interface ActiveChat {
+  chatRowId: number;
+  chatName: string | null;
+  groupId: string | null;
+  chatIdentifier: string;
+  serviceName: string;
+  style: number; // 43 = group, 45 = 1:1
+  latestMessageDate: Date;
+  recentMessageCount: number;
+  memberCount: number;
+  isGroupChat: boolean;
+}
+
+export interface ChatMessage {
+  guid: string;
+  text: string | null;
+  date: number; // raw Apple nanosecond timestamp
+  isFromMe: boolean;
+  senderHandle: string | null;
+  senderService: string;
+}
+
+export interface ChatParticipant {
+  handleId: string;
+  service: string;
+}
+
+/**
+ * Get all chats with recent messages from the last N days.
+ * Iterates by chat ROWID (not by handle) to avoid cross-chat contamination.
+ */
+export async function getActiveChats(
+  days: number = 60,
+): Promise<{ chats: ActiveChat[]; error: string | null }> {
+  const accessError = checkIMessageAccess();
+  if (accessError) return { chats: [], error: accessError };
+
+  const minDate = daysAgoAppleTimestamp(days);
+
+  const query = `
+    SELECT
+      c.ROWID AS chatRowId,
+      COALESCE(NULLIF(c.display_name, ''), NULL) AS chatName,
+      c.group_id AS groupId,
+      c.chat_identifier AS chatIdentifier,
+      c.service_name AS serviceName,
+      c.style AS style,
+      MAX(m.date) AS latestMessageDate,
+      COUNT(m.ROWID) AS recentMessageCount,
+      (SELECT COUNT(DISTINCT chj.handle_id)
+       FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) AS memberCount
+    FROM chat c
+    JOIN chat_message_join cmj ON cmj.chat_id = c.ROWID
+    JOIN message m ON m.ROWID = cmj.message_id
+    WHERE m.date > ${minDate}
+      AND m.is_empty = 0
+      AND m.is_service_message = 0
+    GROUP BY c.ROWID
+    HAVING recentMessageCount > 0
+    ORDER BY latestMessageDate DESC;
+  `.trim();
+
+  interface RawRow {
+    chatRowId: number;
+    chatName: string | null;
+    groupId: string | null;
+    chatIdentifier: string;
+    serviceName: string;
+    style: number;
+    latestMessageDate: number;
+    recentMessageCount: number;
+    memberCount: number;
+  }
+
+  try {
+    const rows = await runQuery<RawRow>(query);
+    const chats: ActiveChat[] = rows.map((r) => ({
+      chatRowId: r.chatRowId,
+      chatName: r.chatName || null,
+      groupId: r.groupId || null,
+      chatIdentifier: r.chatIdentifier,
+      serviceName: r.serviceName,
+      style: r.style,
+      latestMessageDate: appleTimestampToDate(r.latestMessageDate),
+      recentMessageCount: r.recentMessageCount,
+      memberCount: r.memberCount,
+      isGroupChat: r.memberCount > 1 || r.style === 43,
+    }));
+    return { chats, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to read active chats";
+    return { chats: [], error: message };
+  }
+}
+
+/**
+ * Get messages for a specific chat from the last N days.
+ * Each message appears exactly once — no cross-chat contamination.
+ */
+export async function getMessagesForChat(
+  chatRowId: number,
+  days: number = 60,
+): Promise<{ messages: ChatMessage[]; error: string | null }> {
+  const accessError = checkIMessageAccess();
+  if (accessError) return { messages: [], error: accessError };
+
+  const minDate = daysAgoAppleTimestamp(days);
+
+  const query = `
+    SELECT
+      m.guid,
+      m.text,
+      m.date,
+      m.is_from_me AS isFromMe,
+      h.id AS senderHandle,
+      COALESCE(h.service, 'iMessage') AS senderService,
+      hex(m.attributedBody) AS attributedBodyHex
+    FROM message m
+    JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+    LEFT JOIN handle h ON m.handle_id = h.ROWID
+    WHERE cmj.chat_id = ${chatRowId}
+      AND m.date > ${minDate}
+      AND m.is_empty = 0
+      AND m.is_service_message = 0
+    ORDER BY m.date DESC
+    LIMIT 500;
+  `.trim();
+
+  interface RawMsg {
+    guid: string;
+    text: string | null;
+    date: number;
+    isFromMe: number;
+    senderHandle: string | null;
+    senderService: string;
+    attributedBodyHex: string | null;
+  }
+
+  try {
+    const rows = await runQuery<RawMsg>(query);
+    const messages: ChatMessage[] = rows.map((r) => ({
+      guid: r.guid,
+      text: r.text ?? extractTextFromAttributedBody(r.attributedBodyHex ?? ""),
+      date: r.date,
+      isFromMe: r.isFromMe === 1,
+      senderHandle: r.senderHandle || null,
+      senderService: r.senderService,
+    }));
+    return { messages, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to read chat messages";
+    return { messages: [], error: message };
+  }
+}
+
+/**
+ * Get participant handles for a specific chat.
+ * Used to match chat participants to CRM contacts.
+ */
+export async function getChatParticipants(
+  chatRowId: number,
+): Promise<{ participants: ChatParticipant[]; error: string | null }> {
+  const accessError = checkIMessageAccess();
+  if (accessError) return { participants: [], error: accessError };
+
+  const query = `
+    SELECT h.id AS handleId, h.service
+    FROM chat_handle_join chj
+    JOIN handle h ON h.ROWID = chj.handle_id
+    WHERE chj.chat_id = ${chatRowId};
+  `.trim();
+
+  interface RawRow {
+    handleId: string;
+    service: string;
+  }
+
+  try {
+    const rows = await runQuery<RawRow>(query);
+    return { participants: rows, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to read chat participants";
+    return { participants: [], error: message };
+  }
+}
+
+// ─── Chat Lookup (legacy, used by migrate) ────────────────────
 
 export interface ChatInfo {
   chatRowId: number;
@@ -656,6 +937,41 @@ export async function getMessageChatMapping(
     return { guidToChat, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to query message-chat mapping";
+    return { guidToChat: new Map(), error: message };
+  }
+}
+
+/**
+ * Simple GUID → chatRowId lookup from chat_message_join.
+ * Returns the raw chatRowId (no canonical mapping) for every message
+ * in the last N days. Used for bulk chatId correction.
+ */
+export async function getGuidToChatRaw(
+  days: number,
+): Promise<{ guidToChat: Map<string, number>; error: string | null }> {
+  const accessError = checkIMessageAccess();
+  if (accessError) return { guidToChat: new Map(), error: accessError };
+
+  const minDate = daysAgoAppleTimestamp(days);
+
+  const query = `
+    SELECT m.guid, cmj.chat_id AS chatRowId
+    FROM message m
+    JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+    WHERE m.date > ${minDate};
+  `.trim();
+
+  interface Row { guid: string; chatRowId: number }
+
+  try {
+    const rows = await runQuery<Row>(query);
+    const guidToChat = new Map<string, number>();
+    for (const row of rows) {
+      guidToChat.set(row.guid, row.chatRowId);
+    }
+    return { guidToChat, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to query guid-to-chat";
     return { guidToChat: new Map(), error: message };
   }
 }
