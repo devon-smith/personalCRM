@@ -77,27 +77,20 @@ export async function GET() {
   const imessageStatus = imessageError ? "unavailable" : "connected";
 
   // Get sync timestamps
-  const [gmailSync, notionSync, imessageSyncCount] = await Promise.all([
+  const [gmailSync, imessageSyncCount] = await Promise.all([
     prisma.gmailSyncState.findUnique({
       where: { userId },
       select: { lastSyncAt: true, syncEnabled: true },
-    }),
-    prisma.notionSyncState.findUnique({
-      where: { userId },
-      select: { lastSyncAt: true },
     }),
     prisma.iMessageSyncState.count({ where: { userId } }),
   ]);
 
   // Count interactions by source prefix
-  const [totalInteractions, imsgCount, notionCount, gmailCount] =
+  const [totalInteractions, imsgCount, gmailCount] =
     await Promise.all([
       prisma.interaction.count({ where: { userId } }),
       prisma.interaction.count({
         where: { userId, sourceId: { startsWith: "imsg" } },
-      }),
-      prisma.interaction.count({
-        where: { userId, sourceId: { startsWith: "notion:" } },
       }),
       prisma.interaction.count({
         where: {
@@ -146,14 +139,9 @@ export async function GET() {
       error: imessageError,
       handlesTracked: imessageSyncCount,
     },
-    notion: {
-      status: notionSync ? "configured" : "not_configured",
-      lastSyncAt: notionSync?.lastSyncAt ?? null,
-    },
     interactions: {
       total: totalInteractions,
       imessage: imsgCount,
-      notion: notionCount,
       gmail: gmailCount,
     },
     contacts: {

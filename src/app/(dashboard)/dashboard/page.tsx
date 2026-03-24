@@ -117,7 +117,6 @@ export default function DashboardPage() {
     syncInFlight.current = true;
     try {
       await Promise.allSettled([
-        fetch("/api/notion-messages", { method: "POST" }),
         fetch("/api/imessage", { method: "POST" }),
         fetch("/api/gmail/sync", { method: "POST" }),
       ]);
