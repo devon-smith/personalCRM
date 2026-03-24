@@ -36,6 +36,7 @@ model User {
   extensionTokens      ExtensionToken[]
   inboxItems           InboxItem[]
   inboxDismissals      InboxDismissal[]
+  threads              Thread[]
 }
 
 model Account {
@@ -178,10 +179,14 @@ model Interaction {
   dismissedAt DateTime?
   createdAt   DateTime             @default(now())
 
-  // Stable conversation identifier (iMessage chat.ROWID, Gmail threadId, etc.)
+  // Stable conversation identifier (legacy — migrating to Thread model)
   chatId      String?
   isGroupChat Boolean              @default(false)
   chatName    String?
+
+  // Thread FK (canonical conversation identity, replaces chatId)
+  threadId    String?
+  thread      Thread?              @relation(fields: [threadId], references: [id])
 
   // Layer 3: AI classification (null = unclassified, fail-open)
   needsReply           Boolean?
@@ -198,6 +203,7 @@ model Interaction {
   @@index([userId, occurredAt])
   @@index([userId, contactId, occurredAt])
   @@index([userId, chatId, occurredAt])
+  @@index([threadId])
 }
 
 // ─── Inbox Dismissals ──────────────────────────────────────
@@ -214,6 +220,43 @@ model InboxDismissal {
 
   @@unique([userId, chatId, channel])
   @@index([userId])
+}
+
+// ─── Threads (canonical conversation identity) ─────────────
+// A Thread is a stable, source-agnostic conversation that
+// multiple Interaction records belong to. It replaces the ad-hoc
+// chatId string and normalizes across source-specific threading
+// (iMessage chat ROWIDs, Gmail threadIds, LinkedIn DMs, etc.)
+
+model Thread {
+  id              String    @id @default(cuid())
+  userId          String
+  source          String    // "imessage", "gmail", "linkedin", "whatsapp", "calendar"
+  sourceThreadId  String    // original ID from source (e.g., chat ROWID, Gmail threadId)
+  isGroup         Boolean   @default(false)
+  displayName     String?   // computed: group name or primary contact name
+  lastActivityAt  DateTime
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  participants    ThreadParticipant[]
+  interactions    Interaction[]
+
+  @@unique([userId, source, sourceThreadId])
+  @@index([userId, lastActivityAt])
+  @@index([userId, source])
+}
+
+model ThreadParticipant {
+  id        String @id @default(cuid())
+  threadId  String
+  contactId String
+
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, contactId])
+  @@index([contactId])
 }
 
 // ─── AI Insights Models ────────────────────────────────────

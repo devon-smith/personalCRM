@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { normalizeChannel } from "@/lib/filters";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -6,15 +7,6 @@ export interface AutoResolveResult {
   readonly inboxItemsResolved: number;
   readonly actionItemsResolved: number;
   readonly snoozesCleared: number;
-}
-
-// ─── Channel normalization ──────────────────────────────────
-
-function normalizeChannel(ch: string): string {
-  const lower = ch.toLowerCase();
-  if (lower === "imessage" || lower === "sms") return "text";
-  if (lower === "gmail" || lower === "email") return "email";
-  return lower;
 }
 
 function doesReplyResolve(replyChannel: string, itemChannel: string | null): boolean {

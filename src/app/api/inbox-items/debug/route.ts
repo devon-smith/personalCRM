@@ -3,26 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { getChatDuplicates, getAttributedBodyStats } from "@/lib/imessage";
-
-const TAPBACK_VERBS = ["Loved", "Liked", "Laughed at", "Emphasized", "Disliked", "Questioned"];
-const TAPBACK_SQL_PATTERNS = [
-  ...TAPBACK_VERBS.flatMap((v) => [
-    `${v} \u201C`,
-    `${v} "`,
-    `${v} a `,
-    `${v} an `,
-  ]),
-  "(in group chat) Loved",
-  "(in group chat) Liked",
-  "(in group chat) Laughed at",
-  "(in group chat) Emphasized",
-  "(in group chat) Disliked",
-  "(in group chat) Questioned",
-  "Reacted ",
-];
-const TAPBACK_SQL = TAPBACK_SQL_PATTERNS
-  .map((p) => `"summary" NOT LIKE '${p.replace(/'/g, "''")}%'`)
-  .join(" AND ");
+import { TAPBACK_SQL } from "@/lib/filters";
 
 /**
  * GET /api/inbox-items/debug

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { invalidateInboxCache } from "@/app/api/inbox-items/route";
 
 /**
  * POST /api/inbox-items/:chatId/dismiss
@@ -41,6 +42,7 @@ export async function POST(
       },
     });
 
+    invalidateInboxCache();
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[POST /api/inbox-items/[itemId]/dismiss]", error);

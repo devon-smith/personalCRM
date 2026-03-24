@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { googleFetch, googleFetchWithToken, getAllGoogleAccessTokens } from "./client";
 import { autoResolveOnOutbound } from "@/lib/auto-resolve";
-import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
 
 interface GmailMessage {
   id: string;
@@ -508,17 +507,9 @@ async function processMessage(
     data: { lastInteraction: occurredAt },
   });
 
-  // Feed into persistent inbox system
+  // Auto-resolve action items on outbound
   if (isOutbound) {
     await autoResolveOnOutbound(userId, contactId, "gmail", occurredAt);
-    await onOutboundInteraction(userId, contactId, "gmail", occurredAt);
-  } else {
-    await onInboundInteraction(userId, contactId, "gmail", {
-      id: createdIx.id,
-      summary: detail.snippet ? decodeHtmlEntities(detail.snippet).slice(0, 500) : null,
-      occurredAt,
-      subject: subject?.slice(0, 255) ?? null,
-    });
   }
 
   return { matched: true };

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { invalidateInboxCache } from "@/app/api/inbox-items/route";
 
 /**
  * POST /api/inbox-items/bulk-resolve
@@ -62,6 +63,7 @@ export async function POST() {
 
     const resolved = needsReply.length;
     console.log(`[inbox] Bulk-resolved ${resolved} conversation(s), ${dismissed.count} interactions dismissed`);
+    invalidateInboxCache();
     return NextResponse.json({ ok: true, resolved });
   } catch (error) {
     console.error("[POST /api/inbox-items/bulk-resolve]", error);

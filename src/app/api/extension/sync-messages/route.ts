@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { authExtension } from "@/lib/extension-auth";
 import { prisma } from "@/lib/prisma";
 import { autoResolveOnOutbound } from "@/lib/auto-resolve";
-import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
 
 interface SyncMessagesBody {
   conversationWith: {
@@ -94,17 +93,6 @@ export async function POST(request: Request) {
           chatId: `1:1:${contact.id}:linkedin`,
         },
       });
-
-      // Feed into persistent inbox system
-      if (msg.isFromMe) {
-        await onOutboundInteraction(userId, contact.id, "linkedin", timestamp);
-      } else {
-        await onInboundInteraction(userId, contact.id, "linkedin", {
-          id: createdIx.id,
-          summary: msg.text.slice(0, 500),
-          occurredAt: timestamp,
-        });
-      }
 
       synced++;
     }
