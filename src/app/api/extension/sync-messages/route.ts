@@ -63,6 +63,36 @@ export async function POST(request: Request) {
       });
     }
 
+    // Upsert Thread for this LinkedIn conversation
+    const thread = await prisma.thread.upsert({
+      where: {
+        userId_source_sourceThreadId: {
+          userId,
+          source: "linkedin",
+          sourceThreadId: contact.id,
+        },
+      },
+      create: {
+        userId,
+        source: "linkedin",
+        sourceThreadId: contact.id,
+        isGroup: false,
+        displayName: contact.name,
+        lastActivityAt: new Date(),
+      },
+      update: {
+        lastActivityAt: new Date(),
+      },
+    });
+
+    await prisma.threadParticipant.upsert({
+      where: {
+        threadId_contactId: { threadId: thread.id, contactId: contact.id },
+      },
+      create: { threadId: thread.id, contactId: contact.id },
+      update: {},
+    }).catch(() => {});
+
     // Create interactions, dedup by sourceId
     let synced = 0;
     let skipped = 0;
@@ -80,7 +110,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const createdIx = await prisma.interaction.create({
+      await prisma.interaction.create({
         data: {
           userId,
           contactId: contact.id,
@@ -91,6 +121,7 @@ export async function POST(request: Request) {
           occurredAt: timestamp,
           sourceId,
           chatId: `1:1:${contact.id}:linkedin`,
+          threadId: thread.id,
         },
       });
 

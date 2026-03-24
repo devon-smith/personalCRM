@@ -487,6 +487,38 @@ async function processMessage(
   });
   if (existing) return { matched: false, unmatchedEmail: null };
 
+  // Upsert Thread for this Gmail conversation
+  const sourceThreadId = detail.threadId ?? contactId;
+  const thread = await prisma.thread.upsert({
+    where: {
+      userId_source_sourceThreadId: {
+        userId,
+        source: "gmail",
+        sourceThreadId,
+      },
+    },
+    create: {
+      userId,
+      source: "gmail",
+      sourceThreadId,
+      isGroup: false,
+      displayName: subject?.slice(0, 255) ?? null,
+      lastActivityAt: occurredAt,
+    },
+    update: {
+      lastActivityAt: occurredAt,
+    },
+  });
+
+  // Ensure contact is a participant
+  await prisma.threadParticipant.upsert({
+    where: {
+      threadId_contactId: { threadId: thread.id, contactId },
+    },
+    create: { threadId: thread.id, contactId },
+    update: {},
+  }).catch(() => { /* contact may not exist */ });
+
   const createdIx = await prisma.interaction.create({
     data: {
       userId,
@@ -499,6 +531,7 @@ async function processMessage(
       occurredAt,
       sourceId: detail.id,
       chatId: detail.threadId ? `gmail:${detail.threadId}` : `1:1:${contactId}:email`,
+      threadId: thread.id,
     },
   });
 
