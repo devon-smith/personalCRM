@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { NavMenu } from "@/components/dashboard/sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { QuickLogPicker } from "@/components/interactions/quick-log-picker";
 import { DraftComposer } from "@/components/draft-composer";
 import { DraftComposerProvider, useDraftComposer } from "@/lib/draft-composer-context";
 import { useAutoSync } from "@/lib/hooks/use-auto-sync";
-import { Search } from "lucide-react";
+import { Search, Mail, Users, BarChart3 } from "lucide-react";
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -59,8 +61,11 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="flex-1">
-        <div className="mx-auto max-w-[600px] px-5 pb-12">{children}</div>
+        <div className="mx-auto max-w-[600px] px-4 sm:px-5 pb-20 sm:pb-12">{children}</div>
       </main>
+
+      {/* Mobile bottom nav — visible below 640px */}
+      <MobileBottomNav />
 
       <CommandPalette
         open={searchOpen}
@@ -73,6 +78,67 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       />
       <DraftComposer />
     </div>
+  );
+}
+
+const MOBILE_NAV_ITEMS: Array<{
+  href: string;
+  icon: typeof BarChart3;
+  label: string;
+  matchExact?: boolean;
+}> = [
+  { href: "/dashboard", icon: BarChart3, label: "Home", matchExact: true },
+  { href: "/people", icon: Users, label: "Contacts" },
+];
+
+function MobileBottomNav() {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-40 flex sm:hidden"
+      style={{
+        height: 56,
+        backgroundColor: "var(--background)",
+        borderTop: "1px solid var(--border-subtle, #E8E6E1)",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}
+    >
+      {MOBILE_NAV_ITEMS.map((item) => {
+        const isActive = item.matchExact
+          ? pathname === item.href
+          : pathname.startsWith(item.href);
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.label}
+            href={item.href}
+            className="flex flex-1 flex-col items-center justify-center gap-0.5"
+            style={{
+              color: isActive ? "var(--accent-color, #1A1A1A)" : "var(--text-tertiary)",
+              transition: "color 0.15s",
+              minHeight: 44,
+            }}
+          >
+            <Icon
+              className="h-5 w-5"
+              style={{
+                strokeWidth: isActive ? 2.5 : 1.5,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: isActive ? 600 : 500,
+                letterSpacing: "-0.01em",
+              }}
+            >
+              {item.label}
+            </span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 

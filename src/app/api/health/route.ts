@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAllGoogleAccessTokens } from "@/lib/gmail/client";
 import { checkIMessageAccess } from "@/lib/imessage";
+import { getUserProfile } from "@/lib/user-profile";
 
 /**
  * GET /api/health
@@ -72,17 +73,24 @@ export async function GET() {
     }
   }
 
-  // Check iMessage access
-  const imessageError = checkIMessageAccess();
-  const imessageStatus = imessageError ? "unavailable" : "connected";
+  // Check iMessage access (only if enabled in user profile)
+  const profile = getUserProfile();
+  const imessageError = profile.imessageAvailable ? checkIMessageAccess() : "Disabled in user profile";
+  const imessageStatus = profile.imessageAvailable
+    ? (imessageError ? "unavailable" : "connected")
+    : "disabled";
 
   // Get sync timestamps
-  const [gmailSync, imessageSyncCount] = await Promise.all([
+  const [gmailSync, imessageSyncCount, whatsappSync] = await Promise.all([
     prisma.gmailSyncState.findUnique({
       where: { userId },
       select: { lastSyncAt: true, syncEnabled: true },
     }),
     prisma.iMessageSyncState.count({ where: { userId } }),
+    prisma.whatsAppSyncState.findUnique({
+      where: { userId },
+      select: { connected: true, updatedAt: true, messagesSynced: true, unmatchedChats: true },
+    }),
   ]);
 
   // Count interactions by source prefix
@@ -138,6 +146,18 @@ export async function GET() {
       status: imessageStatus,
       error: imessageError,
       handlesTracked: imessageSyncCount,
+    },
+    whatsapp: {
+      status: whatsappSync
+        ? whatsappSync.connected
+          ? "connected"
+          : "disconnected"
+        : "not_configured",
+      lastSyncAt: whatsappSync?.updatedAt ?? null,
+      messagesSynced: whatsappSync?.messagesSynced ?? 0,
+      unmatchedCount: Array.isArray(whatsappSync?.unmatchedChats)
+        ? (whatsappSync.unmatchedChats as unknown[]).length
+        : 0,
     },
     interactions: {
       total: totalInteractions,

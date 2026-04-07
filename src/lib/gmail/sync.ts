@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { googleFetch, googleFetchWithToken, getAllGoogleAccessTokens } from "./client";
 import { autoResolveOnOutbound } from "@/lib/auto-resolve";
+import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
 
 interface GmailMessage {
   id: string;
@@ -424,7 +425,7 @@ async function fetchMessageDetail(
   messageId: string,
   token?: string,
 ): Promise<GmailMessageDetail | null> {
-  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`;
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=Precedence`;
 
   const res = token ? await googleFetchWithToken(token, url) : await googleFetch(userId, url);
   if (!res.ok) return null;
@@ -442,6 +443,8 @@ async function processMessage(
   const fromHeader = getHeader(detail.payload.headers, "From");
   const toHeader = getHeader(detail.payload.headers, "To");
   const subject = getHeader(detail.payload.headers, "Subject");
+  const listUnsubscribe = getHeader(detail.payload.headers, "List-Unsubscribe");
+  const precedence = getHeader(detail.payload.headers, "Precedence")?.toLowerCase();
 
   if (!fromHeader || !toHeader) return { matched: false, unmatchedEmail: null };
 
@@ -455,6 +458,11 @@ async function processMessage(
   const contactId = contactsByEmail.get(contactEmail) ?? null;
   const contactName = contactId ? (contactNames.get(contactId) ?? null) : null;
   const occurredAt = new Date(parseInt(detail.internalDate));
+
+  // Detect automated/bulk messages via headers
+  const isAutomated = listUnsubscribe != null
+    || precedence === "bulk"
+    || precedence === "list";
 
   // Store in EmailMessage for the inbox (dedup by gmailId)
   const fromName = extractDisplayName(fromHeader);
@@ -473,6 +481,7 @@ async function processMessage(
       occurredAt,
       contactId,
       contactName,
+      isAutomated,
     },
     update: {},
   });
@@ -540,9 +549,25 @@ async function processMessage(
     data: { lastInteraction: occurredAt },
   });
 
-  // Auto-resolve action items on outbound
+  // Feed into the InboxItem write path
+  const threadKey = detail.threadId ? `gmail:${detail.threadId}` : "";
   if (isOutbound) {
     await autoResolveOnOutbound(userId, contactId, "gmail", occurredAt);
+    await onOutboundInteraction(userId, contactId, "gmail", occurredAt, {
+      threadKey,
+    });
+  } else if (!isAutomated) {
+    // Automated messages (List-Unsubscribe, Precedence: bulk/list)
+    // still get recorded as Interactions for history, but never create InboxItems
+    await onInboundInteraction(userId, contactId, "gmail", {
+      id: createdIx.id,
+      summary: createdIx.summary,
+      occurredAt,
+      subject,
+    }, {
+      threadKey,
+      fromEmail,
+    });
   }
 
   return { matched: true };

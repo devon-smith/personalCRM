@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LinkedInImport } from "@/components/settings/linkedin-import";
+import { WhatsAppSync } from "@/components/settings/whatsapp-sync";
 import type { DataHealthResponse, GoogleAccountInfo } from "@/app/api/data-health/route";
 import type { CalendarSyncResult } from "@/app/api/calendar/route";
 import type { IMessageSyncResult } from "@/app/api/imessage/route";
@@ -286,7 +287,13 @@ export default function IntegrationsPage() {
         />
       </div>
 
-      {/* ═══ SECTION 3 — Imports ═══ */}
+      {/* ═══ SECTION 3 — Messaging ═══ */}
+      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "100ms" }}>
+        <h2 className="ds-heading-sm">Messaging</h2>
+        <WhatsAppSync />
+      </div>
+
+      {/* ═══ SECTION 4 — Imports ═══ */}
       <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "120ms" }}>
         <h2 className="ds-heading-sm">Imports</h2>
 

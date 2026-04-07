@@ -29,13 +29,12 @@ model User {
   actionItems          ActionItem[]
   sightings            ContactSighting[]
   gmailSync            GmailSyncState?
-  notionSync           NotionSyncState?
+  whatsappSync         WhatsAppSyncState?
   imessageSyncStates   IMessageSyncState[]
   emailMessages        EmailMessage[]
   drafts               Draft[]
   extensionTokens      ExtensionToken[]
   inboxItems           InboxItem[]
-  inboxDismissals      InboxDismissal[]
   threads              Thread[]
 }
 
@@ -204,22 +203,6 @@ model Interaction {
   @@index([userId, contactId, occurredAt])
   @@index([userId, chatId, occurredAt])
   @@index([threadId])
-}
-
-// ─── Inbox Dismissals ──────────────────────────────────────
-
-model InboxDismissal {
-  id           String    @id @default(uuid())
-  userId       String
-  chatId       String
-  channel      String
-  dismissedAt  DateTime  @default(now())
-  snoozeUntil  DateTime?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, chatId, channel])
-  @@index([userId])
 }
 
 // ─── Threads (canonical conversation identity) ─────────────
@@ -465,6 +448,7 @@ model EmailMessage {
   contactId     String?   // null if sender not in contacts
   contactName   String?   // resolved name if matched
   isRead        Boolean   @default(false)
+  isAutomated   Boolean   @default(false) // true if List-Unsubscribe or Precedence: bulk/list detected
   createdAt     DateTime  @default(now())
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -522,23 +506,28 @@ model GmailSyncState {
   contactsImported     Boolean   @default(false)
   additionalUserEmails String[]  @default([]) // Other email addresses belonging to this user (for direction detection)
   unmatchedSenders     Json?     // Array of { email: string, count: number } — senders with no matching contact
+  mutedThreads         String[]  @default([]) // Gmail threadIds that the user has muted (auto-dismiss future inbound)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ─── Snoozed Contacts (needs-response snooze) ──────────────
+// ─── WhatsApp Sync State ─────────────────────────────────────
 
-model SnoozedContact {
-  id        String   @id @default(uuid())
-  userId    String
-  contactId String
-  until     DateTime
-  createdAt DateTime @default(now())
+model WhatsAppSyncState {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  phone           String
+  connected       Boolean   @default(false)
+  lastMessageAt   DateTime?
+  messagesSynced  Int       @default(0)
+  contactsMatched Int       @default(0)
+  unmatchedChats  Json?     // Array of { phone, displayName, messageCount }
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  @@unique([userId, contactId])
-  @@index([userId, until])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── iMessage Sync State (Mac chat.db → individual messages) ─────────
@@ -562,24 +551,6 @@ model IMessageSyncState {
   @@index([userId, contactId])
 }
 
-// ─── Notion Sync State (iMessage/SMS via iOS Shortcuts → Notion) ─────
-
-model NotionSyncState {
-  id           String    @id @default(uuid())
-  userId       String    @unique
-  notionToken  String
-  notionPageId String
-  userHandles  String?
-  lastBlockId  String?
-  lastSyncAt   DateTime?
-  lastResult   String?   @db.Text
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
 
 // ─── Extension Auth Tokens (Chrome extension bearer auth) ────
 
@@ -633,6 +604,10 @@ model InboxItem {
   // Cached message previews (JSON array, updated on each new inbound)
   messagePreview  Json?      // [{summary, occurredAt, channel}]
   messageCount    Int         @default(1)
+
+  // Cached priority (recomputed on create/update)
+  priority        String?    // "high", "medium", "low"
+  priorityScore   Int?       // 0-100
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

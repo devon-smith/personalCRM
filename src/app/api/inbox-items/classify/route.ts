@@ -3,17 +3,21 @@ import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import { getUserProfile } from "@/lib/user-profile";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const SYSTEM_PROMPT = `You classify the LAST MESSAGE in a conversation to determine if "Devon" needs to reply.
+function buildSystemPrompt(): string {
+  const profile = getUserProfile();
+  const name = profile.firstName;
+  return `You classify the LAST MESSAGE in a conversation to determine if "${name}" needs to reply.
 
-IMPORTANT: You are ONLY classifying the FINAL message. Ignore whether Devon replied earlier in the conversation. Focus solely on what the last message says and whether it expects Devon's response.
+IMPORTANT: You are ONLY classifying the FINAL message. Ignore whether ${name} replied earlier in the conversation. Focus solely on what the last message says and whether it expects ${name}'s response.
 
 needsReply: true (SHOW in inbox):
-- Any question directed at Devon → reason: "question"
+- Any question directed at ${name} → reason: "question"
 - Any request, ask, or invitation → reason: "request"
 - Someone shared something emotional or vulnerable → reason: "emotional"
 - The message starts a new topic or opens a thread → reason: "open_thread"
@@ -24,11 +28,12 @@ needsReply: false (HIDE from inbox) — ONLY use when you are very confident:
 - The last message is ONLY a brief thank-you with no new content (e.g. "thanks!", "ty", "thank you!") → reason: "acknowledged"
 - The last message is ONLY a short reaction with no substance (e.g. "lol", "haha", "bet", "gg", emoji-only) → reason: "winding_down"
 - The last message is a newsletter, automated email, or mass notification → reason: "fyi"
-- Group chat where the last message does not address Devon at all → reason: "not_addressed"
+- Group chat where the last message does not address ${name} at all → reason: "not_addressed"
 
 CRITICAL: Err heavily toward needsReply: true. A message like "Going to X tonight?" is a question (true). "Down for a walk?" is a question (true). "Come through" is an invitation (true). Only say false for genuinely closed-ended acknowledgments.
 
 Respond with ONLY JSON: {"needsReply": true/false, "reason": "...", "confidence": 0.0-1.0}`;
+}
 
 interface ClassifyResult {
   needsReply: boolean;
@@ -60,7 +65,7 @@ function parseClassifyResponse(text: string): ClassifyResult {
  *
  * Classifies unclassified inbox candidates using Claude Haiku.
  * For each chat where the latest inbound Interaction has needsReply = NULL,
- * fetches the last 8 messages and asks Haiku if Devon needs to reply.
+ * fetches the last 8 messages and asks Haiku if the user needs to reply.
  *
  * Fail-open: errors result in needsReply = true.
  */
@@ -145,10 +150,11 @@ export async function POST() {
           const chatType = item.isGroupChat ? "GROUP CHAT" : "1:1 CONVERSATION";
 
           // Build conversation transcript
+          const userName = getUserProfile().firstName;
           const transcript = messages
             .map((m) => {
               const speaker = m.direction === "OUTBOUND"
-                ? "Devon"
+                ? userName
                 : contactNameMap.get(m.contactId) ?? "Unknown";
               return `${speaker}: ${m.summary ?? "(no text)"}`;
             })
@@ -159,18 +165,18 @@ export async function POST() {
             ? messages[messages.length - 1]
             : null;
           const lastSpeaker = lastMsg
-            ? (lastMsg.direction === "OUTBOUND" ? "Devon" : contactNameMap.get(lastMsg.contactId) ?? "Unknown")
+            ? (lastMsg.direction === "OUTBOUND" ? userName : contactNameMap.get(lastMsg.contactId) ?? "Unknown")
             : "Unknown";
           const lastText = lastMsg?.summary ?? "(no text)";
 
-          const userMessage = `${chatType} with ${contactName}:\n\n${transcript}\n\nThe LAST MESSAGE is from ${lastSpeaker}: "${lastText}"\n\nDoes Devon need to reply to this last message?`;
+          const userMessage = `${chatType} with ${contactName}:\n\n${transcript}\n\nThe LAST MESSAGE is from ${lastSpeaker}: "${lastText}"\n\nDoes ${userName} need to reply to this last message?`;
 
           let result: ClassifyResult;
           try {
             const response = await anthropic.messages.create({
               model: "claude-haiku-4-5-20251001",
               max_tokens: 100,
-              system: SYSTEM_PROMPT,
+              system: buildSystemPrompt(),
               messages: [{ role: "user", content: userMessage }],
             });
 

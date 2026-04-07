@@ -80,7 +80,7 @@ const SKIP_BODY_PATTERNS = [
   /email preferences/i,
 ];
 
-function isNoiseEmail(
+export function isNoiseEmail(
   subject: string | null,
   body: string | null,
 ): boolean {
@@ -102,7 +102,7 @@ function isNoiseEmail(
 
 // ─── Priority scoring ───
 
-function scoreReplyPriority(
+export function scoreReplyPriority(
   subject: string | null,
   body: string | null,
   daysWaiting: number,

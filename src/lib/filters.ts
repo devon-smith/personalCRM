@@ -8,6 +8,7 @@ export function normalizeChannel(ch: string): string {
   if (["imessage", "sms", "text"].includes(c)) return "text";
   if (["gmail", "email"].includes(c)) return "email";
   if (["linkedin"].includes(c)) return "linkedin";
+  if (["whatsapp"].includes(c)) return "whatsapp";
   return c;
 }
 

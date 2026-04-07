@@ -4,14 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { invalidateInboxCache } from "@/app/api/inbox-items/route";
 
 /**
- * POST /api/inbox-items/:chatId/resolve
- * Manually mark a conversation as replied to.
- * Creates a synthetic OUTBOUND interaction with the same chatId,
- * which makes the computed inbox query automatically exclude it.
- * In v2, itemId IS the chatId.
+ * POST /api/inbox-items/:itemId/resolve
+ * Manually mark an inbox item as resolved.
+ * Also dismisses all non-dismissed INBOUND interactions for the chat
+ * so that the item doesn't resurface from stale data.
  */
 export async function POST(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },
 ) {
   try {
@@ -20,41 +19,42 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { itemId: chatId } = await params;
-    const body = await req.json().catch(() => ({})) as { channel?: string };
-    const channel = body.channel ?? "text";
+    const { itemId } = await params;
+    const userId = session.user.id;
+    const now = new Date();
 
-    // Find the latest inbound interaction for this chat to get contactId
-    const latestInbound = await prisma.interaction.findFirst({
-      where: {
-        userId: session.user.id,
-        chatId,
-        direction: "INBOUND",
-      },
-      orderBy: { occurredAt: "desc" },
-      select: { contactId: true, channel: true, isGroupChat: true },
+    // Look up the InboxItem to get context for the interaction update
+    const inboxItem = await prisma.inboxItem.findUnique({
+      where: { id: itemId, userId },
     });
 
-    if (!latestInbound) {
-      return NextResponse.json({ error: "Chat not found" }, { status: 404 });
+    if (!inboxItem) {
+      return NextResponse.json({ error: "Item not found" }, { status: 404 });
     }
 
-    // Dismiss all non-dismissed INBOUND interactions for this chat.
-    // The inbox DISTINCT ON query filters "dismissedAt IS NULL", so
-    // dismissed interactions are hidden. When a NEW inbound arrives
-    // (without dismissedAt), the chat reappears naturally.
-    const now = new Date();
-    const dismissed = await prisma.interaction.updateMany({
+    // Update InboxItem to RESOLVED
+    await prisma.inboxItem.update({
+      where: { id: itemId },
+      data: {
+        status: "RESOLVED",
+        resolvedAt: now,
+        resolvedBy: "manual",
+      },
+    });
+
+    // Also dismiss INBOUND interactions for this contact+channel
+    // so stale data doesn't cause issues
+    await prisma.interaction.updateMany({
       where: {
-        userId: session.user.id,
-        chatId,
+        userId,
+        contactId: inboxItem.contactId,
         direction: "INBOUND",
         dismissedAt: null,
       },
       data: { dismissedAt: now },
     });
 
-    console.log(`[inbox] Manually resolved chat ${chatId} (${dismissed.count} interactions dismissed)`);
+    console.log(`[inbox] Manually resolved inbox item ${itemId}`);
 
     invalidateInboxCache();
     return NextResponse.json({ ok: true });

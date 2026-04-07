@@ -26,7 +26,7 @@ export function UserNav() {
   const { data: session } = useSession();
 
   // Dev mode fallback when no real session exists
-  const devUser = { name: "Devon Smith", email: "devon@example.com", image: null as string | null };
+  const devUser = { name: "User", email: "user@example.com", image: null as string | null };
   const user = session?.user ?? (process.env.NODE_ENV === "development" ? devUser : null);
 
   if (!user) return null;

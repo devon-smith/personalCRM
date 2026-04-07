@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
+import { getUserProfile } from "@/lib/user-profile";
 
 export interface GenerateDraftParams {
   readonly contactId: string;
@@ -139,7 +140,8 @@ async function generateWithAI(params: GenerateDraftParams & {
 }): Promise<DraftResult> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const systemPrompt = `You are drafting a message for Devon Smith, a Stanford MS CS student. Devon's style: casual but thoughtful, uses first names, doesn't use formal openers like 'I hope this finds you well.' Draft should sound like a real person texting a friend or emailing a colleague — not a CRM.
+  const profile = getUserProfile();
+  const systemPrompt = `You are drafting a message for ${profile.fullName}, ${profile.bio}. ${profile.fullName}'s style: ${profile.style}. Draft should sound like a real person texting a friend or emailing a colleague — not a CRM.
 
 Generate two variants:
 1. Quick: 2-3 sentences, gets the point across fast
@@ -151,8 +153,8 @@ IMPORTANT:
 - If replying to an email, acknowledge the delay if it's been more than 3 days. Don't be overly apologetic, just briefly.
 - Reference specific things from past interactions when possible.
 - If the contact is at a specific company, you can reference it naturally.
-- Never use: 'Hope this finds you well', 'I wanted to reach out', 'Per my last email', 'Circle back', 'Touch base', 'Hope you're doing well'.
-- Devon signs emails 'Best, Devon' for professional, nothing for casual texts.
+- Never use: ${profile.bannedPhrases.map((p) => `'${p}'`).join(", ")}.
+- ${profile.firstName} signs emails '${profile.emailSignoff}' for professional${profile.casualSignoff ? `, '${profile.emailSignoff}' for casual` : ", nothing for casual texts"}.
 - For texts/casual: no greeting needed, just dive in.
 - For emails: brief greeting ('Hey ${params.firstName},' not 'Dear ${params.firstName},')
 
@@ -213,9 +215,12 @@ function generateFromTemplate(params: {
   threadSubject?: string;
   daysSinceLastInteraction: number | null;
 }): DraftResult {
+  const profile = getUserProfile();
   const { tone, context, firstName, company, threadSubject, daysSinceLastInteraction } = params;
   const isCasual = tone === "casual" || tone === "checking_in";
   const companyRef = company ? ` at ${company}` : "";
+  const signoff = `\n\n${profile.emailSignoff}`;
+  const maybeSignoff = isCasual ? "" : signoff;
   const timeSince = daysSinceLastInteraction
     ? daysSinceLastInteraction > 30 ? "a while" : `${daysSinceLastInteraction} days`
     : "a while";
@@ -228,12 +233,12 @@ function generateFromTemplate(params: {
     },
     "warm_catching_up": {
       quick: `Hey ${firstName}, been thinking about you — how are things going${companyRef}? Would love to hear what you've been up to.`,
-      detailed: `Hey ${firstName}, it's been ${timeSince} and I wanted to check in. How's everything${companyRef}? I'd love to hear what you've been working on. Let me know if you're free for a quick coffee or call sometime soon.\n\nBest,\nDevon`,
+      detailed: `Hey ${firstName}, it's been ${timeSince} and I wanted to check in. How's everything${companyRef}? I'd love to hear what you've been working on. Let me know if you're free for a quick coffee or call sometime soon.${signoff}`,
       subjectLine: `Catching up`,
     },
     "professional_catching_up": {
       quick: `Hi ${firstName}, hope things are going well${companyRef}. Wanted to touch base — any time for a quick chat this week?`,
-      detailed: `Hi ${firstName}, hope things are going well${companyRef}. It's been ${timeSince} since we connected and I wanted to check in. I'd love to hear how things are going on your end. Would you have time for a quick call this week or next?\n\nBest,\nDevon`,
+      detailed: `Hi ${firstName}, hope things are going well${companyRef}. It's been ${timeSince} since we connected and I wanted to check in. I'd love to hear how things are going on your end. Would you have time for a quick call this week or next?${signoff}`,
       subjectLine: `Quick check-in`,
     },
     "casual_reply_email": {
@@ -243,22 +248,22 @@ function generateFromTemplate(params: {
     },
     "professional_reply_email": {
       quick: `Hi ${firstName}, thanks for the email. I'll review and get back to you shortly.`,
-      detailed: `Hi ${firstName}, appreciate you sending this over. ${threadSubject ? `Re: "${threadSubject.replace(/^Re:\s*/i, "")}" — ` : ""}I'll take a closer look and follow up with thoughts by end of week.\n\nBest,\nDevon`,
+      detailed: `Hi ${firstName}, appreciate you sending this over. ${threadSubject ? `Re: "${threadSubject.replace(/^Re:\s*/i, "")}" — ` : ""}I'll take a closer look and follow up with thoughts by end of week.${signoff}`,
       subjectLine: threadSubject ? `Re: ${threadSubject.replace(/^Re:\s*/i, "")}` : null,
     },
     "congratulatory_congratulate": {
       quick: `Hey ${firstName}! Just saw the news — congrats, so well deserved! Let's celebrate sometime.`,
-      detailed: `Hey ${firstName}, just heard the news${params.contextDetail ? ` about ${params.contextDetail}` : ""}! Really happy for you — you've been working hard and it shows. We should grab a drink to celebrate when you're free.${isCasual ? "" : "\n\nBest,\nDevon"}`,
+      detailed: `Hey ${firstName}, just heard the news${params.contextDetail ? ` about ${params.contextDetail}` : ""}! Really happy for you — you've been working hard and it shows. We should grab a drink to celebrate when you're free.${maybeSignoff}`,
       subjectLine: isCasual ? null : `Congrats!`,
     },
     "professional_ask": {
       quick: `Hi ${firstName}, hope you're doing well${companyRef}. ${params.contextDetail ? params.contextDetail : "I had a quick ask — would you have a few minutes to chat this week?"}`,
-      detailed: `Hi ${firstName}, hope things are going well${companyRef}. ${params.contextDetail ? params.contextDetail : "I'm looking to connect with someone and thought you might be the right person to ask."} Would you be open to a quick chat? Happy to work around your schedule.\n\nBest,\nDevon`,
+      detailed: `Hi ${firstName}, hope things are going well${companyRef}. ${params.contextDetail ? params.contextDetail : "I'm looking to connect with someone and thought you might be the right person to ask."} Would you be open to a quick chat? Happy to work around your schedule.${signoff}`,
       subjectLine: `Quick question`,
     },
     "warm_follow_up": {
       quick: `Hey ${firstName}, just following up${params.contextDetail ? ` on ${params.contextDetail}` : ""}. Any updates on your end?`,
-      detailed: `Hey ${firstName}, wanted to follow up${params.contextDetail ? ` on ${params.contextDetail}` : " from our last conversation"}. Would love to hear if there's any movement on your end. Let me know if there's anything I can do to help.\n\nBest,\nDevon`,
+      detailed: `Hey ${firstName}, wanted to follow up${params.contextDetail ? ` on ${params.contextDetail}` : " from our last conversation"}. Would love to hear if there's any movement on your end. Let me know if there's anything I can do to help.${signoff}`,
       subjectLine: params.contextDetail ? `Following up — ${params.contextDetail}` : `Following up`,
     },
   };
@@ -279,7 +284,7 @@ function generateFromTemplate(params: {
   // Ultimate fallback
   return {
     quick: `Hey ${firstName}, wanted to reach out. Let me know if you have a moment to chat.`,
-    detailed: `Hey ${firstName}, hope you're doing well${companyRef}. I wanted to reach out and connect — it's been a while since we last talked. Would love to catch up if you have some time.\n\nBest,\nDevon`,
+    detailed: `Hey ${firstName}, hope you're doing well${companyRef}. I wanted to reach out and connect — it's been a while since we last talked. Would love to catch up if you have some time.${signoff}`,
     subjectLine: `Hey ${firstName}`,
   };
 }

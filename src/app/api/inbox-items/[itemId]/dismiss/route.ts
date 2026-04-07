@@ -4,12 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { invalidateInboxCache } from "@/app/api/inbox-items/route";
 
 /**
- * POST /api/inbox-items/:chatId/dismiss
- * Permanently dismiss a conversation from the inbox.
- * In v2, itemId IS the chatId.
+ * POST /api/inbox-items/:itemId/dismiss
+ * Permanently dismiss an inbox item.
  */
 export async function POST(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },
 ) {
   try {
@@ -18,26 +17,14 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { itemId: chatId } = await params;
-    const body = await req.json().catch(() => ({})) as { channel?: string };
-    const channel = body.channel ?? "text";
+    const { itemId } = await params;
 
-    await prisma.inboxDismissal.upsert({
-      where: {
-        userId_chatId_channel: {
-          userId: session.user.id,
-          chatId,
-          channel,
-        },
-      },
-      create: {
-        userId: session.user.id,
-        chatId,
-        channel,
-        snoozeUntil: null, // permanent dismiss
-      },
-      update: {
-        dismissedAt: new Date(),
+    await prisma.inboxItem.update({
+      where: { id: itemId, userId: session.user.id },
+      data: {
+        status: "DISMISSED",
+        resolvedAt: new Date(),
+        resolvedBy: "dismissed",
         snoozeUntil: null,
       },
     });

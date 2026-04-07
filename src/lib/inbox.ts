@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { computePriority } from "@/lib/inbox-priority";
 
 // ─── Channel normalization ──────────────────────────────────
 
@@ -142,6 +143,93 @@ function isSpamOrAutomated(summary: string | null, subject: string | null): bool
   return SPAM_PATTERNS.some((p) => p.test(text));
 }
 
+// ─── Blocked sender domains ────────────────────────────────
+
+const BLOCKED_SENDER_DOMAINS = [
+  "notifications.linkedin.com",
+  "messaging.squarespace.com",
+  "noreply.github.com",
+  "notifications.google.com",
+  "marketing.",
+  "noreply.",
+  "no-reply.",
+  "mailer.",
+  "bounce.",
+  "updates.",
+];
+
+function isBlockedDomain(email: string): boolean {
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return false;
+  return BLOCKED_SENDER_DOMAINS.some((blocked) =>
+    blocked.endsWith(".")
+      ? domain.startsWith(blocked) || domain === blocked.slice(0, -1)
+      : domain === blocked,
+  );
+}
+
+// ─── Mass sender detection (cached, 1h TTL) ────────────────
+
+interface MassSenderEntry {
+  readonly isMass: boolean;
+  readonly expiresAt: number;
+}
+
+const MASS_SENDER_TTL_MS = 60 * 60 * 1000; // 1 hour
+const massSenderCache = new Map<string, MassSenderEntry>();
+
+async function isMassSender(userId: string, fromEmail: string): Promise<boolean> {
+  const cacheKey = `${userId}:${fromEmail}`;
+  const cached = massSenderCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.isMass;
+  }
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const [inboundCount, outboundCount] = await Promise.all([
+    prisma.emailMessage.count({
+      where: {
+        userId,
+        fromEmail: fromEmail.toLowerCase(),
+        direction: "INBOUND",
+        occurredAt: { gte: thirtyDaysAgo },
+      },
+    }),
+    prisma.emailMessage.count({
+      where: {
+        userId,
+        toEmail: fromEmail.toLowerCase(),
+        direction: "OUTBOUND",
+      },
+    }),
+  ]);
+
+  // Mass sender: 8+ inbound in 30 days AND user has never emailed them
+  const isMass = inboundCount >= 8 && outboundCount === 0;
+
+  massSenderCache.set(cacheKey, {
+    isMass,
+    expiresAt: Date.now() + MASS_SENDER_TTL_MS,
+  });
+
+  return isMass;
+}
+
+// ─── Muted thread check ────────────────────────────────────
+
+async function isMutedThread(userId: string, threadKey: string): Promise<boolean> {
+  if (!threadKey || !threadKey.startsWith("gmail:")) return false;
+  const gmailThreadId = threadKey.slice(6);
+
+  const syncState = await prisma.gmailSyncState.findUnique({
+    where: { userId },
+    select: { mutedThreads: true },
+  });
+
+  return syncState?.mutedThreads?.includes(gmailThreadId) ?? false;
+}
+
 // ─── Called when an INBOUND interaction is created ───────────
 
 export async function onInboundInteraction(
@@ -157,6 +245,7 @@ export async function onInboundInteraction(
   options?: {
     threadKey?: string | null;
     isGroupChat?: boolean;
+    fromEmail?: string;
   },
 ): Promise<void> {
   const channel = normalizeChannel(rawChannel);
@@ -178,6 +267,15 @@ export async function onInboundInteraction(
 
   // Don't create inbox items for spam/automated emails
   if (channel === "email" && isSpamOrAutomated(summary, interaction.subject ?? null)) return;
+
+  // Don't create inbox items for blocked sender domains
+  if (channel === "email" && options?.fromEmail && isBlockedDomain(options.fromEmail)) return;
+
+  // Don't create inbox items for mass senders
+  if (channel === "email" && options?.fromEmail && await isMassSender(userId, options.fromEmail)) return;
+
+  // Don't create inbox items for muted threads
+  if (await isMutedThread(userId, threadKey)) return;
 
   // Check for existing OPEN item for this contact+channel+thread
   const existing = await prisma.inboxItem.findFirst({
@@ -212,12 +310,23 @@ export async function onInboundInteraction(
       ? interaction.occurredAt
       : existing.triggerAt;
 
+    const newCount = existing.messageCount + 1;
+    const p = computePriority({
+      tier: existing.tier,
+      channel,
+      triggerAt: newTriggerAt,
+      messageCount: newCount,
+      isGroupChat: existing.isGroupChat,
+    });
+
     await prisma.inboxItem.update({
       where: { id: existing.id },
       data: {
         messagePreview: trimmed,
-        messageCount: existing.messageCount + 1,
+        messageCount: newCount,
         triggerAt: newTriggerAt,
+        priority: p.priority,
+        priorityScore: p.score,
       },
     });
     return;
@@ -279,6 +388,15 @@ export async function onInboundInteraction(
     channel: rawChannel,
   }];
 
+  const isGroup = options?.isGroupChat ?? false;
+  const p = computePriority({
+    tier: contact.tier,
+    channel,
+    triggerAt: interaction.occurredAt,
+    messageCount: 1,
+    isGroupChat: isGroup,
+  });
+
   // Upsert: create new or reopen resolved/dismissed item
   await prisma.inboxItem.upsert({
     where: {
@@ -298,7 +416,7 @@ export async function onInboundInteraction(
       contactName: contact.name,
       company: contact.company,
       tier: contact.tier,
-      isGroupChat: options?.isGroupChat ?? false,
+      isGroupChat: isGroup,
       contactEmail: contact.email,
       contactPhone: contact.phone,
       contactLinkedinUrl: contact.linkedinUrl,
@@ -306,6 +424,8 @@ export async function onInboundInteraction(
       triggerAt: interaction.occurredAt,
       messagePreview,
       messageCount: 1,
+      priority: p.priority,
+      priorityScore: p.score,
     },
     update: {
       status: "OPEN",
@@ -319,6 +439,8 @@ export async function onInboundInteraction(
       triggerAt: interaction.occurredAt,
       messagePreview,
       messageCount: 1,
+      priority: p.priority,
+      priorityScore: p.score,
     },
   });
 }
@@ -339,11 +461,17 @@ export async function onOutboundInteraction(
   const channel = normalizeChannel(rawChannel);
   const threadKey = options?.threadKey ?? "";
 
-  // For group chats: resolve ALL contacts in this thread (one reply addresses everyone)
-  // For 1:1: resolve only this contact's 1:1 item
+  // Resolution strategy:
+  // - Group chats: resolve ALL contacts in this thread (one reply addresses everyone)
+  // - Email with threadKey: resolve only THIS specific thread (multi-party threads
+  //   must not cross-resolve other threads for the same contact)
+  // - 1:1 (text/linkedin): resolve by contactId (no threadKey differentiation)
+  const hasEmailThread = channel === "email" && threadKey !== "";
   const baseFilter = options?.isGroupChat
-    ? { userId, channel, threadKey, isGroupChat: true }   // group: all contacts in thread
-    : { userId, contactId, channel, threadKey: "" };      // 1:1: only this contact
+    ? { userId, channel, threadKey, isGroupChat: true }
+    : hasEmailThread
+      ? { userId, contactId, channel, threadKey }
+      : { userId, contactId, channel, threadKey: "" };
 
   const resolved = await prisma.inboxItem.updateMany({
     where: {

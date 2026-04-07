@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { invalidateInboxCache } from "@/app/api/inbox-items/route";
 
 /**
- * POST /api/inbox-items/:chatId/snooze
- * Snooze a conversation for a specified number of hours.
- * In v2, itemId IS the chatId.
+ * POST /api/inbox-items/:itemId/snooze
+ * Snooze an inbox item for a specified number of hours.
  */
 export async function POST(
   req: NextRequest,
@@ -17,36 +17,24 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { itemId: chatId } = await params;
-    const { hours, channel } = (await req.json()) as { hours: number; channel?: string };
+    const { itemId } = await params;
+    const { hours } = (await req.json()) as { hours: number };
 
     if (!hours || hours < 1) {
       return NextResponse.json({ error: "hours is required" }, { status: 400 });
     }
 
     const snoozeUntil = new Date(Date.now() + hours * 60 * 60 * 1000);
-    const ch = channel ?? "text";
 
-    await prisma.inboxDismissal.upsert({
-      where: {
-        userId_chatId_channel: {
-          userId: session.user.id,
-          chatId,
-          channel: ch,
-        },
-      },
-      create: {
-        userId: session.user.id,
-        chatId,
-        channel: ch,
-        snoozeUntil,
-      },
-      update: {
-        dismissedAt: new Date(),
+    await prisma.inboxItem.update({
+      where: { id: itemId, userId: session.user.id },
+      data: {
+        status: "SNOOZED",
         snoozeUntil,
       },
     });
 
+    invalidateInboxCache();
     return NextResponse.json({ ok: true, snoozeUntil: snoozeUntil.toISOString() });
   } catch (error) {
     console.error("[POST /api/inbox-items/[itemId]/snooze]", error);

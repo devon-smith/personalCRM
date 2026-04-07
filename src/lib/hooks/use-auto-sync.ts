@@ -13,10 +13,10 @@ async function runClassify() {
 }
 
 /**
- * Automatically syncs all data sources.
+ * Automatically syncs data sources.
  *
  * - Gmail: syncs on mount, every 2 minutes, and on tab focus
- * - Google Contacts, Calendar, Apple Contacts, iMessage: sync once on mount
+ * - Google Contacts, Calendar: sync once on mount
  *
  * All syncs are idempotent and deduplicate. Backs off after consecutive failures.
  */
@@ -87,12 +87,6 @@ export function useAutoSync() {
 
       // Google Calendar
       fetch("/api/calendar", { method: "POST" }).catch(() => {}),
-
-      // Apple Contacts
-      fetch("/api/contacts/apple", { method: "POST" }).catch(() => {}),
-
-      // iMessage
-      fetch("/api/imessage", { method: "POST" }).catch(() => {}),
     ];
 
     await Promise.allSettled(syncs);
@@ -109,28 +103,10 @@ export function useAutoSync() {
     });
   }, [queryClient]);
 
-  const runImessageSync = useCallback(async () => {
-    try {
-      await fetch("/api/imessage", { method: "POST" });
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-
-      // Classify any new unclassified inbox items, then refresh
-      runClassify().then(() => {
-        queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-      });
-    } catch {
-      // ignore
-    }
-  }, [queryClient]);
-
   useEffect(() => {
     // Run Gmail sync after 3s, then every 2 minutes
     const initialTimer = setTimeout(runGmailSync, 3000);
     const gmailInterval = setInterval(runGmailSync, SYNC_INTERVAL);
-
-    // Run iMessage sync every 2 minutes (catches new texts automatically)
-    const imessageInterval = setInterval(runImessageSync, SYNC_INTERVAL);
 
     // Run full sync (all sources) once after 5s
     const fullSyncTimer = setTimeout(runFullSync, 5000);
@@ -139,7 +115,6 @@ export function useAutoSync() {
       if (document.visibilityState === "visible") {
         failureCountRef.current = 0;
         runGmailSync();
-        runImessageSync();
       }
     }
     document.addEventListener("visibilitychange", handleVisibility);
@@ -148,8 +123,7 @@ export function useAutoSync() {
       clearTimeout(initialTimer);
       clearTimeout(fullSyncTimer);
       clearInterval(gmailInterval);
-      clearInterval(imessageInterval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [runGmailSync, runFullSync, runImessageSync]);
+  }, [runGmailSync, runFullSync]);
 }

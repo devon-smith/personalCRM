@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Mail,
+  MessageCircle,
   ExternalLink,
   Trash2,
   Loader2,
@@ -26,6 +27,12 @@ interface HealthData {
   contacts: {
     csvImported: number;
     csvNoInteractions: number;
+  };
+  whatsapp?: {
+    status: "connected" | "disconnected" | "not_configured";
+    lastSyncAt: string | null;
+    messagesSynced: number;
+    unmatchedCount: number;
   };
   cleanup: {
     oldSummaryInteractions: number;
@@ -144,6 +151,33 @@ export function SyncAlerts() {
           <ExternalLink className="h-3 w-3" />
         </a>
       ),
+    });
+  }
+
+  // WhatsApp disconnected or stale heartbeat (>3 minutes)
+  const whatsappStale =
+    health.whatsapp?.status === "connected" &&
+    health.whatsapp.lastSyncAt &&
+    Date.now() - new Date(health.whatsapp.lastSyncAt).getTime() > 3 * 60 * 1000;
+
+  if (health.whatsapp?.status === "disconnected" || whatsappStale) {
+    alerts.push({
+      key: "whatsapp-disconnected",
+      type: "warning",
+      icon: <MessageCircle className="h-4 w-4" />,
+      message: whatsappStale
+        ? "WhatsApp sidecar hasn't reported in over 3 minutes. It may have crashed."
+        : "WhatsApp sidecar disconnected. Restart the sidecar process to resume message sync.",
+    });
+  }
+
+  // WhatsApp unmatched contacts
+  if (health.whatsapp?.status === "connected" && health.whatsapp.unmatchedCount > 0) {
+    alerts.push({
+      key: "whatsapp-unmatched",
+      type: "info",
+      icon: <MessageCircle className="h-4 w-4" />,
+      message: `${health.whatsapp.unmatchedCount} WhatsApp conversation${health.whatsapp.unmatchedCount !== 1 ? "s" : ""} couldn't be matched to contacts. Add phone numbers to your contacts or review the sightings queue.`,
     });
   }
 

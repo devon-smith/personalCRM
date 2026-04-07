@@ -4,9 +4,7 @@ import { normalizeChannel } from "@/lib/filters";
 // ─── Types ──────────────────────────────────────────────────
 
 export interface AutoResolveResult {
-  readonly inboxItemsResolved: number;
   readonly actionItemsResolved: number;
-  readonly snoozesCleared: number;
 }
 
 function doesReplyResolve(replyChannel: string, itemChannel: string | null): boolean {
@@ -43,16 +41,9 @@ export async function autoResolveOnOutbound(
   channel: string,
   occurredAt: Date,
 ): Promise<AutoResolveResult> {
-  let snoozesCleared = 0;
   let actionItemsResolved = 0;
 
-  // a) Clear any active snoozes — you've actually replied
-  const snoozeDeletion = await prisma.snoozedContact.deleteMany({
-    where: { userId, contactId },
-  });
-  snoozesCleared = snoozeDeletion.count;
-
-  // b) Find OPEN action items for this contact
+  // Find OPEN action items for this contact
   const openItems = await prisma.actionItem.findMany({
     where: {
       userId,
@@ -94,18 +85,13 @@ export async function autoResolveOnOutbound(
     actionItemsResolved++;
   }
 
-  // Inbox items resolve naturally via needs-response query
-  // (it checks for OUTBOUND after last INBOUND).
-  // No extra DB writes needed for inbox resolution.
-  const inboxItemsResolved = snoozesCleared > 0 ? 1 : 0;
-
-  if (actionItemsResolved > 0 || snoozesCleared > 0) {
+  if (actionItemsResolved > 0) {
     console.log(
-      `[auto-resolve] ${channel}: ${actionItemsResolved} action items resolved, ${snoozesCleared} snoozes cleared`,
+      `[auto-resolve] ${channel}: ${actionItemsResolved} action items resolved`,
     );
   }
 
-  return { inboxItemsResolved, actionItemsResolved, snoozesCleared };
+  return { actionItemsResolved };
 }
 
 // ─── Helpers ────────────────────────────────────────────────

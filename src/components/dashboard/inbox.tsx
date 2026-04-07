@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -17,11 +17,89 @@ import {
   Bell,
   ExternalLink,
   AlertTriangle,
+  Pencil,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
+
+// ─── Swipe gesture hook ─────────────────────────────────────
+
+const SWIPE_THRESHOLD = 80;
+
+function useSwipe(onSwipeRight: () => void, onSwipeLeft: () => void) {
+  const startX = useRef(0);
+  const currentX = useRef(0);
+  const swiping = useRef(false);
+  const [offset, setOffset] = useState(0);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    swiping.current = true;
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!swiping.current) return;
+    currentX.current = e.touches[0].clientX;
+    const diff = currentX.current - startX.current;
+    // Dampen the swipe beyond threshold
+    const dampened = Math.sign(diff) * Math.min(Math.abs(diff), 120);
+    setOffset(dampened);
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    swiping.current = false;
+    if (offset > SWIPE_THRESHOLD) {
+      onSwipeRight();
+    } else if (offset < -SWIPE_THRESHOLD) {
+      onSwipeLeft();
+    }
+    setOffset(0);
+  }, [offset, onSwipeRight, onSwipeLeft]);
+
+  return { offset, onTouchStart, onTouchMove, onTouchEnd };
+}
+
+// ─── Pull-to-refresh hook ───────────────────────────────────
+
+function usePullToRefresh(onRefresh: () => Promise<void> | void) {
+  const [pulling, setPulling] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const startY = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    if (containerRef.current && containerRef.current.scrollTop === 0) {
+      startY.current = e.touches[0].clientY;
+      setPulling(true);
+    }
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!pulling) return;
+    const diff = e.touches[0].clientY - startY.current;
+    if (diff > 0) {
+      setPullDistance(Math.min(diff * 0.5, 80));
+    }
+  }, [pulling]);
+
+  const onTouchEnd = useCallback(async () => {
+    setPulling(false);
+    if (pullDistance > 50 && !refreshing) {
+      setRefreshing(true);
+      try {
+        await onRefresh();
+      } finally {
+        setRefreshing(false);
+      }
+    }
+    setPullDistance(0);
+  }, [pullDistance, refreshing, onRefresh]);
+
+  return { containerRef, pullDistance, refreshing, onTouchStart, onTouchMove, onTouchEnd };
+}
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -49,6 +127,10 @@ interface InboxItemData {
   messageCount: number;
   status: string;
   needsReplyReason?: string | null;
+  hasDraft?: boolean;
+  priority?: "high" | "medium" | "low";
+  priorityScore?: number;
+  priorityReason?: string;
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -225,8 +307,6 @@ export function Inbox() {
   const syncMutation = useMutation({
     mutationFn: async () => {
       await Promise.all([
-        fetch("/api/notion-messages", { method: "POST" }),
-        fetch("/api/imessage", { method: "POST" }),
         fetch("/api/gmail/sync", { method: "POST" }),
       ]);
       await Promise.all([
@@ -386,6 +466,7 @@ export function Inbox() {
 
   // ─── Derived data ───────────────────────────────────────────
 
+  // Items arrive pre-sorted by priorityScore DESC from the API (drafts deprioritized)
   const waitingItems = inboxData?.items ?? [];
   const groupChatItems = inboxData?.groupChats ?? [];
   const activityItems = activityData?.items ?? [];
@@ -400,7 +481,7 @@ export function Inbox() {
     <div className="crm-card overflow-hidden">
       {/* ─── Tab bar ────────────────────────────────────────── */}
       <div
-        className="flex items-center justify-between px-6 pt-5 pb-0"
+        className="flex items-center justify-between px-4 sm:px-6 pt-5 pb-0"
       >
         <div
           className="flex items-center gap-1 rounded-xl p-1"
@@ -525,8 +606,9 @@ export function Inbox() {
         </button>
       </div>
 
-      {/* ─── Tab content ────────────────────────────────────── */}
-      <div className="px-6 pt-4 pb-5">
+      {/* ─── Tab content with pull-to-refresh ─────────────────── */}
+      <PullToRefreshWrapper onRefresh={() => syncMutation.mutateAsync()}>
+      <div className="px-4 sm:px-6 pt-4 pb-5">
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-12">
             <Loader2
@@ -567,6 +649,7 @@ export function Inbox() {
           <ActivityTab items={activityItems} />
         )}
       </div>
+      </PullToRefreshWrapper>
     </div>
   );
 }
@@ -669,13 +752,18 @@ function InboxTab({
             </p>
             <div className="space-y-2">
               {items.map((item) => (
-                <InboxRow
+                <SwipeableRow
                   key={item.id}
-                  item={item}
-                  onResolve={() => onResolve(item.id, item.channel)}
-                  onDismiss={() => onDismiss(item.id, item.channel)}
-                  onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
-                />
+                  onSwipeRight={() => onResolve(item.id, item.channel)}
+                  onSwipeLeft={() => onDismiss(item.id, item.channel)}
+                >
+                  <InboxRow
+                    item={item}
+                    onResolve={() => onResolve(item.id, item.channel)}
+                    onDismiss={() => onDismiss(item.id, item.channel)}
+                    onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
+                  />
+                </SwipeableRow>
               ))}
             </div>
           </div>
@@ -788,13 +876,18 @@ function GroupsTab({
             </p>
             <div className="space-y-2">
               {items.map((item) => (
-                <GroupChatRow
+                <SwipeableRow
                   key={item.id}
-                  item={item}
-                  onResolve={() => onResolve(item.id, item.channel)}
-                  onDismiss={() => onDismiss(item.id, item.channel)}
-                  onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
-                />
+                  onSwipeRight={() => onResolve(item.id, item.channel)}
+                  onSwipeLeft={() => onDismiss(item.id, item.channel)}
+                >
+                  <GroupChatRow
+                    item={item}
+                    onResolve={() => onResolve(item.id, item.channel)}
+                    onDismiss={() => onDismiss(item.id, item.channel)}
+                    onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
+                  />
+                </SwipeableRow>
               ))}
             </div>
           </div>
@@ -898,9 +991,12 @@ function GroupChatRow({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span style={{ color: "#B5BAC0" }}>
+          <span style={{ color: item.hasDraft ? "#D97706" : "#B5BAC0" }}>
             <ChannelIcon channel={item.channel} size={13} />
           </span>
+          {item.hasDraft && (
+            <Pencil className="h-3 w-3" style={{ color: "#D97706" }} />
+          )}
           <span
             className="text-[12px] tabular-nums"
             style={{ color: "#B5BAC0", letterSpacing: "-0.01em" }}
@@ -909,6 +1005,17 @@ function GroupChatRow({
           </span>
         </div>
       </div>
+
+      {/* Draft indicator */}
+      {item.hasDraft && (
+        <div
+          className="flex items-center gap-1.5 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium"
+          style={{ backgroundColor: "rgba(245,158,11,0.08)", color: "#D97706" }}
+        >
+          <Pencil className="h-3 w-3" />
+          Draft in progress
+        </div>
+      )}
 
       {/* Message previews */}
       {previewMessages.length > 0 && (
@@ -1070,12 +1177,15 @@ function InboxRow({
         ? "iMessage"
         : item.channel;
 
+  const channelDotColor = CHANNEL_DOT_COLORS[item.channel] ?? "#B5BAC0";
+
   return (
     <div
-      className="group rounded-2xl p-4 transition-colors"
+      className="group rounded-2xl p-4 sm:p-4 transition-colors"
       style={{
         backgroundColor: "transparent",
         transitionDuration: "var(--duration-fast)",
+        minHeight: 44,
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.backgroundColor = "#F5F6F8";
@@ -1087,7 +1197,7 @@ function InboxRow({
       {/* Top row: avatar + name + channel + time */}
       <div className="flex items-center gap-3">
         <div className="relative shrink-0">
-          <Avatar className="h-9 w-9">
+          <Avatar className="h-9 w-9 sm:h-9 sm:w-9">
             <AvatarFallback
               className="text-[11px] font-semibold"
               style={{ backgroundColor: color.bg, color: color.text }}
@@ -1120,32 +1230,82 @@ function InboxRow({
             </span>
             {item.company && (
               <span
-                className="text-[12px] truncate hidden sm:inline"
+                className="text-[12px] truncate hidden sm:inline max-w-[120px]"
                 style={{ color: "#7B8189" }}
               >
                 {item.company}
               </span>
             )}
-            {item.needsReplyReason && REASON_LABELS[item.needsReplyReason] && (
+            {item.hasDraft ? (
               <span
-                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full hidden sm:inline"
+                className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full hidden sm:inline-flex"
                 style={{
-                  backgroundColor: "rgba(59,130,246,0.08)",
-                  color: "#3B82F6",
+                  backgroundColor: "rgba(245,158,11,0.08)",
+                  color: "#D97706",
                   letterSpacing: "-0.01em",
                 }}
               >
-                {REASON_LABELS[item.needsReplyReason]}
+                <Pencil className="h-2.5 w-2.5" />
+                Draft in progress
+              </span>
+            ) : item.priorityReason ? (
+              <span
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full hidden sm:inline"
+                style={{
+                  backgroundColor: item.priority === "high"
+                    ? "rgba(239,68,68,0.08)"
+                    : item.priority === "medium"
+                      ? "rgba(245,158,11,0.08)"
+                      : "rgba(107,114,128,0.08)",
+                  color: item.priority === "high"
+                    ? "#DC2626"
+                    : item.priority === "medium"
+                      ? "#D97706"
+                      : "#6B7280",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {item.priorityReason}
+              </span>
+            ) : null}
+          </div>
+          {/* Mobile: timestamp + channel dot below name */}
+          <div className="flex items-center gap-1.5 sm:hidden mt-0.5">
+            <span
+              className="inline-block h-2 w-2 rounded-full"
+              style={{ backgroundColor: channelDotColor }}
+            />
+            <span
+              className="text-[11px] tabular-nums"
+              style={{ color: "#B5BAC0" }}
+            >
+              {formatDistanceToNow(new Date(item.triggerAt))}
+            </span>
+            {item.priorityReason && (
+              <span
+                className="text-[10px]"
+                style={{
+                  color: item.priority === "high"
+                    ? "#DC2626"
+                    : item.priority === "medium"
+                      ? "#D97706"
+                      : "#9CA3AF",
+                }}
+              >
+                &middot; {item.priorityReason}
               </span>
             )}
           </div>
         </div>
 
-        {/* Channel + time */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span style={{ color: "#B5BAC0" }}>
+        {/* Channel + time — desktop only */}
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
+          <span style={{ color: item.hasDraft ? "#D97706" : "#B5BAC0" }}>
             <ChannelIcon channel={item.channel} size={13} />
           </span>
+          {item.hasDraft && (
+            <Pencil className="h-3 w-3" style={{ color: "#D97706" }} />
+          )}
           <span
             className="text-[12px] tabular-nums"
             style={{ color: "#B5BAC0", letterSpacing: "-0.01em" }}
@@ -1207,12 +1367,13 @@ function InboxRow({
           e.stopPropagation();
           onResolve();
         }}
-        className="w-full flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 mt-2.5 text-[12px] font-medium transition-colors"
+        className="w-full flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 sm:py-2 mt-2.5 text-[12px] font-medium transition-colors"
         style={{
           backgroundColor: "rgba(5,150,105,0.06)",
           border: "1px solid rgba(5,150,105,0.15)",
           color: "#059669",
           letterSpacing: "-0.01em",
+          minHeight: 44,
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.12)";
@@ -1232,7 +1393,7 @@ function InboxRow({
             href={replyUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 sm:py-1.5 text-[12px] font-medium transition-colors"
             style={{
               backgroundColor: "#1A1A1A",
               color: "#fff",
@@ -1334,6 +1495,110 @@ function InboxRow({
             {item.messageCount} messages &middot; {channelLabel}
           </span>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Pull-to-refresh wrapper ────────────────────────────────
+
+function PullToRefreshWrapper({
+  children,
+  onRefresh,
+}: {
+  children: React.ReactNode;
+  onRefresh: () => Promise<void>;
+}) {
+  const { containerRef, pullDistance, refreshing, onTouchStart, onTouchMove, onTouchEnd } =
+    usePullToRefresh(onRefresh);
+
+  return (
+    <div
+      ref={containerRef}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{ position: "relative", overflowY: "auto" }}
+    >
+      {/* Pull indicator */}
+      {(pullDistance > 0 || refreshing) && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: refreshing ? 40 : pullDistance,
+            overflow: "hidden",
+            transition: pullDistance === 0 ? "height 0.2s ease-out" : "none",
+          }}
+        >
+          <Loader2
+            className="h-4 w-4"
+            style={{
+              color: "var(--text-tertiary)",
+              animation: refreshing ? "spin 1s linear infinite" : "none",
+              opacity: Math.min(pullDistance / 50, 1),
+            }}
+          />
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// ─── Swipeable Row Wrapper ──────────────────────────────────
+
+function SwipeableRow({
+  children,
+  onSwipeRight,
+  onSwipeLeft,
+}: {
+  children: React.ReactNode;
+  onSwipeRight: () => void;
+  onSwipeLeft: () => void;
+}) {
+  const { offset, onTouchStart, onTouchMove, onTouchEnd } = useSwipe(
+    onSwipeRight,
+    onSwipeLeft,
+  );
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderRadius: 16 }}>
+      {/* Background indicators */}
+      {offset !== 0 && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: offset > 0 ? "flex-start" : "flex-end",
+            padding: "0 24px",
+            backgroundColor: offset > 0 ? "rgba(5,150,105,0.12)" : "rgba(107,114,128,0.08)",
+            transition: "none",
+          }}
+        >
+          {offset > 0 ? (
+            <Check className="h-5 w-5" style={{ color: "#059669" }} />
+          ) : (
+            <X className="h-5 w-5" style={{ color: "#6B7280" }} />
+          )}
+        </div>
+      )}
+      <div
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{
+          transform: `translateX(${offset}px)`,
+          transition: offset === 0 ? "transform 0.2s ease-out" : "none",
+          position: "relative",
+          zIndex: 1,
+          backgroundColor: "var(--surface, #fff)",
+        }}
+      >
+        {children}
       </div>
     </div>
   );
