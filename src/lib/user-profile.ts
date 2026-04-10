@@ -25,23 +25,21 @@ export interface UserProfile {
 }
 
 const DEFAULT_PROFILE: UserProfile = {
-  firstName: process.env.CRM_USER_FIRST_NAME || "Devon",
-  fullName: process.env.CRM_USER_FULL_NAME || "Devon Smith",
-  bio: process.env.CRM_USER_BIO || "a Stanford MS CS student",
-  emailSignoff: process.env.CRM_USER_EMAIL_SIGNOFF || "Best, Devon",
+  firstName: process.env.CRM_USER_FIRST_NAME || "INSERT_MOMS_FIRST_NAME",
+  fullName: process.env.CRM_USER_FULL_NAME || "INSERT_MOMS_FULL_NAME",
+  bio: process.env.CRM_USER_BIO || "INSERT_SHORT_BIO",
+  emailSignoff: process.env.CRM_USER_EMAIL_SIGNOFF || "Love, INSERT_MOMS_FIRST_NAME",
   casualSignoff: false,
   style:
     process.env.CRM_USER_STYLE ||
-    "casual but thoughtful, uses first names, doesn't use formal openers",
+    "warm and caring, writes in complete sentences, uses proper punctuation, a bit more formal than texting shorthand",
   bannedPhrases: [
     "Hope this finds you well",
-    "I wanted to reach out",
     "Per my last email",
     "Circle back",
     "Touch base",
-    "Hope you're doing well",
   ],
-  activeChannels: ["gmail", "linkedin", "calendar"],
+  activeChannels: ["gmail", "calendar"],
   imessageAvailable: false,
 };
 
