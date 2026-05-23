@@ -92,6 +92,14 @@ export async function GET() {
   const syncState = await prisma.gmailSyncState.findUnique({
     where: { userId },
   });
+  const contactsCursors = await prisma.contactsSyncCursor.findMany({
+    where: { userId },
+    select: { accountId: true, lastSyncAt: true },
+  });
+  const latestContactsSync = contactsCursors
+    .map((c) => c.lastSyncAt)
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
 
   const allUserEmails = [
     user?.email,
@@ -240,9 +248,13 @@ export async function GET() {
       status: hasGoogleOAuth && hasContactsScope
         ? syncState?.contactsImported ? "connected" : "available"
         : hasGoogleOAuth ? "available" : "coming_soon",
-      lastSync: syncState?.contactsImported
-        ? syncState.updatedAt.toISOString()
-        : null,
+      // Prefer the per-account incremental-sync cursor timestamp; fall back to
+      // the older GmailSyncState.updatedAt for accounts that haven't synced yet.
+      lastSync: latestContactsSync
+        ? latestContactsSync.toISOString()
+        : syncState?.contactsImported
+          ? syncState.updatedAt.toISOString()
+          : null,
       captured: syncState?.contactsImported
         ? `${importedContacts} imported`
         : "Not imported yet",

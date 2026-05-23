@@ -1,5 +1,6 @@
 import { getAllGoogleAccessTokens } from "./client";
 import { cleanContactName } from "@/lib/contacts/clean-name";
+import { prisma } from "@/lib/prisma";
 
 export interface GoogleContact {
   name: string;
@@ -14,6 +15,9 @@ export interface GoogleContact {
 
 interface PeopleApiPerson {
   resourceName?: string;
+  metadata?: {
+    deleted?: boolean;
+  };
   names?: Array<{ displayName?: string; givenName?: string; familyName?: string }>;
   emailAddresses?: Array<{ value?: string }>;
   phoneNumbers?: Array<{ value?: string }>;
@@ -25,12 +29,19 @@ interface PeopleApiPerson {
 interface PeopleApiResponse {
   connections?: PeopleApiPerson[];
   nextPageToken?: string;
+  nextSyncToken?: string;
   totalPeople?: number;
 }
 
 /**
  * Fetch contacts from Google People API across ALL linked accounts.
- * Deduplicates by primary email address.
+ *
+ * Uses per-account sync tokens: the first call to a new account does a full
+ * sync and requests a syncToken; subsequent calls pass that token and only
+ * receive deltas. On 410 the token has expired — we drop it and re-run a
+ * full sync transparently.
+ *
+ * Deduplicates by primary email address across accounts.
  */
 export async function fetchGoogleContacts(
   userId: string,
@@ -44,9 +55,14 @@ export async function fetchGoogleContacts(
   const contactsByEmail = new Map<string, GoogleContact>();
   const contactsWithoutEmail: GoogleContact[] = [];
 
-  for (const { token } of accountTokens) {
+  for (const { accountId, token } of accountTokens) {
     try {
-      const accountContacts = await fetchContactsWithToken(token, maxContacts);
+      const accountContacts = await fetchContactsForAccount(
+        userId,
+        accountId,
+        token,
+        maxContacts,
+      );
       for (const contact of accountContacts) {
         if (contact.email) {
           // Deduplicate by primary email
@@ -59,58 +75,180 @@ export async function fetchGoogleContacts(
       }
     } catch (err) {
       // Skip accounts that don't have contacts scope
-      console.error("Contacts fetch error for account:", err instanceof Error ? err.message : err);
+      console.error(
+        "Contacts fetch error for account:",
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 
   return [...contactsByEmail.values(), ...contactsWithoutEmail].slice(0, maxContacts);
 }
 
-async function fetchContactsWithToken(
+/**
+ * Fetch for a single account, using the persisted nextSyncToken when present.
+ * Returns the parsed contact list. Deleted persons are skipped silently —
+ * deletion semantics are not handled at the caller layer yet.
+ */
+async function fetchContactsForAccount(
+  userId: string,
+  accountId: string,
   token: string,
   maxContacts: number,
 ): Promise<GoogleContact[]> {
+  const cursor = await prisma.contactsSyncCursor.findUnique({
+    where: { userId_accountId: { userId, accountId } },
+  });
+
+  // First-ever sync, or no token saved: do a full sync that requests a token.
+  if (!cursor?.nextSyncToken) {
+    const { contacts, nextSyncToken } = await runFullSync(token, maxContacts);
+    await saveCursor(userId, accountId, nextSyncToken, { fullSync: true });
+    return contacts;
+  }
+
+  // Incremental sync against the saved token.
+  try {
+    const { contacts, nextSyncToken } = await runIncrementalSync(
+      token,
+      cursor.nextSyncToken,
+      maxContacts,
+    );
+    await saveCursor(userId, accountId, nextSyncToken, { fullSync: false });
+    return contacts;
+  } catch (err) {
+    // 410 Gone: token expired. Wipe cursor and fall back to full sync.
+    if (err instanceof TokenExpiredError) {
+      const { contacts, nextSyncToken } = await runFullSync(token, maxContacts);
+      await saveCursor(userId, accountId, nextSyncToken, { fullSync: true });
+      return contacts;
+    }
+    throw err;
+  }
+}
+
+class TokenExpiredError extends Error {
+  constructor() {
+    super("People API syncToken expired (410)");
+    this.name = "TokenExpiredError";
+  }
+}
+
+async function runFullSync(
+  token: string,
+  maxContacts: number,
+): Promise<{ contacts: GoogleContact[]; nextSyncToken: string | null }> {
   const contacts: GoogleContact[] = [];
   let pageToken: string | undefined;
+  let nextSyncToken: string | null = null;
 
   while (contacts.length < maxContacts) {
-    const url = new URL("https://people.googleapis.com/v1/people/me/connections");
-    url.searchParams.set(
-      "personFields",
-      "names,emailAddresses,phoneNumbers,organizations,photos,birthdays",
-    );
-    url.searchParams.set("pageSize", "100");
-    if (pageToken) {
-      url.searchParams.set("pageToken", pageToken);
-    }
-
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error("People API error:", res.status, errorText);
-      throw new Error(`Google Contacts API error: ${res.status}`);
-    }
-
-    const data = (await res.json()) as PeopleApiResponse;
+    const url = peopleEndpoint({ pageToken, requestSyncToken: true });
+    const data = await callPeopleApi(url, token);
 
     for (const person of data.connections ?? []) {
       const parsed = parsePerson(person);
-      if (parsed) {
-        contacts.push(parsed);
-      }
+      if (parsed) contacts.push(parsed);
     }
 
+    if (data.nextSyncToken) nextSyncToken = data.nextSyncToken;
     pageToken = data.nextPageToken;
     if (!pageToken) break;
   }
 
-  return contacts.slice(0, maxContacts);
+  return { contacts: contacts.slice(0, maxContacts), nextSyncToken };
+}
+
+async function runIncrementalSync(
+  token: string,
+  syncToken: string,
+  maxContacts: number,
+): Promise<{ contacts: GoogleContact[]; nextSyncToken: string | null }> {
+  const contacts: GoogleContact[] = [];
+  let pageToken: string | undefined;
+  let nextSyncToken: string | null = null;
+
+  while (contacts.length < maxContacts) {
+    const url = peopleEndpoint({ pageToken, syncToken });
+    const data = await callPeopleApi(url, token);
+
+    for (const person of data.connections ?? []) {
+      const parsed = parsePerson(person);
+      if (parsed) contacts.push(parsed);
+    }
+
+    if (data.nextSyncToken) nextSyncToken = data.nextSyncToken;
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  return { contacts: contacts.slice(0, maxContacts), nextSyncToken };
+}
+
+function peopleEndpoint(opts: {
+  pageToken?: string;
+  syncToken?: string;
+  requestSyncToken?: boolean;
+}): URL {
+  const url = new URL("https://people.googleapis.com/v1/people/me/connections");
+  url.searchParams.set(
+    "personFields",
+    "names,emailAddresses,phoneNumbers,organizations,photos,birthdays",
+  );
+  url.searchParams.set("pageSize", "100");
+  if (opts.pageToken) url.searchParams.set("pageToken", opts.pageToken);
+  if (opts.syncToken) url.searchParams.set("syncToken", opts.syncToken);
+  if (opts.requestSyncToken) url.searchParams.set("requestSyncToken", "true");
+  return url;
+}
+
+async function callPeopleApi(url: URL, token: string): Promise<PeopleApiResponse> {
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (res.status === 410) {
+    throw new TokenExpiredError();
+  }
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error("People API error:", res.status, errorText);
+    throw new Error(`Google Contacts API error: ${res.status}`);
+  }
+
+  return (await res.json()) as PeopleApiResponse;
+}
+
+async function saveCursor(
+  userId: string,
+  accountId: string,
+  nextSyncToken: string | null,
+  opts: { fullSync: boolean },
+): Promise<void> {
+  const now = new Date();
+  await prisma.contactsSyncCursor.upsert({
+    where: { userId_accountId: { userId, accountId } },
+    create: {
+      userId,
+      accountId,
+      nextSyncToken,
+      lastSyncAt: now,
+      lastFullSyncAt: opts.fullSync ? now : null,
+    },
+    update: {
+      nextSyncToken,
+      lastSyncAt: now,
+      ...(opts.fullSync ? { lastFullSyncAt: now } : {}),
+    },
+  });
 }
 
 function parsePerson(person: PeopleApiPerson): GoogleContact | null {
+  // Incremental sync returns deletions with metadata.deleted=true. Skip them
+  // for now — caller doesn't have deletion semantics wired up yet.
+  if (person.metadata?.deleted) return null;
+
   const rawName =
     person.names?.[0]?.displayName ??
     [person.names?.[0]?.givenName, person.names?.[0]?.familyName]

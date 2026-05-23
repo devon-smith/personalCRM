@@ -73,6 +73,20 @@ model SyncLog {
   @@index([accountId, createdAt(sort: Desc)])
 }
 
+model ContactsSyncCursor {
+  id             String    @id @default(uuid())
+  userId         String
+  accountId      String
+  nextSyncToken  String?
+  lastSyncAt     DateTime?
+  lastFullSyncAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([userId, accountId])
+  @@index([userId])
+}
+
 model AIGenerationLog {
   id        String   @id @default(uuid())
   userId    String
