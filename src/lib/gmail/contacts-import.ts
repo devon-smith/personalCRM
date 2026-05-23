@@ -134,6 +134,11 @@ class TokenExpiredError extends Error {
   }
 }
 
+// Hard safety cap on pagination loops. People API page size is 100, so this
+// covers 20k connections. Prevents runaway in the rare event Google never
+// stops returning nextPageToken.
+const MAX_SYNC_PAGES = 200;
+
 async function runFullSync(
   token: string,
   maxContacts: number,
@@ -142,7 +147,10 @@ async function runFullSync(
   let pageToken: string | undefined;
   let nextSyncToken: string | null = null;
 
-  while (contacts.length < maxContacts) {
+  // Must paginate to the last page to capture nextSyncToken — Google only
+  // emits it on the final page. Returned contacts are truncated to
+  // maxContacts afterward.
+  for (let page = 0; page < MAX_SYNC_PAGES; page++) {
     const url = peopleEndpoint({ pageToken, requestSyncToken: true });
     const data = await callPeopleApi(url, token);
 
@@ -168,7 +176,9 @@ async function runIncrementalSync(
   let pageToken: string | undefined;
   let nextSyncToken: string | null = null;
 
-  while (contacts.length < maxContacts) {
+  // Same pagination invariant as full sync — keep going until the API
+  // signals the last page, then truncate output.
+  for (let page = 0; page < MAX_SYNC_PAGES; page++) {
     const url = peopleEndpoint({ pageToken, syncToken });
     const data = await callPeopleApi(url, token);
 

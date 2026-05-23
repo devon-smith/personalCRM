@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
-import { useContacts, type ContactWithCount } from "@/lib/hooks/use-contacts";
+import { useContacts, useContact, type ContactWithCount } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import {
   Search,
@@ -110,14 +110,20 @@ export function DraftComposer() {
     }
   }, [isOpen, presetContactId, presetTone, presetContext]);
 
-  // Resolve preset contact
-  const { data: allContacts } = useContacts({});
-  useEffect(() => {
-    if (presetContactId && allContacts && !selectedContact) {
-      const found = allContacts.find((c) => c.id === presetContactId);
-      if (found) setSelectedContact(found);
-    }
-  }, [presetContactId, allContacts, selectedContact]);
+  // Resolve preset contact — fetch the single contact by ID rather than
+  // loading the entire contact list (which can be ~30k rows). The result
+  // is derived, not state, so we don't fight the picker's own setState.
+  const { data: presetContact } = useContact(
+    presetContactId && !selectedContact ? presetContactId : null,
+  );
+  const resolvedPresetContact: ContactWithCount | null = presetContact
+    ? ({
+        ...presetContact,
+        _count: { interactions: presetContact.interactions?.length ?? 0 },
+      } as unknown as ContactWithCount)
+    : null;
+  const effectiveContact: ContactWithCount | null =
+    selectedContact ?? resolvedPresetContact;
 
   // Focus search on contact picker step
   useEffect(() => {
@@ -133,7 +139,7 @@ export function DraftComposer() {
   }, []);
 
   const generateDraft = useCallback(async () => {
-    if (!selectedContact) return;
+    if (!effectiveContact) return;
 
     setIsGenerating(true);
     setDrafts(null);
@@ -142,7 +148,7 @@ export function DraftComposer() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contactId: selectedContact.id,
+          contactId: effectiveContact.id,
           tone,
           context,
           contextDetail: contextDetail || undefined,
@@ -164,7 +170,7 @@ export function DraftComposer() {
     } finally {
       setIsGenerating(false);
     }
-  }, [selectedContact, tone, context, contextDetail, threadSubject, threadSnippet]);
+  }, [effectiveContact, tone, context, contextDetail, threadSubject, threadSnippet]);
 
   const copyDraft = useCallback(async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -174,23 +180,23 @@ export function DraftComposer() {
   }, []);
 
   const openEmail = useCallback((text: string, subject: string | null) => {
-    if (!selectedContact?.email) {
+    if (!effectiveContact?.email) {
       toast.error("No email on file for this contact");
       return;
     }
     const params = new URLSearchParams();
     if (subject) params.set("subject", subject);
     params.set("body", text);
-    window.open(`mailto:${selectedContact.email}?${params.toString()}`);
-  }, [selectedContact]);
+    window.open(`mailto:${effectiveContact.email}?${params.toString()}`);
+  }, [effectiveContact]);
 
   const openLinkedIn = useCallback(() => {
-    if (!selectedContact?.linkedinUrl) {
+    if (!effectiveContact?.linkedinUrl) {
       toast.error("No LinkedIn URL on file");
       return;
     }
-    window.open(selectedContact.linkedinUrl, "_blank");
-  }, [selectedContact]);
+    window.open(effectiveContact.linkedinUrl, "_blank");
+  }, [effectiveContact]);
 
   const filteredContacts = contacts?.slice(0, 8) ?? [];
 
@@ -206,7 +212,7 @@ export function DraftComposer() {
         <DialogHeader className="px-5 pt-5 pb-3">
           <DialogTitle className="ds-heading-sm" style={{ color: "var(--text-primary)" }}>
             {step === "pick_contact" && "Draft a message"}
-            {step === "configure" && selectedContact && `Message ${selectedContact.name.split(" ")[0]}`}
+            {step === "configure" && effectiveContact && `Message ${effectiveContact.name.split(" ")[0]}`}
             {step === "drafts" && "Your draft"}
           </DialogTitle>
         </DialogHeader>
@@ -272,7 +278,14 @@ export function DraftComposer() {
         )}
 
         {/* Step 2: Configure Tone + Context */}
-        {step === "configure" && selectedContact && (
+        {step === "configure" && !effectiveContact && presetContactId && (
+          <div className="px-5 pb-5 flex items-center gap-2" style={{ color: "var(--text-tertiary)" }}>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-[13px]">Loading contact…</span>
+          </div>
+        )}
+
+        {step === "configure" && effectiveContact && (
           <div className="px-5 pb-5 space-y-5">
             {/* Selected contact card */}
             <div
@@ -284,15 +297,15 @@ export function DraftComposer() {
                   className="text-xs font-medium"
                   style={{ backgroundColor: "var(--border)", color: "var(--text-secondary)" }}
                 >
-                  {getInitials(selectedContact.name)}
+                  {getInitials(effectiveContact.name)}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
                 <p className="ds-body-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                  {selectedContact.name}
+                  {effectiveContact.name}
                 </p>
                 <p className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
-                  {[selectedContact.role, selectedContact.company].filter(Boolean).join(" at ") || selectedContact.email || "No details"}
+                  {[effectiveContact.role, effectiveContact.company].filter(Boolean).join(" at ") || effectiveContact.email || "No details"}
                 </p>
               </div>
               {!presetContactId && (
@@ -388,7 +401,7 @@ export function DraftComposer() {
         )}
 
         {/* Step 3: Draft results */}
-        {step === "drafts" && drafts && selectedContact && (
+        {step === "drafts" && drafts && effectiveContact && (
           <div className="px-5 pb-5 space-y-4">
             {/* Subject line */}
             {drafts.subjectLine && (
@@ -465,7 +478,7 @@ export function DraftComposer() {
                 size="sm"
                 onClick={() => {
                   const smsBody = encodeURIComponent(activeDraft ?? "");
-                  window.open(`sms:${selectedContact.phone ?? ""}?body=${smsBody}`);
+                  window.open(`sms:${effectiveContact.phone ?? ""}?body=${smsBody}`);
                 }}
                 style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
               >
@@ -473,7 +486,7 @@ export function DraftComposer() {
                 Text
               </Button>
 
-              {selectedContact.linkedinUrl && (
+              {effectiveContact.linkedinUrl && (
                 <Button
                   variant="outline"
                   size="sm"

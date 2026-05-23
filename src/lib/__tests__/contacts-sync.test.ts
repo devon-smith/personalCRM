@@ -145,6 +145,50 @@ describe("fetchGoogleContacts — sync token lifecycle", () => {
     expect(upsertCall.update.lastFullSyncAt).toBeInstanceOf(Date);
   });
 
+  it("paginates to the last page to capture nextSyncToken even past maxContacts", async () => {
+    // Regression: previously the loop exited at maxContacts and never saw
+    // the final page where Google emits nextSyncToken. For accounts with
+    // more contacts than the limit, this meant every future sync was full.
+    vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.contactsSyncCursor.upsert).mockResolvedValue({} as never);
+
+    let pageIdx = 0;
+    globalThis.fetch = vi.fn(async () => {
+      calls.push({ url: "" });
+      pageIdx++;
+      // Three pages total. Final page sends nextSyncToken and no nextPageToken.
+      if (pageIdx < 3) {
+        return new Response(
+          JSON.stringify({
+            connections: Array.from({ length: 100 }, (_, i) => ({
+              names: [{ displayName: `Person ${pageIdx}-${i}` }],
+              emailAddresses: [{ value: `p${pageIdx}-${i}@x.com` }],
+            })),
+            nextPageToken: `page-${pageIdx + 1}`,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          connections: [
+            { names: [{ displayName: "Final Person" }], emailAddresses: [{ value: "final@x.com" }] },
+          ],
+          nextSyncToken: "TOKEN-FROM-LAST-PAGE",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as never;
+
+    // Pass maxContacts=50 — small enough that the OLD loop would have
+    // exited after the first page and never seen the syncToken.
+    await fetchGoogleContacts("user-1", 50);
+
+    expect(calls.length).toBe(3);
+    const upsertCall = vi.mocked(prisma.contactsSyncCursor.upsert).mock.calls[0][0];
+    expect(upsertCall.create.nextSyncToken).toBe("TOKEN-FROM-LAST-PAGE");
+  });
+
   it("skips persons marked metadata.deleted=true in incremental delta", async () => {
     vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue({
       id: "cur-1",
