@@ -401,13 +401,39 @@ function GoogleAccountCard({
               account.hasCalendar && "Calendar",
               account.hasContacts && "Contacts",
             ].filter(Boolean).join(" · ")}
+            {account.lastRefreshAt && (
+              <> · refreshed {formatRelativeTime(account.lastRefreshAt)}</>
+            )}
           </p>
         </div>
-        {expanded
+        {account.needsReconnect ? (
+          // eslint-disable-next-line @next/next/no-html-link-for-pages -- API route, not a page
+          <a
+            href="/api/auth/add-google-account"
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 rounded-[8px] px-3 py-1.5 text-[12px] font-medium"
+            style={{
+              backgroundColor: "var(--status-error, #DC2626)",
+              color: "white",
+            }}
+          >
+            Reconnect
+          </a>
+        ) : expanded
           ? <ChevronDown className="h-4 w-4 shrink-0" style={{ color: "var(--text-tertiary)" }} />
           : <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--text-tertiary)" }} />
         }
       </button>
+
+      {account.needsReconnect && (
+        <div
+          className="px-4 pb-3 text-[11px]"
+          style={{ color: "var(--status-error, #991B1B)" }}
+        >
+          Sync paused: {account.lastRefreshError ?? "token refresh failed"}.
+          Reconnect to resume.
+        </div>
+      )}
 
       {/* Expandable services */}
       {expanded && (

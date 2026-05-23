@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (existing && existing.userId === session.user.id) {
-      // Already linked — update tokens
+      // Already linked — update tokens and clear any stale reconnect state.
       await prisma.account.update({
         where: { id: existing.id },
         data: {
@@ -88,6 +88,9 @@ export async function GET(req: NextRequest) {
             ? Math.floor(Date.now() / 1000) + tokens.expires_in
             : existing.expires_at,
           scope: tokens.scope ?? existing.scope,
+          needsReconnect: false,
+          lastRefreshError: null,
+          lastRefreshAt: new Date(),
         },
       });
     } else if (existing) {

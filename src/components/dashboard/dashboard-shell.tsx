@@ -7,6 +7,7 @@ import { NavMenu } from "@/components/dashboard/sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { QuickLogPicker } from "@/components/interactions/quick-log-picker";
 import { DraftComposer } from "@/components/draft-composer";
+import { ReconnectBanner } from "@/components/integrations/reconnect-banner";
 import { DraftComposerProvider, useDraftComposer } from "@/lib/draft-composer-context";
 import { useAutoSync } from "@/lib/hooks/use-auto-sync";
 import { Search, Mail, Users, BarChart3 } from "lucide-react";
@@ -38,6 +39,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col" style={{ backgroundColor: "var(--background)" }}>
+      <ReconnectBanner />
       <header
         className="sticky top-0 z-40 flex h-14 items-center justify-between px-4"
         style={{ backgroundColor: "var(--background)" }}

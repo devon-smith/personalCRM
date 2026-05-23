@@ -8,6 +8,9 @@ export interface GoogleAccountInfo {
   hasGmail: boolean;
   hasCalendar: boolean;
   hasContacts: boolean;
+  needsReconnect: boolean;
+  lastRefreshAt: string | null;
+  lastRefreshError: string | null;
 }
 
 export interface DataSource {
@@ -58,7 +61,15 @@ export async function GET() {
   // Check ALL linked Google accounts for tokens and scopes
   const googleAccounts = await prisma.account.findMany({
     where: { userId, provider: "google" },
-    select: { id: true, access_token: true, scope: true, id_token: true },
+    select: {
+      id: true,
+      access_token: true,
+      scope: true,
+      id_token: true,
+      needsReconnect: true,
+      lastRefreshAt: true,
+      lastRefreshError: true,
+    },
   });
 
   const hasGoogleOAuth = googleAccounts.some((a) => !!a.access_token);
@@ -109,6 +120,9 @@ export async function GET() {
         hasGmail: !a.scope || a.scope.includes("gmail.readonly"),
         hasCalendar: !a.scope || a.scope.includes("calendar.readonly"),
         hasContacts: !a.scope || a.scope.includes("contacts.readonly"),
+        needsReconnect: a.needsReconnect,
+        lastRefreshAt: a.lastRefreshAt?.toISOString() ?? null,
+        lastRefreshError: a.lastRefreshError,
       };
     });
 

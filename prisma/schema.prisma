@@ -51,10 +51,26 @@ model Account {
   scope             String?
   id_token          String? @db.Text
   session_state     String?
+  needsReconnect    Boolean   @default(false)
+  lastRefreshAt     DateTime?
+  lastRefreshError  String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+}
+
+model SyncLog {
+  id        String   @id @default(uuid())
+  userId    String
+  accountId String?
+  kind      String
+  message   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([accountId, createdAt(sort: Desc)])
 }
 
 model Session {
