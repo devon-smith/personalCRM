@@ -9,6 +9,7 @@ import {
   type LinkedInResolutionResult,
 } from "@/lib/identity-resolution";
 import { detectChanges } from "@/lib/changelog";
+import { cleanContactName } from "@/lib/contacts/clean-name";
 import type { ContactSource, SightingResolution } from "@/generated/prisma/client";
 
 interface LinkedInRow {
@@ -95,7 +96,12 @@ export async function POST(req: NextRequest) {
     };
 
     for (const row of rows) {
-      const fullName = `${row.firstName} ${row.lastName}`.trim();
+      const rawFullName = `${row.firstName} ${row.lastName}`.trim();
+      const cleanedFullName = cleanContactName({
+        name: rawFullName,
+        email: row.email?.trim() || null,
+      });
+      const fullName = cleanedFullName.name ?? "";
       if (!fullName || fullName.length < 2) {
         result.skipped++;
         continue;

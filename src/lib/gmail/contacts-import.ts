@@ -1,4 +1,5 @@
 import { getAllGoogleAccessTokens } from "./client";
+import { cleanContactName } from "@/lib/contacts/clean-name";
 
 export interface GoogleContact {
   name: string;
@@ -110,19 +111,20 @@ async function fetchContactsWithToken(
 }
 
 function parsePerson(person: PeopleApiPerson): GoogleContact | null {
-  const name =
+  const rawName =
     person.names?.[0]?.displayName ??
     [person.names?.[0]?.givenName, person.names?.[0]?.familyName]
       .filter(Boolean)
       .join(" ");
 
-  // Skip contacts without a name
-  if (!name?.trim()) return null;
-
   const allEmails = (person.emailAddresses ?? [])
     .map((e) => e.value?.trim())
     .filter((v): v is string => !!v);
   const email = allEmails[0] ?? null;
+
+  const cleaned = cleanContactName({ name: rawName ?? null, email });
+  if (!cleaned.name) return null;
+
   const additionalEmails = allEmails.slice(1);
   const phone = person.phoneNumbers?.[0]?.value ?? null;
   const company = person.organizations?.[0]?.name ?? null;
@@ -140,5 +142,5 @@ function parsePerson(person: PeopleApiPerson): GoogleContact | null {
     birthday = `${year}-${month}-${day}`;
   }
 
-  return { name: name.trim(), email, additionalEmails, phone, company, role, photoUrl, birthday };
+  return { name: cleaned.name, email, additionalEmails, phone, company, role, photoUrl, birthday };
 }
