@@ -89,6 +89,10 @@ export async function GET() {
         isGroupChat: item.isGroupChat,
       });
 
+      const persistedSourceRecordIds = Array.isArray(item.sourceRecordIds)
+        ? (item.sourceRecordIds as unknown as string[])
+        : [];
+
       return {
         id: item.id,
         contactId: item.contactId,
@@ -111,6 +115,10 @@ export async function GET() {
         priority: p.priority,
         priorityScore: p.score,
         priorityReason: p.reason,
+        // Provenance — for the EvidenceChevron affordance
+        sourceSystem: item.sourceSystem ?? null,
+        sourceRecordIds: persistedSourceRecordIds,
+        triggerInteractionId: item.triggerInteractionId,
       };
     };
 

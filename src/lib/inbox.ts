@@ -389,6 +389,8 @@ export async function onInboundInteraction(
   }];
 
   const isGroup = options?.isGroupChat ?? false;
+  const sourceSystem = channelToSourceSystem(rawChannel);
+  const sourceRecordIds = [`interaction:${interaction.id}`];
   const p = computePriority({
     tier: contact.tier,
     channel,
@@ -426,6 +428,9 @@ export async function onInboundInteraction(
       messageCount: 1,
       priority: p.priority,
       priorityScore: p.score,
+      sourceSystem,
+      sourceRecordIds: sourceRecordIds as unknown as Prisma.InputJsonValue,
+      surfacedReason: p.reason,
     },
     update: {
       status: "OPEN",
@@ -441,8 +446,20 @@ export async function onInboundInteraction(
       messageCount: 1,
       priority: p.priority,
       priorityScore: p.score,
+      sourceSystem,
+      sourceRecordIds: sourceRecordIds as unknown as Prisma.InputJsonValue,
+      surfacedReason: p.reason,
     },
   });
+}
+
+function channelToSourceSystem(rawChannel: string): string {
+  const c = rawChannel.toLowerCase();
+  if (c === "email" || c === "gmail") return "gmail";
+  if (c === "imessage" || c === "text" || c === "sms") return "imessage";
+  if (c === "whatsapp") return "whatsapp";
+  if (c === "linkedin") return "linkedin";
+  return c;
 }
 
 // ─── Called when an OUTBOUND interaction is created ──────────

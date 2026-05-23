@@ -2,6 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
 import { getUserProfile } from "@/lib/user-profile";
+import { logAIGeneration } from "@/lib/ai-generation-log";
+
+const DRAFT_MODEL = "claude-sonnet-4-20250514";
 
 export interface GenerateDraftParams {
   readonly contactId: string;
@@ -60,6 +63,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     orderBy: { occurredAt: "desc" },
     take: 5,
     select: {
+      id: true,
       type: true,
       direction: true,
       subject: true,
@@ -73,7 +77,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     where: { contactId: params.contactId, userId: params.userId },
     orderBy: { createdAt: "desc" },
     take: 2,
-    select: { content: true, mood: true, createdAt: true },
+    select: { id: true, content: true, mood: true, createdAt: true },
   });
 
   // Get changelog entries (life updates)
@@ -81,8 +85,15 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     where: { contactId: params.contactId, status: { in: ["PENDING", "SEEN"] } },
     orderBy: { detectedAt: "desc" },
     take: 2,
-    select: { type: true, field: true, oldValue: true, newValue: true },
+    select: { id: true, type: true, field: true, oldValue: true, newValue: true },
   });
+
+  const inputRefs = [
+    `contact:${params.contactId}`,
+    ...interactions.map((i) => `interaction:${i.id}`),
+    ...journalEntries.map((j) => `journal:${j.id}`),
+    ...lifeUpdates.map((u) => `changelog:${u.id}`),
+  ];
 
   const circleNames = contact.circles.map((c) => c.circle.name);
   const firstName = contact.name.split(" ")[0];
@@ -113,9 +124,17 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
         interactionsSummary,
         journalSummary,
         lifeUpdatesSummary,
+        inputRefs,
       });
     } catch (err) {
       console.error("[draft-generator] AI generation failed, using templates:", err);
+      await logAIGeneration({
+        userId: params.userId,
+        feature: "draft",
+        model: DRAFT_MODEL,
+        inputRefs,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -137,8 +156,10 @@ async function generateWithAI(params: GenerateDraftParams & {
   interactionsSummary: string;
   journalSummary: string;
   lifeUpdatesSummary: string;
+  inputRefs: string[];
 }): Promise<DraftResult> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const startedAt = Date.now();
 
   const profile = getUserProfile();
   const systemPrompt = `You are drafting a message for ${profile.fullName}, ${profile.bio}. ${profile.fullName}'s style: ${profile.style}. Draft should sound like a real person texting a friend or emailing a colleague — not a CRM.
@@ -180,10 +201,22 @@ Return ONLY valid JSON with no markdown:
   }, null, 2);
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: DRAFT_MODEL,
     max_tokens: 800,
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
+  });
+
+  await logAIGeneration({
+    userId: params.userId,
+    feature: "draft",
+    model: DRAFT_MODEL,
+    inputRefs: params.inputRefs,
+    tokensIn: message.usage?.input_tokens ?? null,
+    tokensOut: message.usage?.output_tokens ?? null,
+    cacheHit:
+      (message.usage?.cache_read_input_tokens ?? 0) > 0 ? true : null,
+    latencyMs: Date.now() - startedAt,
   });
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";

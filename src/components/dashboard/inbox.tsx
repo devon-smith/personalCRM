@@ -23,6 +23,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
+import { EvidenceChevron } from "@/components/shared/evidence-chevron";
 
 // ─── Swipe gesture hook ─────────────────────────────────────
 
@@ -131,6 +132,9 @@ interface InboxItemData {
   priority?: "high" | "medium" | "low";
   priorityScore?: number;
   priorityReason?: string;
+  sourceSystem?: string | null;
+  sourceRecordIds?: string[];
+  triggerInteractionId?: string;
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -1250,22 +1254,32 @@ function InboxRow({
               </span>
             ) : item.priorityReason ? (
               <span
-                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full hidden sm:inline"
-                style={{
-                  backgroundColor: item.priority === "high"
-                    ? "rgba(239,68,68,0.08)"
-                    : item.priority === "medium"
-                      ? "rgba(245,158,11,0.08)"
-                      : "rgba(107,114,128,0.08)",
-                  color: item.priority === "high"
-                    ? "#DC2626"
-                    : item.priority === "medium"
-                      ? "#D97706"
-                      : "#6B7280",
-                  letterSpacing: "-0.01em",
-                }}
+                className="inline-flex items-center gap-1 hidden sm:inline-flex"
               >
-                {item.priorityReason}
+                <span
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                  style={{
+                    backgroundColor: item.priority === "high"
+                      ? "rgba(239,68,68,0.08)"
+                      : item.priority === "medium"
+                        ? "rgba(245,158,11,0.08)"
+                        : "rgba(107,114,128,0.08)",
+                    color: item.priority === "high"
+                      ? "#DC2626"
+                      : item.priority === "medium"
+                        ? "#D97706"
+                        : "#6B7280",
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  {item.priorityReason}
+                </span>
+                <EvidenceChevron
+                  reason={item.priorityReason}
+                  sourceSystem={item.sourceSystem ?? null}
+                  sourceRecordIds={item.sourceRecordIds ?? []}
+                  compact
+                />
               </span>
             ) : null}
           </div>

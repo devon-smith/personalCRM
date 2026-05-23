@@ -73,6 +73,24 @@ model SyncLog {
   @@index([accountId, createdAt(sort: Desc)])
 }
 
+model AIGenerationLog {
+  id        String   @id @default(uuid())
+  userId    String
+  feature   String   // "draft" | "classify" | "insight" | ...
+  model     String
+  inputRefs Json?    // string[] of source record IDs the prompt drew from
+  outputId  String?  // FK-ish reference to whatever record stored the result
+  tokensIn  Int?
+  tokensOut Int?
+  cacheHit  Boolean?
+  latencyMs Int?
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([feature, createdAt(sort: Desc)])
+}
+
 model Session {
   id           String   @id @default(uuid())
   sessionToken String   @unique
@@ -624,6 +642,11 @@ model InboxItem {
   // Cached priority (recomputed on create/update)
   priority        String?    // "high", "medium", "low"
   priorityScore   Int?       // 0-100
+
+  // Provenance — why this item is here, with source records the user can audit.
+  sourceSystem    String?    // "gmail" | "imessage" | "linkedin" | "whatsapp"
+  sourceRecordIds Json?      // string[] like ["interaction:abc", "email:xyz"]
+  surfacedReason  String?    // persisted score breakdown ("Inner circle · Sent today")
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
