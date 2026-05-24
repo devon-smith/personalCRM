@@ -19,6 +19,7 @@ import { run } from "graphile-worker";
 import embeddingRefresh from "./tasks/embedding-refresh.js";
 import watchRenew from "./tasks/watch-renew.js";
 import circleGoogleSync from "./tasks/circle-google-sync.js";
+import openAlexAffiliationDiff from "./tasks/openalex-affiliation-diff.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -34,6 +35,7 @@ const taskList = {
   "embedding-refresh": embeddingRefresh,
   "watch-renew": watchRenew,
   "circle-google-sync": circleGoogleSync,
+  "openalex-affiliation-diff": openAlexAffiliationDiff,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -47,6 +49,9 @@ const crontab = `
 17 3 */6 * * watch-renew
 # Nightly at 04:11 UTC: push CRM Circles → Google contact groups.
 11 4 * * * circle-google-sync
+# Nightly at 04:33 UTC: detect OpenAlex affiliation changes for tracked
+# researcher contacts.
+33 4 * * * openalex-affiliation-diff
 `.trim();
 
 async function main() {

@@ -206,6 +206,9 @@ model Contact {
   openAlexAuthorId          String?
   orcid                     String?
   scholarlyProfileMatchedAt DateTime?
+  // Last observed OpenAlex institution; used by the nightly diff job
+  // (Milestone 3.5) to detect affiliation changes.
+  lastSeenScholarlyInstitution String?
 
   // People API resourceName for Google contact-group sync (3.2).
   // Populated lazily on the first contacts sync after the 3.2
