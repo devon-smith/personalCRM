@@ -330,6 +330,51 @@ describe("cleanContactName — over-strip guard + trailing-punctuation sweep", (
   });
 });
 
+describe("cleanContactName — ®-marked credentials and doctorates (third dry-run)", () => {
+  // Eight reversal-bucket false positives from the third dry-run. The
+  // shared pattern: credential blocks containing ® marks or psychology
+  // doctorates (Psy.D./PsyD) weren't recognized as credentials, so the
+  // Last/First reversal happily flipped them to the wrong side.
+
+  it("strips PMP®, CInS® leading-credential block", () => {
+    expect(
+      cleanContactName({ name: "PMP®, CInS® Golail Alshehri" }).name,
+    ).toBe("Golail Alshehri");
+  });
+
+  it("strips CFP®, ChSNC® leading-credential block", () => {
+    expect(
+      cleanContactName({ name: "CFP®, ChSNC® Scott Gill" }).name,
+    ).toBe("Scott Gill");
+  });
+
+  it("strips PMP®, PMI-ACP® leading-credential block", () => {
+    expect(
+      cleanContactName({ name: "PMP®, PMI-ACP® Tanya Boyd" }).name,
+    ).toBe("Tanya Boyd");
+  });
+
+  it("strips trailing Psy.D. credential", () => {
+    expect(cleanContactName({ name: "Ali Fleming, Psy.D." }).name).toBe("Ali Fleming");
+  });
+
+  it("strips trailing PsyD credential", () => {
+    expect(cleanContactName({ name: "Saul Jaeger, PsyD" }).name).toBe("Saul Jaeger");
+  });
+
+  it("never reverses when one half contains a ® mark", () => {
+    // Direct guard: even if all other heuristics failed, the ® check
+    // in isAcceptableNamePart blocks the reversal outright.
+    const r = cleanContactName({ name: "PMP®, Some Name" });
+    expect(r.fixes).not.toContain("last-first-reversal");
+  });
+
+  it("does not strip ® marks when they are mid-name (shouldn't happen but verify)", () => {
+    // Sanity: a contact with ® inside the actual name still keeps it.
+    expect(cleanContactName({ name: "John™ Smith" }).name).toBe("John™ Smith");
+  });
+});
+
 describe("inferFromEmail", () => {
   it("splits on dots", () => {
     expect(inferFromEmail("marcus.chen@x.com")).toBe("Marcus Chen");

@@ -59,6 +59,7 @@ export async function searchContacts(
     // additional emails.
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
       SELECT id, name, email, company, role, tier::text AS tier,
+             EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
              "avatarUrl", 1.0::float8 AS score, 'exact_email' AS reason
       FROM "Contact"
       WHERE "userId" = ${userId}
@@ -73,6 +74,7 @@ export async function searchContacts(
     // matches (typing "Marc" matches "Marcus Chen").
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
       SELECT id, name, email, company, role, tier::text AS tier,
+             EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
              "avatarUrl",
              GREATEST(
                similarity(name, ${q}),
@@ -92,6 +94,7 @@ export async function searchContacts(
     // win when both fire.
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
       SELECT id, name, email, company, role, tier::text AS tier,
+             EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
              "avatarUrl",
              (GREATEST(
                similarity(company, ${q}),
@@ -119,10 +122,31 @@ export async function searchContacts(
     }
   }
 
+  // Sort: score DESC, then tier (INNER_CIRCLE first), then last interaction
+  // DESC, then name ASC. Deterministic for ties — query="marc" with 12+
+  // tied Marcs should always cut the same one if it exceeds the limit,
+  // and Inner Circle / recently-active contacts should win.
   return [...byId.values()]
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const tierDelta = tierRank(b.tier) - tierRank(a.tier);
+      if (tierDelta !== 0) return tierDelta;
+      const aTime = a.lastInteractionTs ?? 0;
+      const bTime = b.lastInteractionTs ?? 0;
+      if (bTime !== aTime) return bTime - aTime;
+      return a.name.localeCompare(b.name);
+    })
     .slice(0, limit)
     .map(toHit);
+}
+
+function tierRank(tier: string): number {
+  switch (tier) {
+    case "INNER_CIRCLE": return 3;
+    case "PROFESSIONAL": return 2;
+    case "ACQUAINTANCE": return 1;
+    default: return 0;
+  }
 }
 
 interface RawHit {
@@ -135,6 +159,8 @@ interface RawHit {
   avatarUrl: string | null;
   score: number;
   reason: string;
+  /** Epoch ms; used only for deterministic tie-breaking. */
+  lastInteractionTs?: number | null;
 }
 
 /**
@@ -159,6 +185,7 @@ async function semanticSearch(
   // ranks below an exact_email hit (always 1.0).
   return prisma.$queryRaw<RawHit[]>(Prisma.sql`
     SELECT id, name, email, company, role, tier::text AS tier,
+             EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
            "avatarUrl",
            ((1 - ("embedding" <=> ${literal}::vector)) * ${SEMANTIC_WEIGHT})::float8 AS score,
            'semantic' AS reason

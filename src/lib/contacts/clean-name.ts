@@ -65,6 +65,17 @@ const CREDENTIAL_WORDS = new Set<string>([
   // Generational
   "jr", "jr.", "sr", "sr.",
   "ii", "iii", "iv", "v",
+  // Doctorates beyond the academic set
+  "psyd", "psy.d", "psy.d.",
+  "dpsych", "d.psych", "d.psych.",
+  "dba", "d.b.a", "d.b.a.",
+  "dmin", "d.min", "d.min.",
+  "deng", "d.eng", "d.eng.", "engd", "eng.d", "eng.d.",
+  "dpt", "d.p.t", "d.p.t.",
+  "scd", "sc.d", "sc.d.", "dsc",
+  "thd", "th.d", "th.d.",
+  "dmd",
+  "jsd", "j.s.d.",
 ]);
 
 // Subset safe to strip on a whitespace-only boundary (no comma needed).
@@ -250,35 +261,51 @@ export function cleanContactName(input: {
 // ─── Credential helpers ─────────────────────────────────────────
 
 function isKnownCredential(token: string): boolean {
-  return CREDENTIAL_WORDS.has(token.toLowerCase().replace(/[.,]+$/, ""))
-    || CREDENTIAL_WORDS.has(token.toLowerCase());
+  // Strip ®/™/℠ marks before dictionary lookup so "PMP®" matches "pmp".
+  const stripped = token.toLowerCase().replace(/[®™℠]/g, "");
+  return CREDENTIAL_WORDS.has(stripped.replace(/[.,]+$/, ""))
+    || CREDENTIAL_WORDS.has(stripped);
 }
 
 function isAcademicCredential(token: string): boolean {
-  return ACADEMIC_ONLY.has(token.toLowerCase().replace(/[.,]+$/, ""))
-    || ACADEMIC_ONLY.has(token.toLowerCase());
+  const stripped = token.toLowerCase().replace(/[®™℠]/g, "");
+  return ACADEMIC_ONLY.has(stripped.replace(/[.,]+$/, ""))
+    || ACADEMIC_ONLY.has(stripped);
 }
 
-/** Short all-caps acronym like "MCR", "CFA", "PMP". */
+/** Short all-caps acronym like "MCR", "CFA", "PMP" (optional ® / ™). */
 function isAllCapsAcronym(token: string): boolean {
-  return /^[A-Z]{2,7}\.?$/.test(token);
-}
-
-/** Dot-style credential like "Ph.D.", "M.Sc.", "Ed.D.", "M.A.". */
-function isDotCredential(token: string): boolean {
-  return /^([A-Z]\.){1,3}[A-Z]?\.?$/.test(token);
+  return /^[A-Z]{2,7}[®™℠]?\.?$/.test(token);
 }
 
 /**
- * Default credential check used by comma-bounded strippers. Conservative:
- * only known dictionary words and dot-credentials (Ph.D., M.Sc.). Does
- * NOT include arbitrary short all-caps acronyms — that would treat
- * "MULCAHY,SIMON" → strip SIMON, mangling the name. The aggressive
- * variant in stripLeadingCredsBeforeSpace adds the all-caps fallback
- * only when stateful context guarantees we're in credential-stuff land.
+ * Dot-style credential. Two patterns:
+ *  - Single-letter sequences: M., M.D., M.B.A., J.D.
+ *  - Multi-letter prefix + dot: Ph.D., Ed.D., Psy.D., M.Sc.
+ *  - Trailing ®/™ tolerated.
+ */
+function isDotCredential(token: string): boolean {
+  const stripped = token.replace(/[®™℠]/g, "");
+  if (/^([A-Z]\.){1,3}[A-Z]?\.?$/.test(stripped)) return true;
+  if (/^[A-Z][a-z]{1,3}\.[A-Z][a-z]{0,3}\.?$/.test(stripped)) return true;
+  return false;
+}
+
+/** ®/™/℠ marks are nearly never in real names. Strong credential signal. */
+function isMarkedCredential(token: string): boolean {
+  return /[®™℠]/.test(token);
+}
+
+/**
+ * Default credential check used by comma-bounded strippers. Includes
+ * marked tokens (anything with ®/™/℠) since those are unambiguously
+ * trademarks/credentials. Does NOT include arbitrary short all-caps
+ * acronyms — that would treat "MULCAHY,SIMON" → strip SIMON, mangling
+ * the name. The aggressive variant adds the all-caps fallback only
+ * when stateful context guarantees we're in credential-stuff land.
  */
 function isCredentialTokenLike(token: string): boolean {
-  return isKnownCredential(token) || isDotCredential(token);
+  return isKnownCredential(token) || isDotCredential(token) || isMarkedCredential(token);
 }
 
 function isCredentialTokenLikeAggressive(token: string): boolean {
@@ -449,7 +476,7 @@ function shouldAttemptReversal(s: string): boolean {
 function isAcceptableNamePart(s: string): boolean {
   if (!s) return false;
   if (s.length > 60) return false;
-  if (/[@\d()]/.test(s)) return false;
+  if (/[@\d()®™℠]/.test(s)) return false; // ® / ™ are credentials, never names
   if (!/[A-Za-zÀ-ɏ]/.test(s)) return false;
 
   const words = s.split(/\s+/);
@@ -459,6 +486,7 @@ function isAcceptableNamePart(s: string): boolean {
     if (isKnownCredential(w)) return false;
     if (isAllCapsAcronym(w)) return false;
     if (isDotCredential(w)) return false;
+    if (isMarkedCredential(w)) return false;
   }
   return true;
 }
