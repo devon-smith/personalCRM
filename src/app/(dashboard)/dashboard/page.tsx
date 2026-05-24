@@ -28,6 +28,7 @@ import { DraftQueue } from "@/components/dashboard/draft-queue";
 import { Inbox, ActionItemsCard } from "@/components/dashboard/inbox";
 import { SyncAlerts } from "@/components/dashboard/sync-alerts";
 import { MomentToConnect } from "@/components/dashboard/moment-to-connect";
+import { TravelCard } from "@/components/dashboard/travel-card";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -238,6 +239,10 @@ export default function DashboardPage() {
       {/* A single, gentle "reach out today" surface — hides itself on
           packed days or when no qualifying contact exists. */}
       <MomentToConnect />
+
+      {/* "While you're in [city]" — surfaces only when a future trip is
+          detected in the calendar AND there are matching contacts. */}
+      <TravelCard />
 
       {/* Unified Inbox + Activity */}
       <Inbox />
