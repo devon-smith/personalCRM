@@ -238,6 +238,52 @@ describe("cleanContactName — real-world regressions from dry-run", () => {
   });
 });
 
+describe("cleanContactName — bug classes from second dry-run", () => {
+  // A. Common surnames colliding with degree abbreviations.
+  it("Jeff Ma is not eaten by the MA degree abbreviation", () => {
+    expect(cleanContactName({ name: "Jeff Ma" }).name).toBe("Jeff Ma");
+    expect(cleanContactName({ name: "David Ma" }).name).toBe("David Ma");
+    expect(cleanContactName({ name: "Emily Ma" }).name).toBe("Emily Ma");
+  });
+
+  it("MA still strips with a comma boundary", () => {
+    expect(cleanContactName({ name: "Sarah Chen, MA" }).name).toBe("Sarah Chen");
+  });
+
+  // B. Multiple trailing credentials separated by commas — needs looping.
+  it("David Yu, PhD, CFA — strips both credentials", () => {
+    expect(cleanContactName({ name: "David Yu, PhD, CFA" }).name).toBe("David Yu");
+  });
+
+  it("Sarah, MD, MBA, CFA — strips entire credential stack", () => {
+    expect(cleanContactName({ name: "Sarah Chen, MD, MBA, CFA" }).name).toBe("Sarah Chen");
+  });
+
+  // C. Leading credential stack with off-dictionary token after.
+  it("MD, MBE Wendy Sue Swanson — strips both MD and MBE", () => {
+    expect(
+      cleanContactName({ name: "MD, MBE Wendy Sue Swanson" }).name,
+    ).toBe("Wendy Sue Swanson");
+  });
+
+  it("PhD, CISSP Marcus Chen — strips both leading credentials", () => {
+    expect(cleanContactName({ name: "PhD, CISSP Marcus Chen" }).name).toBe("Marcus Chen");
+  });
+
+  // D. All-caps short tokens after a comma — context-sensitive.
+  it("MULCAHY,SIMON (CSV-style LAST,FIRST) is left unchanged", () => {
+    // SIMON is a first name, not a credential. The head being all-caps
+    // signals this is a CSV-export format and should not have the tail
+    // treated as a credential.
+    expect(cleanContactName({ name: "MULCAHY,SIMON" }).name).toBe("MULCAHY,SIMON");
+  });
+
+  it("Sarah Chen, CISSP — strips CISSP despite not being in the dictionary", () => {
+    // Head is title-case → tail can be a short all-caps credential.
+    expect(cleanContactName({ name: "Sarah Chen, CISSP" }).name).toBe("Sarah Chen");
+  });
+});
+
 describe("inferFromEmail", () => {
   it("splits on dots", () => {
     expect(inferFromEmail("marcus.chen@x.com")).toBe("Marcus Chen");

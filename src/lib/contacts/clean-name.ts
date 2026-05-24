@@ -67,15 +67,15 @@ const CREDENTIAL_WORDS = new Set<string>([
   "ii", "iii", "iv", "v",
 ]);
 
-// Subset safe to strip on a whitespace-only boundary (no comma needed):
-// degrees that are unambiguously credentials. Generational (Jr/Sr/IV) and
-// short professional acronyms are NOT here — they need comma confirmation.
+// Subset safe to strip on a whitespace-only boundary (no comma needed).
+// CRITICAL: these must be unambiguous credentials with no realistic chance
+// of being a real name. Two-letter degree abbreviations (MA, MS, BA, BS)
+// are NOT here — they collide with common surnames (Ma, Wu, Su, Lu) and
+// would mangle "Jeff Ma" into "Jeff". With a comma boundary those forms
+// still strip via CREDENTIAL_WORDS; without one, leave them alone.
 const ACADEMIC_ONLY = new Set<string>([
   "phd", "ph.d", "ph.d.",
-  "md", "m.d", "m.d.",
   "mba", "m.b.a", "m.b.a.",
-  "ma", "m.a", "m.a.",
-  "ms", "m.s", "m.s.",
   "msc", "m.sc", "m.sc.",
   "mph", "m.p.h", "m.p.h.",
   "mfa", "m.f.a", "m.f.a.",
@@ -84,13 +84,13 @@ const ACADEMIC_ONLY = new Set<string>([
   "edd", "ed.d", "ed.d.",
   "dds", "d.d.s", "d.d.s.",
   "dvm", "d.v.m", "d.v.m.",
-  "rn", "r.n", "r.n.",
-  "ba", "b.a", "b.a.",
-  "bs", "b.s", "b.s.",
   "bsc", "b.sc", "b.sc.",
   "cfa", "c.f.a", "c.f.a.",
   "cpa", "c.p.a", "c.p.a.",
   "esq", "esq.",
+  // MD intentionally retained — "MD" as a degree is far more common than
+  // "MD" as a name token. MA/MS/BA/BS/RN are not — common surname collisions.
+  "md", "m.d", "m.d.",
 ]);
 
 /**
@@ -130,17 +130,22 @@ export function cleanContactName(input: {
     }
   }
 
-  // Strip trailing credentials past a comma boundary. Accepts any token
-  // from CREDENTIAL_WORDS plus short all-caps and dot-style credentials.
-  const afterTrailingCommaCreds = stripTrailingCredsAfterComma(raw);
-  if (afterTrailingCommaCreds !== raw) {
-    fixes.push("credentials");
-    raw = afterTrailingCommaCreds;
+  // Strip trailing credentials past a comma boundary. Loops because
+  // "David Yu, PhD, CFA" needs two passes — first strips CFA, second
+  // strips PhD.
+  let credLoopPrev = "";
+  while (credLoopPrev !== raw) {
+    credLoopPrev = raw;
+    const afterTrailingCommaCreds = stripTrailingCredsAfterComma(raw);
+    if (afterTrailingCommaCreds !== raw) {
+      if (!fixes.includes("credentials")) fixes.push("credentials");
+      raw = afterTrailingCommaCreds;
+    }
   }
 
   // Strip trailing academic credentials on a whitespace boundary too —
   // restricted to the ACADEMIC_ONLY set so we don't eat names ending in
-  // "IV", "Jr.", or random acronyms.
+  // "IV", "Jr.", "Ma", or random acronyms.
   const afterTrailingSpaceCreds = stripTrailingAcademicAfterSpace(raw);
   if (afterTrailingSpaceCreds !== raw) {
     if (!fixes.includes("credentials")) fixes.push("credentials");
@@ -148,23 +153,31 @@ export function cleanContactName(input: {
   }
 
   // Strip leading credentials past a comma boundary: "PhD, Sarah Chen"
-  // → "Sarah Chen". Mirrors the trailing version.
+  // → "Sarah Chen". Same loop pattern as the trailing version.
   let leadingCommaStripFired = false;
-  const afterLeadingCommaCreds = stripLeadingCredsBeforeComma(raw);
-  if (afterLeadingCommaCreds !== raw) {
-    if (!fixes.includes("credentials")) fixes.push("credentials");
-    raw = afterLeadingCommaCreds;
-    leadingCommaStripFired = true;
+  let leadingLoopPrev = "";
+  while (leadingLoopPrev !== raw) {
+    leadingLoopPrev = raw;
+    const afterLeadingCommaCreds = stripLeadingCredsBeforeComma(raw);
+    if (afterLeadingCommaCreds !== raw) {
+      if (!fixes.includes("credentials")) fixes.push("credentials");
+      raw = afterLeadingCommaCreds;
+      leadingCommaStripFired = true;
+    }
   }
 
   // Strip more leading credentials on a whitespace boundary ONLY if we
   // just stripped a comma-bounded credential stack. The signal: this
   // name had credentials stuffed in the front via comma, so the next
-  // bare token (e.g., MCC) is probably also a credential rather than
-  // initials. Without that signal we leave leading tokens alone — "JD
-  // Schramm" or "MC Hammer" must not lose their first word.
+  // bare token (e.g., MCC, MBE) is probably also a credential rather
+  // than initials. Without that signal we leave leading tokens alone —
+  // "JD Schramm" or "MC Hammer" must not lose their first word.
+  //
+  // When the signal is present we also accept short all-caps acronyms,
+  // catching things like MBE / OBE / CISSP without needing every cert
+  // code in the dictionary.
   if (leadingCommaStripFired) {
-    const afterLeadingSpaceCreds = stripLeadingExplicitCredsBeforeSpace(raw);
+    const afterLeadingSpaceCreds = stripLeadingCredsBeforeSpace(raw, true);
     if (afterLeadingSpaceCreds !== raw) {
       if (!fixes.includes("credentials")) fixes.push("credentials");
       raw = afterLeadingSpaceCreds;
@@ -246,8 +259,20 @@ function isDotCredential(token: string): boolean {
   return /^([A-Z]\.){1,3}[A-Z]?\.?$/.test(token);
 }
 
+/**
+ * Default credential check used by comma-bounded strippers. Conservative:
+ * only known dictionary words and dot-credentials (Ph.D., M.Sc.). Does
+ * NOT include arbitrary short all-caps acronyms — that would treat
+ * "MULCAHY,SIMON" → strip SIMON, mangling the name. The aggressive
+ * variant in stripLeadingCredsBeforeSpace adds the all-caps fallback
+ * only when stateful context guarantees we're in credential-stuff land.
+ */
 function isCredentialTokenLike(token: string): boolean {
-  return isKnownCredential(token) || isAllCapsAcronym(token) || isDotCredential(token);
+  return isKnownCredential(token) || isDotCredential(token);
+}
+
+function isCredentialTokenLikeAggressive(token: string): boolean {
+  return isCredentialTokenLike(token) || isAllCapsAcronym(token);
 }
 
 // ─── Strippers ──────────────────────────────────────────────────
@@ -260,8 +285,23 @@ function stripTrailingCredsAfterComma(s: string): string {
   if (!tail) return s;
   const tokens = tail.split(/[\s,]+/).filter(Boolean);
   if (tokens.length === 0) return s;
+
+  // Conservative: dictionary credentials and dot-credentials always strip.
   if (tokens.every(isCredentialTokenLike)) return head;
+
+  // Aggressive fallback: also strip short all-caps tokens (CISSP, CCNA),
+  // but only when the head is title-case. The head shape distinguishes
+  // "Sarah Chen, CISSP" (Name, Credential — strip) from "MULCAHY,SIMON"
+  // (CSV-export LAST,FIRST — don't strip, SIMON is a name).
+  if (isMixedCaseHead(head) && tokens.every(isCredentialTokenLikeAggressive)) {
+    return head;
+  }
   return s;
+}
+
+function isMixedCaseHead(head: string): boolean {
+  // Has at least one lowercase letter → not an all-caps CSV-style export.
+  return /[a-z]/.test(head);
 }
 
 function stripTrailingAcademicAfterSpace(s: string): string {
@@ -292,14 +332,19 @@ function stripLeadingCredsBeforeComma(s: string): string {
   return s;
 }
 
-function stripLeadingExplicitCredsBeforeSpace(s: string): string {
-  // Strip only EXPLICIT credential words (not generic all-caps) so we
-  // don't mangle "MC Hammer" or "DJ Khaled".
+function stripLeadingCredsBeforeSpace(s: string, aggressive: boolean): string {
+  // Only called from the stateful path — after stripLeadingCredsBeforeComma
+  // has already fired. When aggressive=true we also strip short all-caps
+  // tokens (MBE, OBE, CISSP) that aren't in the dictionary but are
+  // almost certainly credentials given the established context.
   const tokens = s.split(/\s+/);
   let consumed = 0;
+  const matches = aggressive
+    ? isCredentialTokenLikeAggressive
+    : isKnownCredential;
   while (consumed < tokens.length - 1) {
     const t = tokens[consumed];
-    if (isKnownCredential(t)) {
+    if (matches(t)) {
       consumed++;
       continue;
     }
