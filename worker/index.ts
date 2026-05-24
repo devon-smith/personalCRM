@@ -22,6 +22,7 @@ import circleGoogleSync from "./tasks/circle-google-sync.js";
 import openAlexAffiliationDiff from "./tasks/openalex-affiliation-diff.js";
 import gmailSync from "./tasks/gmail-sync.js";
 import calendarSync from "./tasks/calendar-sync.js";
+import linkedinNotificationsScan from "./tasks/linkedin-notifications-scan.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -40,6 +41,7 @@ const taskList = {
   "openalex-affiliation-diff": openAlexAffiliationDiff,
   "gmail-sync": gmailSync,
   "calendar-sync": calendarSync,
+  "linkedin-notifications-scan": linkedinNotificationsScan,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -62,6 +64,9 @@ const crontab = `
 */3 * * * * gmail-sync
 # Every 30 minutes: Calendar sync.
 */30 * * * * calendar-sync
+# Nightly at 04:55 UTC: scan recent LinkedIn notification emails for
+# job-change / promotion signals → ContactChangelog rows.
+55 4 * * * linkedin-notifications-scan
 `.trim();
 
 async function main() {
