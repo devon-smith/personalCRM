@@ -11,6 +11,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "worker": "tsx worker/index.ts",
+    "worker:migrate": "graphile-worker --connection \"$DATABASE_URL\" --schema-only",
     "test": "vitest",
     "test:run": "vitest run"
   },
@@ -31,6 +33,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "geist": "^1.7.0",
+    "graphile-worker": "^0.16.6",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
