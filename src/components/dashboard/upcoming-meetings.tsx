@@ -121,6 +121,18 @@ export function UpcomingMeetings() {
                   <p className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
                     {event.title}
                   </p>
+                  <Link
+                    href={`/meetings/${event.id}/prep`}
+                    className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                    style={{
+                      backgroundColor: "var(--surface-sunken)",
+                      color: "var(--text-secondary)",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent-color)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; }}
+                  >
+                    Prep
+                  </Link>
                   {event.htmlLink && (
                     <a
                       href={event.htmlLink}

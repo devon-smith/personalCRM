@@ -134,7 +134,8 @@ describe("OpenAlex client — parsing + cache lifecycle", () => {
     await getAuthorWithRecentWorks("https://openalex.org/A333");
 
     // First call hits /authors/A333 (no URL prefix).
-    const firstCall = fetchMock.mock.calls[0][0] as string;
+    const calls = fetchMock.mock.calls as unknown as Array<[string]>;
+    const firstCall = String(calls[0]?.[0] ?? "");
     expect(firstCall).toContain("/authors/A333");
     expect(firstCall).not.toContain("https://openalex.org/A333");
   });
