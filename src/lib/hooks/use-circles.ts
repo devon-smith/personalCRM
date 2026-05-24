@@ -21,6 +21,10 @@ export interface CircleWithContacts {
   isDefault: boolean;
   contacts: CircleContact[];
   health: { good: number; mid: number; cold: number };
+  /** Google contact-group sync state (Milestone 3.2). */
+  googleSyncEnabled?: boolean;
+  googleSyncedAt?: string | null;
+  googleSyncError?: string | null;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {

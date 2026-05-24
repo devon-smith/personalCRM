@@ -12,6 +12,7 @@ import {
 } from "@dnd-kit/core";
 import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
 import { CircleDialog } from "@/components/circles/circle-dialog";
+import { GoogleSyncToggle } from "@/components/circles/google-sync-toggle";
 import { MiniBar } from "@/components/ui/mini-bar";
 import { CircleIcon } from "@/components/ui/circle-icon";
 import { WarmthAvatar } from "@/components/ui/warmth-avatar";
@@ -331,6 +332,20 @@ function CircleCard({
               <Settings2 className="h-3 w-3" />
               Edit
             </button>
+          </div>
+
+          {/* Google contact-group sync (Milestone 3.2). Inline so each
+              circle can be toggled independently. */}
+          <div
+            className="mx-4 mt-2 flex items-center gap-2 px-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GoogleSyncToggle
+              circleId={circle.id}
+              enabled={!!circle.googleSyncEnabled}
+              syncedAt={circle.googleSyncedAt ?? null}
+              error={circle.googleSyncError ?? null}
+            />
           </div>
 
           {/* Intelligence panel */}

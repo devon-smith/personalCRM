@@ -85,6 +85,9 @@ export async function GET() {
         isDefault: c.isDefault,
         contacts,
         health: { good, mid, cold },
+        googleSyncEnabled: c.googleSyncEnabled,
+        googleSyncedAt: c.googleSyncedAt?.toISOString() ?? null,
+        googleSyncError: c.googleSyncError,
       };
     });
 

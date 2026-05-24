@@ -78,7 +78,9 @@ export async function GET() {
     (a) => a.access_token && (!a.scope || a.scope.includes("gmail.readonly")),
   );
   const hasContactsScope = googleAccounts.some(
-    (a) => a.access_token && (!a.scope || a.scope.includes("contacts.readonly")),
+    (a) =>
+      a.access_token &&
+      (!a.scope || /\/auth\/contacts(\.readonly)?(\s|$)/.test(a.scope)),
   );
   const hasCalendarScope = googleAccounts.some(
     (a) => a.access_token && (!a.scope || a.scope.includes("calendar.readonly")),
@@ -127,7 +129,8 @@ export async function GET() {
         email,
         hasGmail: !a.scope || a.scope.includes("gmail.readonly"),
         hasCalendar: !a.scope || a.scope.includes("calendar.readonly"),
-        hasContacts: !a.scope || a.scope.includes("contacts.readonly"),
+        hasContacts:
+          !a.scope || /\/auth\/contacts(\.readonly)?(\s|$)/.test(a.scope),
         needsReconnect: a.needsReconnect,
         lastRefreshAt: a.lastRefreshAt?.toISOString() ?? null,
         lastRefreshError: a.lastRefreshError,
