@@ -100,7 +100,10 @@ export function CommandPalette({
 
   function openContact(contactId: string) {
     handleOpenChange(false);
-    router.push(`/people/${contactId}`);
+    // /people opens the detail panel via ?contact=<id> — there's no
+    // /people/[id] route. Using the query-param form keeps URL state
+    // and back-button behavior consistent with clicking from the list.
+    router.push(`/people?contact=${contactId}`);
   }
 
   // Show contact results above pages/actions when the user is typing.

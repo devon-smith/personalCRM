@@ -15,7 +15,12 @@ interface JobsResponse {
     lastError: string | null;
     createdAt: string;
   }>;
-  cron: Array<{ identifier: string; lastExecution: string | null }>;
+  cron: Array<{
+    identifier: string;
+    lastExecution: string | null;
+    /** Expected cadence in hours, or null if unknown. */
+    cadenceHours: number | null;
+  }>;
 }
 
 /**
@@ -27,7 +32,7 @@ interface JobsResponse {
  *   - Recent jobs feed: 20 most-recently-touched jobs with errors.
  */
 export default function AdminJobsPage() {
-  const { data, isLoading, error } = useQuery<JobsResponse>({
+  const { data, isLoading, error, dataUpdatedAt } = useQuery<JobsResponse>({
     queryKey: ["admin-jobs"],
     queryFn: async () => {
       const res = await fetch("/api/admin/jobs");
@@ -36,6 +41,9 @@ export default function AdminJobsPage() {
     },
     refetchInterval: 5000,
   });
+  // dataUpdatedAt is provided by react-query on each refetch; locks "now"
+  // to the moment the data was fetched so staleness math is pure.
+  const nowMs = dataUpdatedAt || 0;
 
   if (isLoading) {
     return (
@@ -68,9 +76,19 @@ export default function AdminJobsPage() {
         <h2 className="ds-heading-sm">Schedules</h2>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {data.cron.map((c) => {
-            const stale = c.lastExecution
-              ? Date.now() - new Date(c.lastExecution).getTime() > 6 * 60 * 60 * 1000
-              : true;
+            // Schedule-aware staleness. A task is stale only if it hasn't
+            // run in 2x its expected cadence. Tasks that have never run
+            // are not stale until the cadence window passes — a fresh
+            // worker shouldn't warn on the nightly tasks just because
+            // they haven't fired yet.
+            const cadenceHours = c.cadenceHours;
+            const sinceMs = c.lastExecution
+              ? nowMs - new Date(c.lastExecution).getTime()
+              : Infinity;
+            const stale =
+              cadenceHours != null &&
+              sinceMs > cadenceHours * 2 * 60 * 60 * 1000;
+
             return (
               <div
                 key={c.identifier}
@@ -93,9 +111,19 @@ export default function AdminJobsPage() {
                     />
                   )}
                   <span className="ds-body-sm font-medium">{c.identifier}</span>
+                  {cadenceHours != null && (
+                    <span
+                      className="ml-auto text-[10px]"
+                      style={{ color: "var(--text-tertiary)" }}
+                    >
+                      every {formatCadence(cadenceHours)}
+                    </span>
+                  )}
                 </div>
                 <p className="ds-caption mt-1">
-                  {c.lastExecution ? `Last run ${formatRelative(c.lastExecution)}` : "Never run"}
+                  {c.lastExecution
+                    ? `Last run ${formatRelative(c.lastExecution, nowMs)}`
+                    : "Never run"}
                 </p>
               </div>
             );
@@ -204,8 +232,15 @@ export default function AdminJobsPage() {
   );
 }
 
-function formatRelative(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
+function formatCadence(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  if (hours < 24) return `${hours}h`;
+  const days = hours / 24;
+  return days === 1 ? "day" : `${days}d`;
+}
+
+function formatRelative(iso: string, nowMs: number): string {
+  const ms = nowMs - new Date(iso).getTime();
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return `${sec}s ago`;
   const min = Math.floor(sec / 60);

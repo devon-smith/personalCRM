@@ -9,11 +9,29 @@ import { prisma } from "@/lib/prisma";
  *   - taskCounts: count of jobs per task name, broken out by state
  *     (pending / running / failed terminally)
  *   - recent: 20 most recently-touched jobs with their last error
- *   - cron: each registered crontab's last_execution timestamp
+ *   - cron: each registered crontab's last_execution timestamp + the
+ *     expected cadence in hours, so the UI can decide what counts as
+ *     "stale" per schedule rather than applying a 6h blanket rule
+ *     that mislabels nightly tasks as overdue on every fresh boot
  *
  * Single-user app, so any authenticated user can see this. Becomes
  * a per-tenant filter once multi-user lands.
  */
+
+/**
+ * Expected cadence per scheduled task, in hours. Used by the UI to
+ * decide whether "last run X ago" or "never run" means trouble. Keep
+ * in sync with the crontab in worker/index.ts; the worker doesn't
+ * expose this back to the DB so we mirror it here.
+ */
+const CADENCE_HOURS: Record<string, number> = {
+  "embedding-refresh": 5 / 60,         // every 5 min
+  "gmail-sync": 3 / 60,                // every 3 min
+  "calendar-sync": 30 / 60,            // every 30 min
+  "circle-google-sync": 24,            // daily
+  "openalex-affiliation-diff": 24,     // daily
+  "watch-renew": 24 * 6,               // every 6 days
+};
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -83,6 +101,7 @@ export async function GET() {
     cron: cron.map((c) => ({
       identifier: c.identifier,
       lastExecution: c.last_execution?.toISOString() ?? null,
+      cadenceHours: CADENCE_HOURS[c.identifier] ?? null,
     })),
   });
 }

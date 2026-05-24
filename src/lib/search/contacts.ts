@@ -17,9 +17,15 @@ export interface ContactSearchHit {
 }
 
 const DEFAULT_LIMIT = 12;
-const TRIGRAM_THRESHOLD = 0.3;
-const SEMANTIC_MIN_SIMILARITY = 0.55; // cosine similarity floor
-const SEMANTIC_WEIGHT = 0.85; // ranked below exact-email but above trigram
+// Trigram similarity floor. Lower for short queries (3-4 chars) since
+// a 1-letter typo on a 4-letter name only overlaps 1 of 5 trigrams
+// (~0.2). The default threshold catches longer, less ambiguous typos
+// without flooding short queries with false positives.
+const TRIGRAM_THRESHOLD_DEFAULT = 0.3;
+const TRIGRAM_THRESHOLD_SHORT = 0.2;
+const SHORT_QUERY_THRESHOLD_LEN = 5;
+const SEMANTIC_MIN_SIMILARITY = 0.55;
+const SEMANTIC_WEIGHT = 0.85;
 
 /**
  * Search contacts using a layered strategy:
@@ -43,7 +49,10 @@ export async function searchContacts(
 
   // Postgres similarity threshold. Set per-transaction via raw SQL since
   // there's no idiomatic Prisma equivalent.
-  const threshold = TRIGRAM_THRESHOLD;
+  const threshold =
+    q.length < SHORT_QUERY_THRESHOLD_LEN
+      ? TRIGRAM_THRESHOLD_SHORT
+      : TRIGRAM_THRESHOLD_DEFAULT;
 
   // Embed the query for semantic search. Wrapped so a Voyage failure
   // doesn't break trigram search — the lexical layer still works
@@ -55,17 +64,33 @@ export async function searchContacts(
 
   // Run all matchers in parallel.
   const [exactEmail, nameMatches, companyMatches, semanticMatches] = await Promise.all([
-    // 1. Exact email match — highest priority. Checks both primary and
-    // additional emails.
+    // 1. Email match. Exact match wins at score 1.0; substring contain
+    // match (the query appears anywhere in the email) gets 0.9 — covers
+    // typing "marc.beban" expecting to land on marc.beban@gmail.com when
+    // the user can't remember the exact domain. Requires 4+ chars to
+    // avoid a flood of substring hits on short queries. Checks both
+    // primary and additionalEmails.
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
       SELECT id, name, email, company, role, tier::text AS tier,
              EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
-             "avatarUrl", 1.0::float8 AS score, 'exact_email' AS reason
+             "avatarUrl",
+             CASE
+               WHEN LOWER(email) = LOWER(${q})
+                 OR LOWER(${q}) = ANY(SELECT LOWER(unnest("additionalEmails"))) THEN 1.0
+               ELSE 0.9
+             END::float8 AS score,
+             'exact_email' AS reason
       FROM "Contact"
       WHERE "userId" = ${userId}
+        AND LENGTH(${q}) >= 4
         AND (
           LOWER(email) = LOWER(${q})
+          OR LOWER(email) LIKE '%' || LOWER(${q}) || '%'
           OR LOWER(${q}) = ANY(SELECT LOWER(unnest("additionalEmails")))
+          OR EXISTS (
+            SELECT 1 FROM UNNEST("additionalEmails") AS ae
+            WHERE LOWER(ae) LIKE '%' || LOWER(${q}) || '%'
+          )
         )
       LIMIT ${limit}
     `),
