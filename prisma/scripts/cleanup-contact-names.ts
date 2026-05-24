@@ -65,6 +65,7 @@ async function main() {
     "last-first-reversal": 0,
     "email-as-name": 0,
     "inferred-from-email": 0,
+    credentials: 0,
   };
   const samples: Array<{ before: string | null; after: string | null; fixes: NameFix[] }> = [];
   const updates: Array<{ id: string; name: string }> = [];

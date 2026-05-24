@@ -2,6 +2,12 @@
  * Pure name-cleanup helpers shared by ingest paths and the one-off migration
  * script. No DB access — input is `{ name, email }`, output is the cleaned
  * name plus a list of which fixes were applied (for audit reporting).
+ *
+ * Design bias: when in doubt, leave the name alone. Better to skip a real
+ * fix than to mangle a real name. False-positive mutations are what got
+ * caught in dry-runs; this version expands the credential dictionary,
+ * requires explicit comma boundaries for ambiguous credentials, and bails
+ * Last/First reversal aggressively.
  */
 
 export type NameFix =
@@ -10,7 +16,8 @@ export type NameFix =
   | "leading-symbols"
   | "last-first-reversal"
   | "email-as-name"
-  | "inferred-from-email";
+  | "inferred-from-email"
+  | "credentials";
 
 export interface CleanedName {
   name: string | null;
@@ -24,27 +31,71 @@ const QUOTE_WRAPPER_RE = /^[\s"'‘’“”«»]+|[\s"'‘’“”«»]+$/g;
 // Intentionally narrow — we don't strip letters or numbers.
 const LEADING_SYMBOL_RE = /^[\s*\-–—>•·~|+#@/\\]+/;
 
-// Quick email-ish detector. Looser than RFC; we just want to spot when a name
-// field has been stuffed with an address.
 const LOOKS_LIKE_EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 const LAST_FIRST_RE = /^([^,]+?)\s*,\s*([^,]+?)$/;
 
-// Academic credentials — always safe to strip when bounded by a comma OR
-// at least one whitespace. The boundary requirement is critical: without
-// it "Paradise Hawaii" would match (...ii)$ and lose its tail.
-const ACADEMIC_SUFFIX_RE = /(?:,\s*|\s+)(phd|md|mba|cfa|cpa|esq|dds|dvm)\s*$/i;
+// All forms (with and without periods) we'll strip when comma-bounded.
+const CREDENTIAL_WORDS = new Set<string>([
+  // Academic degrees
+  "phd", "ph.d", "ph.d.",
+  "md", "m.d", "m.d.",
+  "mba", "m.b.a", "m.b.a.",
+  "ma", "m.a", "m.a.",
+  "ms", "m.s", "m.s.",
+  "msc", "m.sc", "m.sc.",
+  "mph", "m.p.h", "m.p.h.",
+  "mfa", "m.f.a", "m.f.a.",
+  "jd", "j.d", "j.d.",
+  "llm", "ll.m", "ll.m.",
+  "edd", "ed.d", "ed.d.",
+  "dds", "d.d.s", "d.d.s.",
+  "dvm", "d.v.m", "d.v.m.",
+  "rn", "r.n", "r.n.",
+  "ba", "b.a", "b.a.",
+  "bs", "b.s", "b.s.",
+  "bsc", "b.sc", "b.sc.",
+  // Professional certifications
+  "cfa", "c.f.a", "c.f.a.",
+  "cpa", "c.p.a", "c.p.a.",
+  "esq", "esq.",
+  "pmp", "mcc", "pcc", "cpcc", "acc",
+  "phr", "sphr", "shrm-cp", "shrm-scp",
+  "lcsw", "lpc", "lmft", "lmhc",
+  // Generational
+  "jr", "jr.", "sr", "sr.",
+  "ii", "iii", "iv", "v",
+]);
 
-// Generational suffixes (Jr/Sr/II/III/IV) — these are often part of the
-// person's actual name ("Joe Schmidt IV"), so strip them only when
-// explicitly comma-separated ("Joe Schmidt, IV"). Without the comma we
-// leave them alone.
-const GENERATIONAL_SUFFIX_RE = /,\s*(jr\.?|sr\.?|ii|iii|iv|v)\s*$/i;
+// Subset safe to strip on a whitespace-only boundary (no comma needed):
+// degrees that are unambiguously credentials. Generational (Jr/Sr/IV) and
+// short professional acronyms are NOT here — they need comma confirmation.
+const ACADEMIC_ONLY = new Set<string>([
+  "phd", "ph.d", "ph.d.",
+  "md", "m.d", "m.d.",
+  "mba", "m.b.a", "m.b.a.",
+  "ma", "m.a", "m.a.",
+  "ms", "m.s", "m.s.",
+  "msc", "m.sc", "m.sc.",
+  "mph", "m.p.h", "m.p.h.",
+  "mfa", "m.f.a", "m.f.a.",
+  "jd", "j.d", "j.d.",
+  "llm", "ll.m", "ll.m.",
+  "edd", "ed.d", "ed.d.",
+  "dds", "d.d.s", "d.d.s.",
+  "dvm", "d.v.m", "d.v.m.",
+  "rn", "r.n", "r.n.",
+  "ba", "b.a", "b.a.",
+  "bs", "b.s", "b.s.",
+  "bsc", "b.sc", "b.sc.",
+  "cfa", "c.f.a", "c.f.a.",
+  "cpa", "c.p.a", "c.p.a.",
+  "esq", "esq.",
+]);
 
 /**
- * Clean a contact name, optionally rescuing from the email local-part if the
- * name is empty or itself looks like an email. Returns `null` if no usable
- * name can be derived (caller can choose to skip or keep the contact).
+ * Clean a contact name. Returns `null` if no usable name can be derived
+ * (caller can choose to skip or keep the contact).
  */
 export function cleanContactName(input: {
   name: string | null | undefined;
@@ -53,7 +104,6 @@ export function cleanContactName(input: {
   const fixes: NameFix[] = [];
   let raw = (input.name ?? "").trim();
 
-  // If name is empty, try to infer from email local-part.
   if (!raw) {
     const fromEmail = inferFromEmail(input.email);
     if (fromEmail) {
@@ -63,8 +113,8 @@ export function cleanContactName(input: {
     return { name: null, fixes };
   }
 
-  // Outer cleanup loop: leading-symbol and quote strips can expose each
-  // other (`* "Chen, Marcus"` strips `* ` then `"`...`"`). Run until stable.
+  // Symbol + quote strip loop. `* "Chen, Marcus"` requires removing the
+  // leading `* ` before the quote-strip can see the wrapping `"`...`"`.
   let prev = "";
   while (prev !== raw) {
     prev = raw;
@@ -80,32 +130,55 @@ export function cleanContactName(input: {
     }
   }
 
-  // Strip academic suffixes (PhD, MBA, ...) — must be bounded by comma
-  // or whitespace, never inline (so we don't eat "Hawaii"'s tail).
-  const desuffixedAcademic = raw.replace(ACADEMIC_SUFFIX_RE, "").trim();
-  if (desuffixedAcademic !== raw) {
-    if (!fixes.includes("trim")) fixes.push("trim");
-    raw = desuffixedAcademic;
+  // Strip trailing credentials past a comma boundary. Accepts any token
+  // from CREDENTIAL_WORDS plus short all-caps and dot-style credentials.
+  const afterTrailingCommaCreds = stripTrailingCredsAfterComma(raw);
+  if (afterTrailingCommaCreds !== raw) {
+    fixes.push("credentials");
+    raw = afterTrailingCommaCreds;
   }
 
-  // Strip generational suffixes only when comma-separated. "Joe Schmidt IV"
-  // (no comma) keeps the IV — it's part of his name. "Joe Schmidt, Jr."
-  // (with comma) drops the suffix.
-  const desuffixedGen = raw.replace(GENERATIONAL_SUFFIX_RE, "").trim();
-  if (desuffixedGen !== raw) {
-    if (!fixes.includes("trim")) fixes.push("trim");
-    raw = desuffixedGen;
+  // Strip trailing academic credentials on a whitespace boundary too —
+  // restricted to the ACADEMIC_ONLY set so we don't eat names ending in
+  // "IV", "Jr.", or random acronyms.
+  const afterTrailingSpaceCreds = stripTrailingAcademicAfterSpace(raw);
+  if (afterTrailingSpaceCreds !== raw) {
+    if (!fixes.includes("credentials")) fixes.push("credentials");
+    raw = afterTrailingSpaceCreds;
   }
 
-  // Re-run quote strip after suffix removal in case the suffix carried a quote.
+  // Strip leading credentials past a comma boundary: "PhD, Sarah Chen"
+  // → "Sarah Chen". Mirrors the trailing version.
+  let leadingCommaStripFired = false;
+  const afterLeadingCommaCreds = stripLeadingCredsBeforeComma(raw);
+  if (afterLeadingCommaCreds !== raw) {
+    if (!fixes.includes("credentials")) fixes.push("credentials");
+    raw = afterLeadingCommaCreds;
+    leadingCommaStripFired = true;
+  }
+
+  // Strip more leading credentials on a whitespace boundary ONLY if we
+  // just stripped a comma-bounded credential stack. The signal: this
+  // name had credentials stuffed in the front via comma, so the next
+  // bare token (e.g., MCC) is probably also a credential rather than
+  // initials. Without that signal we leave leading tokens alone — "JD
+  // Schramm" or "MC Hammer" must not lose their first word.
+  if (leadingCommaStripFired) {
+    const afterLeadingSpaceCreds = stripLeadingExplicitCredsBeforeSpace(raw);
+    if (afterLeadingSpaceCreds !== raw) {
+      if (!fixes.includes("credentials")) fixes.push("credentials");
+      raw = afterLeadingSpaceCreds;
+    }
+  }
+
+  // Re-quote-strip in case credential removal exposed a stale wrap.
   const post = raw.replace(QUOTE_WRAPPER_RE, "");
   if (post !== raw) {
     if (!fixes.includes("quotes")) fixes.push("quotes");
     raw = post;
   }
 
-  // If the field is itself an email, prefer the explicit email field when
-  // provided (better data source). Otherwise rescue from the name-as-email.
+  // Email-as-name rescue.
   if (LOOKS_LIKE_EMAIL_RE.test(raw)) {
     let replacement: string | null = null;
     if (input.email && input.email !== raw) {
@@ -123,20 +196,17 @@ export function cleanContactName(input: {
     }
   }
 
-  // "Last, First" → "First Last". Only fires when there's exactly one comma,
-  // both halves look like name tokens, and the "first" half doesn't look
-  // like a credential acronym (MCR, CFA, PMP, etc).
-  const reversed = raw.match(LAST_FIRST_RE);
-  if (reversed) {
-    const last = reversed[1].trim();
-    const first = reversed[2].trim();
-    if (
-      isNameToken(first) &&
-      isNameToken(last) &&
-      !looksLikeAcronym(first)
-    ) {
-      fixes.push("last-first-reversal");
-      raw = `${first} ${last}`;
+  // "Last, First" → "First Last". Strict bail conditions: no parens,
+  // exactly one comma, both halves are short clean name candidates.
+  if (shouldAttemptReversal(raw)) {
+    const m = raw.match(LAST_FIRST_RE);
+    if (m) {
+      const last = m[1].trim();
+      const first = m[2].trim();
+      if (isAcceptableNamePart(first) && isAcceptableNamePart(last)) {
+        fixes.push("last-first-reversal");
+        raw = `${first} ${last}`;
+      }
     }
   }
 
@@ -147,52 +217,135 @@ export function cleanContactName(input: {
     raw = collapsed;
   }
 
-  // Final trim-fix bookkeeping: if the trimmed-from-original differs from
-  // input.name verbatim, flag it.
-  if (raw !== (input.name ?? "") && !fixes.includes("trim") && fixes.length > 0) {
-    // No-op — meaningful fix already flagged.
-  } else if (raw !== (input.name ?? "") && fixes.length === 0) {
+  if (raw !== (input.name ?? "") && fixes.length === 0) {
     fixes.push("trim");
   }
 
   return { name: raw || null, fixes };
 }
 
-function isNameToken(s: string): boolean {
-  // Reject anything containing @, digits, or absurd length.
+// ─── Credential helpers ─────────────────────────────────────────
+
+function isKnownCredential(token: string): boolean {
+  return CREDENTIAL_WORDS.has(token.toLowerCase().replace(/[.,]+$/, ""))
+    || CREDENTIAL_WORDS.has(token.toLowerCase());
+}
+
+function isAcademicCredential(token: string): boolean {
+  return ACADEMIC_ONLY.has(token.toLowerCase().replace(/[.,]+$/, ""))
+    || ACADEMIC_ONLY.has(token.toLowerCase());
+}
+
+/** Short all-caps acronym like "MCR", "CFA", "PMP". */
+function isAllCapsAcronym(token: string): boolean {
+  return /^[A-Z]{2,7}\.?$/.test(token);
+}
+
+/** Dot-style credential like "Ph.D.", "M.Sc.", "Ed.D.", "M.A.". */
+function isDotCredential(token: string): boolean {
+  return /^([A-Z]\.){1,3}[A-Z]?\.?$/.test(token);
+}
+
+function isCredentialTokenLike(token: string): boolean {
+  return isKnownCredential(token) || isAllCapsAcronym(token) || isDotCredential(token);
+}
+
+// ─── Strippers ──────────────────────────────────────────────────
+
+function stripTrailingCredsAfterComma(s: string): string {
+  const idx = s.lastIndexOf(",");
+  if (idx === -1) return s;
+  const head = s.slice(0, idx).trim();
+  const tail = s.slice(idx + 1).trim();
+  if (!tail) return s;
+  const tokens = tail.split(/[\s,]+/).filter(Boolean);
+  if (tokens.length === 0) return s;
+  if (tokens.every(isCredentialTokenLike)) return head;
+  return s;
+}
+
+function stripTrailingAcademicAfterSpace(s: string): string {
+  // Only fire when the trailing word(s) are recognized academic credentials.
+  const tokens = s.split(/\s+/);
+  let dropped = 0;
+  while (tokens.length - dropped > 1) {
+    const last = tokens[tokens.length - 1 - dropped];
+    if (isAcademicCredential(last)) {
+      dropped++;
+      continue;
+    }
+    break;
+  }
+  if (dropped === 0) return s;
+  return tokens.slice(0, tokens.length - dropped).join(" ");
+}
+
+function stripLeadingCredsBeforeComma(s: string): string {
+  const idx = s.indexOf(",");
+  if (idx === -1) return s;
+  const head = s.slice(0, idx).trim();
+  const tail = s.slice(idx + 1).trim();
+  if (!head || !tail) return s;
+  const tokens = head.split(/[\s,]+/).filter(Boolean);
+  if (tokens.length === 0) return s;
+  if (tokens.every(isCredentialTokenLike)) return tail;
+  return s;
+}
+
+function stripLeadingExplicitCredsBeforeSpace(s: string): string {
+  // Strip only EXPLICIT credential words (not generic all-caps) so we
+  // don't mangle "MC Hammer" or "DJ Khaled".
+  const tokens = s.split(/\s+/);
+  let consumed = 0;
+  while (consumed < tokens.length - 1) {
+    const t = tokens[consumed];
+    if (isKnownCredential(t)) {
+      consumed++;
+      continue;
+    }
+    break;
+  }
+  if (consumed === 0) return s;
+  return tokens.slice(consumed).join(" ");
+}
+
+// ─── Reversal gating ────────────────────────────────────────────
+
+function shouldAttemptReversal(s: string): boolean {
+  if (/[()]/.test(s)) return false; // "First (Company, Sub) Last" booby trap
+  const commaCount = (s.match(/,/g) ?? []).length;
+  if (commaCount !== 1) return false;
+  return true;
+}
+
+function isAcceptableNamePart(s: string): boolean {
   if (!s) return false;
   if (s.length > 60) return false;
-  if (/[@\d]/.test(s)) return false;
-  return /[A-Za-zÀ-ɏ]/.test(s);
+  if (/[@\d()]/.test(s)) return false;
+  if (!/[A-Za-zÀ-ɏ]/.test(s)) return false;
+
+  const words = s.split(/\s+/);
+  if (words.length > 3) return false; // too many words for one half of a name
+
+  for (const w of words) {
+    if (isKnownCredential(w)) return false;
+    if (isAllCapsAcronym(w)) return false;
+    if (isDotCredential(w)) return false;
+  }
+  return true;
 }
 
-/**
- * True when the token looks like a credential / acronym rather than a name:
- * 2–6 chars, all uppercase ASCII letters (optionally with a trailing dot).
- * Catches MCR, CFA, PMP, JD, MS, BA, etc. Used to block the Last/First
- * reversal so "Anya Ostry, MCR" stays as-is rather than becoming
- * "MCR Anya Ostry".
- */
-function looksLikeAcronym(s: string): boolean {
-  return /^[A-Z]{2,6}\.?$/.test(s);
-}
+// ─── Email inference (unchanged) ────────────────────────────────
 
-/**
- * Infer a display name from an email like "marcus.chen+work@stanford.edu".
- * Returns "Marcus Chen". Returns null when the local-part is non-name-like
- * (random hex, single character, all digits).
- */
 export function inferFromEmail(email?: string | null | undefined): string | null {
   if (!email) return null;
   const at = email.indexOf("@");
   if (at <= 0) return null;
   let local = email.slice(0, at);
 
-  // Drop "+tag" suffix Gmail/etc use for filtering.
   const plus = local.indexOf("+");
   if (plus > 0) local = local.slice(0, plus);
 
-  // Split on dot / underscore / hyphen.
   const parts = local
     .split(/[._\-]+/)
     .map((p) => p.trim())
@@ -200,7 +353,6 @@ export function inferFromEmail(email?: string | null | undefined): string | null
 
   if (parts.length === 0) return null;
 
-  // Reject all-numeric, single-letter, hex-looking locals.
   const hasLetter = parts.some((p) => /[A-Za-z]/.test(p));
   if (!hasLetter) return null;
   if (parts.length === 1 && parts[0].length < 2) return null;

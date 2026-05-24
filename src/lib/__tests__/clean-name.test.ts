@@ -76,10 +76,10 @@ describe("cleanContactName — Last, First reversal", () => {
   });
 
   it("does not flip when the second half is an all-caps credential acronym", () => {
-    // Regression: "Anya Ostry, MCR" was becoming "MCR Anya Ostry".
-    // MCR is a credential, not a first name.
+    // "Anya Ostry, MCR" must NOT become "MCR Anya Ostry". The credential
+    // trailing-strip removes MCR; what stays is just "Anya Ostry".
     const r = cleanContactName({ name: "Anya Ostry, MCR" });
-    expect(r.name).toBe("Anya Ostry, MCR");
+    expect(r.name).toBe("Anya Ostry");
     expect(r.fixes).not.toContain("last-first-reversal");
   });
 
@@ -172,6 +172,69 @@ describe("cleanContactName — combined fixes", () => {
   it("collapses internal whitespace", () => {
     const r = cleanContactName({ name: "Marcus    Chen" });
     expect(r.name).toBe("Marcus Chen");
+  });
+});
+
+describe("cleanContactName — real-world regressions from dry-run", () => {
+  // All ten of these were credential-reversal false positives in the
+  // production dry-run. They must either stay unchanged or be cleaned
+  // to a sensible name — NEVER reversed into "Credential Name" form.
+
+  it("JD Schramm, Ed.D. → strips Ed.D., never reverses", () => {
+    expect(cleanContactName({ name: "JD Schramm, Ed.D." }).name).toBe("JD Schramm");
+  });
+
+  it("PhD, MCC Yifat Sharabi-Levine → strips leading credentials", () => {
+    expect(
+      cleanContactName({ name: "PhD, MCC Yifat Sharabi-Levine" }).name,
+    ).toBe("Yifat Sharabi-Levine");
+  });
+
+  it("Michele Colucci, Esq. → strips Esq.", () => {
+    expect(cleanContactName({ name: "Michele Colucci, Esq." }).name).toBe("Michele Colucci");
+  });
+
+  it("Justin V. Graham, MD MS → strips both trailing credentials", () => {
+    expect(cleanContactName({ name: "Justin V. Graham, MD MS" }).name).toBe("Justin V. Graham");
+  });
+
+  it("Yaman Saleh, M.Sc. → strips dot-credential", () => {
+    expect(cleanContactName({ name: "Yaman Saleh, M.Sc." }).name).toBe("Yaman Saleh");
+  });
+
+  it("CPCC, PCC Dikla Carmel-Hurwitz → strips leading credentials", () => {
+    expect(
+      cleanContactName({ name: "CPCC, PCC Dikla Carmel-Hurwitz" }).name,
+    ).toBe("Dikla Carmel-Hurwitz");
+  });
+
+  it("SHRM-CP, PHR Andrea Chiang → strips leading credentials", () => {
+    expect(
+      cleanContactName({ name: "SHRM-CP, PHR Andrea Chiang" }).name,
+    ).toBe("Andrea Chiang");
+  });
+
+  it("Paulo A. Garcia, Ph.D. → strips Ph.D.", () => {
+    expect(cleanContactName({ name: "Paulo A. Garcia, Ph.D." }).name).toBe("Paulo A. Garcia");
+  });
+
+  it("Audrey Heinesen, Ed.D. → strips Ed.D.", () => {
+    expect(cleanContactName({ name: "Audrey Heinesen, Ed.D." }).name).toBe("Audrey Heinesen");
+  });
+
+  it("Sabrina (NBC Universal, KNTV) Hughes → keeps unchanged (parens)", () => {
+    expect(
+      cleanContactName({ name: "Sabrina (NBC Universal, KNTV) Hughes" }).name,
+    ).toBe("Sabrina (NBC Universal, KNTV) Hughes");
+  });
+
+  it("does not mangle legit names that start with an acronym", () => {
+    expect(cleanContactName({ name: "MC Hammer" }).name).toBe("MC Hammer");
+    expect(cleanContactName({ name: "DJ Khaled" }).name).toBe("DJ Khaled");
+  });
+
+  it("Joe Schmidt IV stays Joe Schmidt IV (no comma)", () => {
+    expect(cleanContactName({ name: "Joe Schmidt IV" }).name).toBe("Joe Schmidt IV");
   });
 });
 
