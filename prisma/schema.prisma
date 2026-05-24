@@ -618,10 +618,31 @@ model GmailSyncState {
   additionalUserEmails String[]  @default([]) // Other email addresses belonging to this user (for direction detection)
   unmatchedSenders     Json?     // Array of { email: string, count: number } — senders with no matching contact
   mutedThreads         String[]  @default([]) // Gmail threadIds that the user has muted (auto-dismiss future inbound)
+  /// When the active Gmail Pub/Sub watch expires (1.2). Renewed by the
+  /// worker watch-renew task; null when push sync isn't configured.
+  watchExpiration      DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Active Calendar push channels (1.3). One row per (account, calendar)
+/// pair so multi-calendar setups can each have their own watch.
+/// channelId + resourceId are required to stop a channel cleanly.
+model CalendarWatchChannel {
+  id          String   @id @default(uuid())
+  userId      String
+  accountId   String
+  calendarId  String
+  channelId   String
+  resourceId  String
+  expiration  DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([accountId, calendarId])
+  @@index([expiration])
 }
 
 // ─── WhatsApp Sync State ─────────────────────────────────────
