@@ -76,18 +76,17 @@ export default function AdminJobsPage() {
         <h2 className="ds-heading-sm">Schedules</h2>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {data.cron.map((c) => {
-            // Schedule-aware staleness. A task is stale only if it hasn't
-            // run in 2x its expected cadence. Tasks that have never run
-            // are not stale until the cadence window passes — a fresh
-            // worker shouldn't warn on the nightly tasks just because
-            // they haven't fired yet.
+            // Schedule-aware staleness. A task is stale only if it HAS
+            // run at least once AND that run is older than 2x its
+            // expected cadence. Tasks that have never run are
+            // informational — not yet stale — because the worker may
+            // just not have been up long enough to fire them.
             const cadenceHours = c.cadenceHours;
-            const sinceMs = c.lastExecution
-              ? nowMs - new Date(c.lastExecution).getTime()
-              : Infinity;
             const stale =
+              c.lastExecution !== null &&
               cadenceHours != null &&
-              sinceMs > cadenceHours * 2 * 60 * 60 * 1000;
+              nowMs - new Date(c.lastExecution).getTime() >
+                cadenceHours * 2 * 60 * 60 * 1000;
 
             return (
               <div

@@ -26,14 +26,28 @@ export async function PATCH(
     return NextResponse.json({ error: "enabled must be a boolean" }, { status: 400 });
   }
 
-  const updated = await prisma.circle.updateMany({
-    where: { id, userId: session.user.id },
-    data: { googleSyncEnabled: body.enabled, googleSyncError: null },
-  });
-  if (updated.count === 0) {
-    return NextResponse.json({ error: "Circle not found" }, { status: 404 });
+  try {
+    const updated = await prisma.circle.updateMany({
+      where: { id, userId: session.user.id },
+      data: { googleSyncEnabled: body.enabled, googleSyncError: null },
+    });
+    if (updated.count === 0) {
+      return NextResponse.json({ error: "Circle not found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    // Surface the real error so the user / browser can see what's
+    // wrong instead of the UI silently swallowing a 500. Common causes:
+    // - Prisma client not regenerated after migration (run `npx prisma
+    //   generate` if you see "Unknown arg googleSyncEnabled")
+    // - DB connection issue
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[PATCH /api/circles/[id]/google-sync]", err);
+    return NextResponse.json(
+      { error: `Couldn't toggle sync: ${message.slice(0, 200)}` },
+      { status: 500 },
+    );
   }
-  return NextResponse.json({ ok: true });
 }
 
 /**

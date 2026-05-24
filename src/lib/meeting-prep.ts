@@ -120,13 +120,29 @@ export async function buildMeetingPrep(
     },
   });
 
+  // Wrap each section in a per-attendee catch so one section throwing
+  // (Voyage outage, OpenAlex hiccup, Prisma weirdness) doesn't 500
+  // the entire endpoint — the user sees the rest of the dossier with
+  // the affected section showing an empty / null state.
   const attendees = await Promise.all(
     contacts.map(async (c) => {
       const [history, lastMeeting, scholarly, openWeb] = await Promise.all([
-        loadHistory(userId, c.id),
-        loadLastMeetingDelta(userId, c.id),
-        loadScholarly(c.id, c.name, c.openAlexAuthorId),
-        loadOpenWeb(userId, c.id, c.name, c.company),
+        loadHistory(userId, c.id).catch((err) => {
+          console.error(`[meeting-prep] loadHistory failed for ${c.name}:`, err);
+          return emptyHistory();
+        }),
+        loadLastMeetingDelta(userId, c.id).catch((err) => {
+          console.error(`[meeting-prep] loadLastMeetingDelta failed for ${c.name}:`, err);
+          return null;
+        }),
+        loadScholarly(c.id, c.name, c.openAlexAuthorId).catch((err) => {
+          console.error(`[meeting-prep] loadScholarly failed for ${c.name}:`, err);
+          return null;
+        }),
+        loadOpenWeb(userId, c.id, c.name, c.company).catch((err) => {
+          console.error(`[meeting-prep] loadOpenWeb failed for ${c.name}:`, err);
+          return null;
+        }),
       ]);
       return {
         contactId: c.id,
@@ -144,6 +160,16 @@ export async function buildMeetingPrep(
   );
 
   return { eventId, attendees };
+}
+
+function emptyHistory(): HistorySection {
+  return {
+    totalInteractions: 0,
+    lastInteractionAt: null,
+    recentInteractions: [],
+    recentJournal: [],
+    recentLifeUpdates: [],
+  };
 }
 
 async function loadHistory(userId: string, contactId: string): Promise<HistorySection> {

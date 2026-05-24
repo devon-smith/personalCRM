@@ -47,12 +47,19 @@ export async function searchContacts(
   const q = query.trim();
   if (!q) return [];
 
-  // Postgres similarity threshold. Set per-transaction via raw SQL since
-  // there's no idiomatic Prisma equivalent.
+  // Postgres similarity threshold.
   const threshold =
     q.length < SHORT_QUERY_THRESHOLD_LEN
       ? TRIGRAM_THRESHOLD_SHORT
       : TRIGRAM_THRESHOLD_DEFAULT;
+
+  // For email-shaped queries that DON'T exactly match a stored email,
+  // also run the name-trigram matcher against the email's local-part
+  // (with separators normalized to spaces). Typing
+  // "marc.beban@gmail.com" should still surface Marc Beban even if
+  // his stored email is different. nameProbe is null for non-email
+  // queries — they use the plain trigram path.
+  const nameProbe = q.includes("@") ? emailLocalToNameProbe(q) : null;
 
   // Embed the query for semantic search. Wrapped so a Voyage failure
   // doesn't break trigram search — the lexical layer still works
@@ -63,7 +70,7 @@ export async function searchContacts(
   });
 
   // Run all matchers in parallel.
-  const [exactEmail, nameMatches, companyMatches, semanticMatches] = await Promise.all([
+  const [exactEmail, nameMatches, companyMatches, emailNameFallback, semanticMatches] = await Promise.all([
     // 1. Email match. Exact match wins at score 1.0; substring contain
     // match (the query appears anywhere in the email) gets 0.9 — covers
     // typing "marc.beban" expecting to land on marc.beban@gmail.com when
@@ -96,7 +103,13 @@ export async function searchContacts(
     `),
 
     // 2. Trigram fuzzy name match. word_similarity gives partial-word
-    // matches (typing "Marc" matches "Marcus Chen").
+    // matches (typing "Marc" matches "Marcus Chen"). We deliberately
+    // DON'T use the `%` operator as an index-gate here — it relies on
+    // the session-level pg_trgm.similarity_threshold which we can't
+    // safely lower per-query without a transaction wrapper. The
+    // GREATEST condition does the right thing at the row level; the
+    // cost is a seq scan over Contact rows, which is fast at the
+    // single-user scale (~30k rows → ~30ms on default hardware).
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
       SELECT id, name, email, company, role, tier::text AS tier,
              EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
@@ -108,15 +121,14 @@ export async function searchContacts(
              'name' AS reason
       FROM "Contact"
       WHERE "userId" = ${userId}
-        AND (name % ${q} OR ${q} <% name)
         AND GREATEST(similarity(name, ${q}), word_similarity(${q}, name)) >= ${threshold}
       ORDER BY score DESC
       LIMIT ${limit}
     `),
 
-    // 3. Trigram fuzzy company match. Lower base score than name —
-    // matching the company is informative but the name match should
-    // win when both fire.
+    // 3. Trigram fuzzy company match. Same no-`%`-gate rationale as
+    // the name matcher. Lower base score (0.6x) so name match wins
+    // on ties.
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
       SELECT id, name, email, company, role, tier::text AS tier,
              EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
@@ -129,18 +141,42 @@ export async function searchContacts(
       FROM "Contact"
       WHERE "userId" = ${userId}
         AND company IS NOT NULL
-        AND (company % ${q} OR ${q} <% company)
         AND GREATEST(similarity(company, ${q}), word_similarity(${q}, company)) >= ${threshold}
       ORDER BY score DESC
       LIMIT ${limit}
     `),
+
+    // 4. Email-as-name fallback: when query contains @ and didn't
+    // hit any direct email match, try the trigram matcher with the
+    // email's local-part (e.g. "marc.beban@x.com" → search "marc beban"
+    // as a name). Drops by 0.7x so a real name match still wins.
+    nameProbe
+      ? prisma.$queryRaw<RawHit[]>(Prisma.sql`
+          SELECT id, name, email, company, role, tier::text AS tier,
+                 EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
+                 "avatarUrl",
+                 (GREATEST(
+                   similarity(name, ${nameProbe}),
+                   word_similarity(${nameProbe}, name)
+                 ) * 0.7)::float8 AS score,
+                 'name' AS reason
+          FROM "Contact"
+          WHERE "userId" = ${userId}
+            AND GREATEST(
+              similarity(name, ${nameProbe}),
+              word_similarity(${nameProbe}, name)
+            ) >= ${TRIGRAM_THRESHOLD_DEFAULT}
+          ORDER BY score DESC
+          LIMIT ${limit}
+        `)
+      : Promise.resolve([] as RawHit[]),
 
     semanticPromise,
   ]);
 
   // Merge + dedupe by id, keeping the highest-scoring reason per contact.
   const byId = new Map<string, RawHit>();
-  for (const row of [...exactEmail, ...nameMatches, ...companyMatches, ...semanticMatches]) {
+  for (const row of [...exactEmail, ...nameMatches, ...companyMatches, ...emailNameFallback, ...semanticMatches]) {
     const existing = byId.get(row.id);
     if (!existing || row.score > existing.score) {
       byId.set(row.id, row);
@@ -163,6 +199,31 @@ export async function searchContacts(
     })
     .slice(0, limit)
     .map(toHit);
+}
+
+/**
+ * Convert an email-shaped query to a name-probe: take the local-part
+ * (before @), drop +tags, normalize . _ - to spaces, trim. Returns
+ * null when the local part is short / opaque / numeric-only (where a
+ * name match would just produce noise).
+ *
+ *   "marc.beban@gmail.com"           → "marc beban"
+ *   "marc.beban+work@gmail.com"      → "marc beban"
+ *   "j.doe-smith@x.com"              → "j doe smith"
+ *   "abc123@example.com"             → null (no real signal)
+ */
+export function emailLocalToNameProbe(s: string): string | null {
+  const at = s.indexOf("@");
+  if (at <= 0) return null;
+  let local = s.slice(0, at);
+  const plus = local.indexOf("+");
+  if (plus > 0) local = local.slice(0, plus);
+  const normalized = local.replace(/[._\-]+/g, " ").trim();
+  if (normalized.length < 3) return null;
+  // Require at least one alphabetic word of 2+ chars; rejects "12345"
+  // and similar opaque locals.
+  if (!/[A-Za-zÀ-ɏ]{2,}/.test(normalized)) return null;
+  return normalized;
 }
 
 function tierRank(tier: string): number {

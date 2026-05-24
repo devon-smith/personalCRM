@@ -42,20 +42,34 @@ export async function GET(
     .map((a) => a.email)
     .filter((e): e is string => !!e);
 
-  const dossier = await buildMeetingPrep(
-    session.user.id,
-    eventId,
-    attendeeEmails,
-  );
+  try {
+    const dossier = await buildMeetingPrep(
+      session.user.id,
+      eventId,
+      attendeeEmails,
+    );
 
-  return NextResponse.json({
-    eventTitle: event.title,
-    eventStartTime: event.startTime,
-    eventEndTime: event.endTime,
-    eventHtmlLink: event.htmlLink,
-    unknownAttendeeEmails: attendeeEmails.filter(
-      (e) => !dossier.attendees.some((a) => a.email?.toLowerCase() === e.toLowerCase()),
-    ),
-    ...dossier,
-  });
+    return NextResponse.json({
+      eventTitle: event.title,
+      eventStartTime: event.startTime,
+      eventEndTime: event.endTime,
+      eventHtmlLink: event.htmlLink,
+      unknownAttendeeEmails: attendeeEmails.filter(
+        (e) => !dossier.attendees.some((a) => a.email?.toLowerCase() === e.toLowerCase()),
+      ),
+      ...dossier,
+    });
+  } catch (err) {
+    // Surface the real error so the UI can render something useful
+    // instead of an opaque "Prep failed (500)". buildMeetingPrep
+    // catches per-attendee errors internally; a thrown error here
+    // means something is broken at the top level (DB / OpenAlex
+    // outside the per-attendee try blocks / Voyage / etc.).
+    console.error("[GET /api/meetings/[eventId]/prep]", err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json(
+      { error: `Prep failed: ${message.slice(0, 300)}` },
+      { status: 500 },
+    );
+  }
 }
