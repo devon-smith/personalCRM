@@ -27,6 +27,7 @@ import { LifeUpdates } from "@/components/dashboard/life-updates";
 import { DraftQueue } from "@/components/dashboard/draft-queue";
 import { Inbox, ActionItemsCard } from "@/components/dashboard/inbox";
 import { SyncAlerts } from "@/components/dashboard/sync-alerts";
+import { MomentToConnect } from "@/components/dashboard/moment-to-connect";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -233,6 +234,10 @@ export default function DashboardPage() {
 
       {/* Sync alerts */}
       <SyncAlerts />
+
+      {/* A single, gentle "reach out today" surface — hides itself on
+          packed days or when no qualifying contact exists. */}
+      <MomentToConnect />
 
       {/* Unified Inbox + Activity */}
       <Inbox />
