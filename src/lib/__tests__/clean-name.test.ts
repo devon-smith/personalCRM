@@ -74,22 +74,48 @@ describe("cleanContactName — Last, First reversal", () => {
     const r = cleanContactName({ name: "Chen, 12345" });
     expect(r.fixes).not.toContain("last-first-reversal");
   });
-});
 
-describe("cleanContactName — academic suffix stripping", () => {
-  it("strips PhD from end of name", () => {
-    const r = cleanContactName({ name: "Sarah Chen, PhD" });
-    expect(r.name).toBe("Sarah Chen");
+  it("does not flip when the second half is an all-caps credential acronym", () => {
+    // Regression: "Anya Ostry, MCR" was becoming "MCR Anya Ostry".
+    // MCR is a credential, not a first name.
+    const r = cleanContactName({ name: "Anya Ostry, MCR" });
+    expect(r.name).toBe("Anya Ostry, MCR");
+    expect(r.fixes).not.toContain("last-first-reversal");
   });
 
-  it("strips Jr.", () => {
-    const r = cleanContactName({ name: "Bob Smith Jr." });
-    expect(r.name).toBe("Bob Smith");
+  it("still flips legitimate Last, First even when last contains punctuation", () => {
+    expect(cleanContactName({ name: "O'Connor, Sean" }).name).toBe("Sean O'Connor");
+  });
+});
+
+describe("cleanContactName — suffix stripping", () => {
+  it("strips PhD with comma boundary", () => {
+    expect(cleanContactName({ name: "Sarah Chen, PhD" }).name).toBe("Sarah Chen");
+  });
+
+  it("strips PhD with whitespace boundary (no comma)", () => {
+    expect(cleanContactName({ name: "Sarah Chen PhD" }).name).toBe("Sarah Chen");
   });
 
   it("strips MBA in mixed case", () => {
-    const r = cleanContactName({ name: "Alice Tan, mba" });
-    expect(r.name).toBe("Alice Tan");
+    expect(cleanContactName({ name: "Alice Tan, mba" }).name).toBe("Alice Tan");
+  });
+
+  it("preserves generational suffix without a comma (part of the name)", () => {
+    // Regression: "Joe Schmidt IV" should NOT lose the IV.
+    expect(cleanContactName({ name: "Joe Schmidt IV" }).name).toBe("Joe Schmidt IV");
+    expect(cleanContactName({ name: "Bob Smith Jr." }).name).toBe("Bob Smith Jr.");
+  });
+
+  it("strips generational suffix only with explicit comma", () => {
+    expect(cleanContactName({ name: "Bob Smith, Jr." }).name).toBe("Bob Smith");
+    expect(cleanContactName({ name: "Cleo Wu, III" }).name).toBe("Cleo Wu");
+  });
+
+  it("does not eat names that just happen to end in roman-numeral letters", () => {
+    // Regression: "Paradise Hawaii" used to become "Paradise Hawa".
+    expect(cleanContactName({ name: "Paradise Hawaii" }).name).toBe("Paradise Hawaii");
+    expect(cleanContactName({ name: "David II Patel" }).name).toBe("David II Patel");
   });
 });
 

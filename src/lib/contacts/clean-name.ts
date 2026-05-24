@@ -30,7 +30,16 @@ const LOOKS_LIKE_EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 const LAST_FIRST_RE = /^([^,]+?)\s*,\s*([^,]+?)$/;
 
-const ACADEMIC_SUFFIX_RE = /,?\s*(phd|md|mba|cfa|cpa|esq|dds|dvm|jr\.?|sr\.?|ii|iii|iv)\s*$/i;
+// Academic credentials — always safe to strip when bounded by a comma OR
+// at least one whitespace. The boundary requirement is critical: without
+// it "Paradise Hawaii" would match (...ii)$ and lose its tail.
+const ACADEMIC_SUFFIX_RE = /(?:,\s*|\s+)(phd|md|mba|cfa|cpa|esq|dds|dvm)\s*$/i;
+
+// Generational suffixes (Jr/Sr/II/III/IV) — these are often part of the
+// person's actual name ("Joe Schmidt IV"), so strip them only when
+// explicitly comma-separated ("Joe Schmidt, IV"). Without the comma we
+// leave them alone.
+const GENERATIONAL_SUFFIX_RE = /,\s*(jr\.?|sr\.?|ii|iii|iv|v)\s*$/i;
 
 /**
  * Clean a contact name, optionally rescuing from the email local-part if the
@@ -71,11 +80,21 @@ export function cleanContactName(input: {
     }
   }
 
-  // Strip academic suffixes (PhD, MBA, ...).
-  const desuffixed = raw.replace(ACADEMIC_SUFFIX_RE, "").trim();
-  if (desuffixed !== raw) {
+  // Strip academic suffixes (PhD, MBA, ...) — must be bounded by comma
+  // or whitespace, never inline (so we don't eat "Hawaii"'s tail).
+  const desuffixedAcademic = raw.replace(ACADEMIC_SUFFIX_RE, "").trim();
+  if (desuffixedAcademic !== raw) {
     if (!fixes.includes("trim")) fixes.push("trim");
-    raw = desuffixed;
+    raw = desuffixedAcademic;
+  }
+
+  // Strip generational suffixes only when comma-separated. "Joe Schmidt IV"
+  // (no comma) keeps the IV — it's part of his name. "Joe Schmidt, Jr."
+  // (with comma) drops the suffix.
+  const desuffixedGen = raw.replace(GENERATIONAL_SUFFIX_RE, "").trim();
+  if (desuffixedGen !== raw) {
+    if (!fixes.includes("trim")) fixes.push("trim");
+    raw = desuffixedGen;
   }
 
   // Re-run quote strip after suffix removal in case the suffix carried a quote.
@@ -104,13 +123,18 @@ export function cleanContactName(input: {
     }
   }
 
-  // "Last, First" → "First Last". Only fires when there's exactly one comma
-  // and both halves look like name tokens (no numbers, no @).
+  // "Last, First" → "First Last". Only fires when there's exactly one comma,
+  // both halves look like name tokens, and the "first" half doesn't look
+  // like a credential acronym (MCR, CFA, PMP, etc).
   const reversed = raw.match(LAST_FIRST_RE);
   if (reversed) {
     const last = reversed[1].trim();
     const first = reversed[2].trim();
-    if (isNameToken(first) && isNameToken(last)) {
+    if (
+      isNameToken(first) &&
+      isNameToken(last) &&
+      !looksLikeAcronym(first)
+    ) {
       fixes.push("last-first-reversal");
       raw = `${first} ${last}`;
     }
@@ -140,6 +164,17 @@ function isNameToken(s: string): boolean {
   if (s.length > 60) return false;
   if (/[@\d]/.test(s)) return false;
   return /[A-Za-zÀ-ɏ]/.test(s);
+}
+
+/**
+ * True when the token looks like a credential / acronym rather than a name:
+ * 2–6 chars, all uppercase ASCII letters (optionally with a trailing dot).
+ * Catches MCR, CFA, PMP, JD, MS, BA, etc. Used to block the Last/First
+ * reversal so "Anya Ostry, MCR" stays as-is rather than becoming
+ * "MCR Anya Ostry".
+ */
+function looksLikeAcronym(s: string): boolean {
+  return /^[A-Z]{2,6}\.?$/.test(s);
 }
 
 /**
