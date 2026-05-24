@@ -4,6 +4,19 @@ import { useQueryClient } from "@tanstack/react-query";
 const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes
 const MAX_CONSECUTIVE_FAILURES = 3;
 
+/**
+ * Browser-side sync is on by default. Once the Graphile Worker
+ * (worker/) has been running reliably for a few days you can flip
+ * NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true in .env.local and redeploy to
+ * make useAutoSync a no-op — the worker's gmail-sync / calendar-sync
+ * tasks cover the same ground without depending on a browser tab
+ * being open.
+ *
+ * Public env var because it has to be read client-side.
+ */
+const BROWSER_SYNC_DISABLED =
+  process.env.NEXT_PUBLIC_DISABLE_BROWSER_SYNC === "true";
+
 async function runClassify() {
   try {
     await fetch("/api/inbox-items/classify", { method: "POST" });
@@ -19,6 +32,9 @@ async function runClassify() {
  * - Google Contacts, Calendar: sync once on mount
  *
  * All syncs are idempotent and deduplicate. Backs off after consecutive failures.
+ *
+ * No-op when NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true — server-side worker
+ * handles everything in that mode.
  */
 export function useAutoSync() {
   const queryClient = useQueryClient();
@@ -104,6 +120,11 @@ export function useAutoSync() {
   }, [queryClient]);
 
   useEffect(() => {
+    // Bail entirely when the server-side worker is the source of truth.
+    // Avoids redundant requests + lets the user keep tabs open without
+    // a per-tab sync timer racing the worker.
+    if (BROWSER_SYNC_DISABLED) return;
+
     // Run Gmail sync after 3s, then every 2 minutes
     const initialTimer = setTimeout(runGmailSync, 3000);
     const gmailInterval = setInterval(runGmailSync, SYNC_INTERVAL);
