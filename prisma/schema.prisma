@@ -181,6 +181,12 @@ model Contact {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
+  // pgvector embedding for semantic search. Managed via raw SQL — Prisma
+  // doesn't natively support the vector type, so `Unsupported` keeps the
+  // column visible in the schema without breaking the query API.
+  embedding          Unsupported("vector(384)")?
+  embeddingUpdatedAt DateTime?
+
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   interactions       Interaction[]
   relationshipInsight RelationshipInsight?
