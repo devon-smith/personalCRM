@@ -87,6 +87,19 @@ model ContactsSyncCursor {
   @@index([userId])
 }
 
+model ExternalResearchCache {
+  id          String   @id @default(uuid())
+  source      String   // "openalex" | "crossref" | "semanticscholar" | "orcid"
+  kind        String   // "author_search" | "author" | "works" | "doi" | ...
+  externalKey String   // the search query, author id, DOI, etc.
+  data        Json
+  fetchedAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([source, kind, externalKey])
+  @@index([expiresAt])
+}
+
 model AIGenerationLog {
   id        String   @id @default(uuid())
   userId    String
@@ -187,6 +200,12 @@ model Contact {
   // in the schema without breaking the query API.
   embedding          Unsupported("vector(512)")?
   embeddingUpdatedAt DateTime?
+
+  // Scholarly profile linkage (Milestone 2.3 — Meeting prep dossier).
+  // Populated when the prep flow matches a contact to OpenAlex / ORCID.
+  openAlexAuthorId          String?
+  orcid                     String?
+  scholarlyProfileMatchedAt DateTime?
 
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   interactions       Interaction[]
