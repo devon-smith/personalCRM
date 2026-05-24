@@ -77,9 +77,12 @@ export function DraftComposer() {
   const [contextDetail, setContextDetail] = useState("");
 
   const [drafts, setDrafts] = useState<DraftResult | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showDetailed, setShowDetailed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [savingToGmail, setSavingToGmail] = useState(false);
+  const [gmailDeepLink, setGmailDeepLink] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -87,9 +90,12 @@ export function DraftComposer() {
   useEffect(() => {
     if (isOpen) {
       setDrafts(null);
+      setDraftId(null);
       setIsGenerating(false);
       setShowDetailed(false);
       setCopied(false);
+      setSavingToGmail(false);
+      setGmailDeepLink(null);
       setContextDetail("");
       setSearch("");
 
@@ -162,8 +168,10 @@ export function DraftComposer() {
         throw new Error(err.error ?? "Generation failed");
       }
 
-      const result: DraftResult = await res.json();
+      const result = (await res.json()) as DraftResult & { draftId?: string };
       setDrafts(result);
+      if (result.draftId) setDraftId(result.draftId);
+      setGmailDeepLink(null);
       setStep("drafts");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate draft");
@@ -171,6 +179,37 @@ export function DraftComposer() {
       setIsGenerating(false);
     }
   }, [effectiveContact, tone, context, contextDetail, threadSubject, threadSnippet]);
+
+  const saveToGmail = useCallback(async () => {
+    if (!draftId || !effectiveContact) return;
+    if (!effectiveContact.email) {
+      toast.error("No email on file for this contact");
+      return;
+    }
+
+    setSavingToGmail(true);
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/save-to-gmail`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipientEmail: effectiveContact.email,
+          isReply: context === "reply_email",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Save to Gmail failed");
+      }
+      const { deepLinkUrl } = (await res.json()) as { deepLinkUrl: string };
+      setGmailDeepLink(deepLinkUrl);
+      toast.success("Saved to Gmail");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save to Gmail");
+    } finally {
+      setSavingToGmail(false);
+    }
+  }, [draftId, effectiveContact, context]);
 
   const copyDraft = useCallback(async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -453,6 +492,41 @@ export function DraftComposer() {
 
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2">
+              {/* Primary action: push the draft into the user's real Gmail
+                  drafts folder with proper threading. Only shows when we
+                  have an email on file. */}
+              {effectiveContact.email && (
+                <Button
+                  size="sm"
+                  onClick={saveToGmail}
+                  disabled={savingToGmail || !draftId}
+                  style={{
+                    backgroundColor: "var(--accent-color)",
+                    color: "var(--text-inverse)",
+                  }}
+                >
+                  {savingToGmail ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : gmailDeepLink ? (
+                    <Check className="mr-1.5 h-3.5 w-3.5" />
+                  ) : (
+                    <Send className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {gmailDeepLink ? "Saved to Gmail" : "Save to Gmail"}
+                </Button>
+              )}
+              {gmailDeepLink && (
+                <a
+                  href={gmailDeepLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center text-[12px] font-medium"
+                  style={{ color: "var(--accent-color)" }}
+                >
+                  Open in Gmail →
+                </a>
+              )}
+
               <Button
                 variant="outline"
                 size="sm"
@@ -470,7 +544,7 @@ export function DraftComposer() {
                 style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
               >
                 <Mail className="mr-1.5 h-3.5 w-3.5" />
-                Email
+                Mailto
               </Button>
 
               <Button

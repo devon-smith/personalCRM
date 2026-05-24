@@ -536,11 +536,21 @@ model Draft {
   updatedAt   DateTime    @updatedAt
   sentAt      DateTime?
 
+  // Gmail integration — populated when "Save to Gmail" succeeds. Allows
+  // future regenerations to update the same Gmail draft instead of
+  // creating duplicates.
+  gmailDraftId       String?
+  gmailThreadId      String?
+  inReplyToMessageId String?
+  recipientEmail     String?
+  savedToGmailAt     DateTime?
+
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
   @@index([contactId])
+  @@index([gmailDraftId])
 }
 
 // ─── Gmail Sync State ────────────────────────────────────────
