@@ -53,12 +53,20 @@ export async function searchContacts(
       ? TRIGRAM_THRESHOLD_SHORT
       : TRIGRAM_THRESHOLD_DEFAULT;
 
+  // For short queries (≤6 chars), generate adjacent-swap transposition
+  // variants and let the matcher take the MAX similarity across all of
+  // them. This handles the "mrac" → "Marc" typo case that pure trigram
+  // similarity ranks poorly because "Mracoba" shares more raw trigrams
+  // than "Marc Beban" does. Variant search treats a single swap as a
+  // first-class match. For long queries this is just [q] — no expansion.
+  const nameVariants =
+    q.length <= 6 ? generateTranspositionVariants(q) : [q];
+
   // For email-shaped queries that DON'T exactly match a stored email,
   // also run the name-trigram matcher against the email's local-part
   // (with separators normalized to spaces). Typing
   // "marc.beban@gmail.com" should still surface Marc Beban even if
-  // his stored email is different. nameProbe is null for non-email
-  // queries — they use the plain trigram path.
+  // his stored email is different.
   const nameProbe = q.includes("@") ? emailLocalToNameProbe(q) : null;
 
   // Embed the query for semantic search. Wrapped so a Voyage failure
@@ -102,46 +110,54 @@ export async function searchContacts(
       LIMIT ${limit}
     `),
 
-    // 2. Trigram fuzzy name match. word_similarity gives partial-word
-    // matches (typing "Marc" matches "Marcus Chen"). We deliberately
-    // DON'T use the `%` operator as an index-gate here — it relies on
-    // the session-level pg_trgm.similarity_threshold which we can't
-    // safely lower per-query without a transaction wrapper. The
-    // GREATEST condition does the right thing at the row level; the
-    // cost is a seq scan over Contact rows, which is fast at the
-    // single-user scale (~30k rows → ~30ms on default hardware).
+    // 2. Trigram fuzzy name match. CROSS JOINs against the variant
+    // array so each row's score is the MAX similarity over all
+    // candidates — gives transpositions like "mrac"→"marc" a real
+    // shot at the top. No `%` index-gate (session threshold can't
+    // be set per-query); seq scan is acceptable at single-user scale.
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
-      SELECT id, name, email, company, role, tier::text AS tier,
-             EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
-             "avatarUrl",
-             GREATEST(
-               similarity(name, ${q}),
-               word_similarity(${q}, name)
-             )::float8 AS score,
+      SELECT c.id, c.name, c.email, c.company, c.role, c.tier::text AS tier,
+             EXTRACT(EPOCH FROM c."lastInteraction") * 1000 AS "lastInteractionTs",
+             c."avatarUrl",
+             MAX(GREATEST(
+               similarity(c.name, v),
+               word_similarity(v, c.name)
+             ))::float8 AS score,
              'name' AS reason
-      FROM "Contact"
-      WHERE "userId" = ${userId}
-        AND GREATEST(similarity(name, ${q}), word_similarity(${q}, name)) >= ${threshold}
+      FROM "Contact" c
+      CROSS JOIN UNNEST(${nameVariants}::text[]) AS v
+      WHERE c."userId" = ${userId}
+      GROUP BY c.id, c.name, c.email, c.company, c.role, c.tier,
+               c."avatarUrl", c."lastInteraction"
+      HAVING MAX(GREATEST(
+               similarity(c.name, v),
+               word_similarity(v, c.name)
+             )) >= ${threshold}
       ORDER BY score DESC
       LIMIT ${limit}
     `),
 
-    // 3. Trigram fuzzy company match. Same no-`%`-gate rationale as
-    // the name matcher. Lower base score (0.6x) so name match wins
-    // on ties.
+    // 3. Trigram fuzzy company match. Same variant-MAX pattern as
+    // name; scored 0.6x so name match wins on ties.
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
-      SELECT id, name, email, company, role, tier::text AS tier,
-             EXTRACT(EPOCH FROM "lastInteraction") * 1000 AS "lastInteractionTs",
-             "avatarUrl",
-             (GREATEST(
-               similarity(company, ${q}),
-               word_similarity(${q}, company)
-             ) * 0.6)::float8 AS score,
+      SELECT c.id, c.name, c.email, c.company, c.role, c.tier::text AS tier,
+             EXTRACT(EPOCH FROM c."lastInteraction") * 1000 AS "lastInteractionTs",
+             c."avatarUrl",
+             (MAX(GREATEST(
+               similarity(c.company, v),
+               word_similarity(v, c.company)
+             )) * 0.6)::float8 AS score,
              'company' AS reason
-      FROM "Contact"
-      WHERE "userId" = ${userId}
-        AND company IS NOT NULL
-        AND GREATEST(similarity(company, ${q}), word_similarity(${q}, company)) >= ${threshold}
+      FROM "Contact" c
+      CROSS JOIN UNNEST(${nameVariants}::text[]) AS v
+      WHERE c."userId" = ${userId}
+        AND c.company IS NOT NULL
+      GROUP BY c.id, c.name, c.email, c.company, c.role, c.tier,
+               c."avatarUrl", c."lastInteraction"
+      HAVING MAX(GREATEST(
+               similarity(c.company, v),
+               word_similarity(v, c.company)
+             )) >= ${threshold}
       ORDER BY score DESC
       LIMIT ${limit}
     `),
@@ -199,6 +215,28 @@ export async function searchContacts(
     })
     .slice(0, limit)
     .map(toHit);
+}
+
+/**
+ * Generate the query plus every adjacent-character swap. For "mrac"
+ * returns ["mrac", "rmac", "marc", "mrca"]. Used by the trigram name
+ * matcher to handle transposition typos that pure trigram similarity
+ * doesn't rank well — the swapped variant matches the target directly
+ * and floats to the top via MAX-over-variants.
+ *
+ * No-op for short (≤1 char) or long (>6 char) inputs; longer typos
+ * are typically not transpositions and the variant explosion isn't
+ * worth the cost.
+ */
+export function generateTranspositionVariants(q: string): string[] {
+  if (q.length <= 1) return [q];
+  const variants = new Set<string>([q]);
+  for (let i = 0; i < q.length - 1; i++) {
+    const arr = q.split("");
+    [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+    variants.add(arr.join(""));
+  }
+  return [...variants];
 }
 
 /**
