@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import { embedBatch, formatVectorLiteral } from "./embeddings";
 
 export interface ContactSearchHit {
   id: string;
@@ -11,12 +12,14 @@ export interface ContactSearchHit {
   avatarUrl: string | null;
   /** 0..1, higher is more relevant. Lets the UI render a confidence dot. */
   score: number;
-  /** Which signal contributed most: "exact_email" | "name" | "company" */
+  /** Which signal contributed most: "exact_email" | "name" | "company" | "semantic" */
   matchReason: string;
 }
 
 const DEFAULT_LIMIT = 12;
 const TRIGRAM_THRESHOLD = 0.3;
+const SEMANTIC_MIN_SIMILARITY = 0.55; // cosine similarity floor
+const SEMANTIC_WEIGHT = 0.85; // ranked below exact-email but above trigram
 
 /**
  * Search contacts using a layered strategy:
@@ -42,8 +45,16 @@ export async function searchContacts(
   // there's no idiomatic Prisma equivalent.
   const threshold = TRIGRAM_THRESHOLD;
 
-  // Run all three matchers in parallel.
-  const [exactEmail, nameMatches, companyMatches] = await Promise.all([
+  // Embed the query for semantic search. Wrapped so a Voyage failure
+  // doesn't break trigram search — the lexical layer still works
+  // standalone, and Voyage flakes can happen.
+  const semanticPromise = semanticSearch(userId, q, limit).catch((err) => {
+    console.error("[searchContacts] semantic layer failed:", err);
+    return [] as RawHit[];
+  });
+
+  // Run all matchers in parallel.
+  const [exactEmail, nameMatches, companyMatches, semanticMatches] = await Promise.all([
     // 1. Exact email match — highest priority. Checks both primary and
     // additional emails.
     prisma.$queryRaw<RawHit[]>(Prisma.sql`
@@ -95,11 +106,13 @@ export async function searchContacts(
       ORDER BY score DESC
       LIMIT ${limit}
     `),
+
+    semanticPromise,
   ]);
 
   // Merge + dedupe by id, keeping the highest-scoring reason per contact.
   const byId = new Map<string, RawHit>();
-  for (const row of [...exactEmail, ...nameMatches, ...companyMatches]) {
+  for (const row of [...exactEmail, ...nameMatches, ...companyMatches, ...semanticMatches]) {
     const existing = byId.get(row.id);
     if (!existing || row.score > existing.score) {
       byId.set(row.id, row);
@@ -122,6 +135,40 @@ interface RawHit {
   avatarUrl: string | null;
   score: number;
   reason: string;
+}
+
+/**
+ * Embed the query, then run a cosine-similarity scan over Contact.embedding.
+ * Skips silently if VOYAGE_API_KEY is unset or no embeddings exist yet —
+ * lets the trigram layer run alone during early adoption.
+ */
+async function semanticSearch(
+  userId: string,
+  query: string,
+  limit: number,
+): Promise<RawHit[]> {
+  if (!process.env.VOYAGE_API_KEY) return [];
+
+  const { embeddings } = await embedBatch([query], "query");
+  if (embeddings.length === 0) return [];
+
+  const literal = formatVectorLiteral(embeddings[0]);
+
+  // 1 - cosine_distance = cosine similarity in pgvector. Score is scaled
+  // by SEMANTIC_WEIGHT so that even a perfect (1.0) semantic match
+  // ranks below an exact_email hit (always 1.0).
+  return prisma.$queryRaw<RawHit[]>(Prisma.sql`
+    SELECT id, name, email, company, role, tier::text AS tier,
+           "avatarUrl",
+           ((1 - ("embedding" <=> ${literal}::vector)) * ${SEMANTIC_WEIGHT})::float8 AS score,
+           'semantic' AS reason
+    FROM "Contact"
+    WHERE "userId" = ${userId}
+      AND "embedding" IS NOT NULL
+      AND (1 - ("embedding" <=> ${literal}::vector)) >= ${SEMANTIC_MIN_SIMILARITY}
+    ORDER BY "embedding" <=> ${literal}::vector ASC
+    LIMIT ${limit}
+  `);
 }
 
 function toHit(row: RawHit): ContactSearchHit {
