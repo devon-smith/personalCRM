@@ -54,11 +54,27 @@ Suggested flow:
 
 Inbound + outbound message capture, group + 1:1, buffered every 5s
 and flushed to `POST /api/whatsapp/sync`. Heartbeat every 60s to
-`POST /api/whatsapp/heartbeat`.
+`POST /api/whatsapp/heartbeat`. One-shot history backfill on first
+connection per session (last 20 messages per chat).
 
-**Does not** do history backfill yet — the baileys sidecar still
-owns that during the parallel-run window. When we retire baileys,
-add a one-shot history pull on first connection.
+The history backfill is sentinel-gated via `.backfill-done` inside
+`SESSION_DIR` so it runs exactly once per session. Delete that file
+to re-trigger.
+
+## Cutover from baileys
+
+When ready to retire the baileys sidecar:
+
+1. Stop the open-wa sidecar.
+2. Delete `SESSION_DIR/.backfill-done` so history re-pulls fresh.
+3. Stop the baileys sidecar.
+4. Start the open-wa sidecar — it'll backfill history once on
+   connect, then settle into live-mode.
+5. Open WhatsApp → Settings → Linked devices, revoke the
+   baileys "Personal CRM" device entry.
+
+The CRM-side dedup at `/api/whatsapp/sync` (by `messageId`) means
+overlapping windows during the cutover don't double-write.
 
 ## Environment variables
 

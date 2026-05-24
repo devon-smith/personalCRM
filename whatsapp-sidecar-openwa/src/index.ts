@@ -6,6 +6,7 @@ import {
   shutdown as shutdownHandler,
 } from "./message-handler.js";
 import { sendHeartbeat } from "./crm-client.js";
+import { runHistoryBackfill } from "./history-backfill.js";
 
 // ─── Heartbeat ──────────────────────────────────────────────
 
@@ -98,10 +99,12 @@ async function start(): Promise<void> {
     }
   });
 
-  // History backfill: open-wa doesn't push history events the way baileys
-  // does. Skip it for the parallel-run window — the baileys sidecar still
-  // owns backfill. Once we retire baileys, we'll add a one-shot pull via
-  // client.getAllChatIds() + client.getAllMessagesInChat() for each chat.
+  // History backfill: run once per session. Idempotent across restarts
+  // via a sentinel file in SESSION_DIR. Fires in background so the
+  // sidecar starts processing live messages immediately.
+  runHistoryBackfill(client).catch((err) => {
+    console.error("[openwa] history backfill failed:", err);
+  });
 }
 
 // ─── Graceful shutdown ──────────────────────────────────────
