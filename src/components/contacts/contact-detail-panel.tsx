@@ -18,6 +18,7 @@ import { useDraftComposer } from "@/lib/draft-composer-context";
 import { Sparkline, SparklineBadge } from "@/components/ui/sparkline";
 import { InteractionTimeline } from "@/components/contacts/interaction-timeline";
 import { ConversationView } from "@/components/contacts/conversation-view";
+import { VoiceRecorder } from "@/components/notes/voice-recorder";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
@@ -762,6 +763,15 @@ export function ContactDetailPanel({
         {/* ═══ JOURNAL TAB ═══ */}
         <TabsContent value="journal" className="flex-1 overflow-y-auto px-6 pb-6">
           <div className="pt-2">
+            {/* Voice memo capture — transcribes to a journal entry on submit */}
+            <div className="mb-3">
+              <VoiceRecorder
+                contactId={contactId}
+                onTranscribed={() => {
+                  queryClient.invalidateQueries({ queryKey: ["journal", contactId] });
+                }}
+              />
+            </div>
             {/* Add entry */}
             <div className="rounded-xl border border-gray-200 p-3">
               <textarea

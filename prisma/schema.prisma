@@ -465,6 +465,12 @@ model JournalEntry {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
+  // Voice-memo support (Milestone 3.1). source="voice" when content
+  // came from a Whisper transcription; voiceDurationSec measures the
+  // original recording length for display.
+  source           String  @default("manual")
+  voiceDurationSec Int?
+
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId])
