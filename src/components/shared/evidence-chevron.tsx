@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Info, ChevronDown, ChevronRight } from "lucide-react";
 
 interface EvidenceChevronProps {
@@ -19,6 +19,11 @@ interface EvidenceChevronProps {
 /**
  * "Why is this here?" affordance. Collapsed by default — one click reveals
  * the source records and confidence so the user can audit any AI surface.
+ *
+ * Dismisses on outside click and on Escape. The wrapper is position:relative
+ * so the absolute-positioned popover anchors to the chevron itself rather
+ * than the nearest accidentally-relative ancestor (which used to cover the
+ * button and block the second click).
  */
 export function EvidenceChevron({
   reason,
@@ -28,13 +33,40 @@ export function EvidenceChevron({
   compact = false,
 }: EvidenceChevronProps) {
   const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(e: PointerEvent) {
+      if (!wrapperRef.current) return;
+      if (!wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+
+    // pointerdown fires before click so the next click on the trigger
+    // can still toggle without flicker.
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   if (!reason && sourceRecordIds.length === 0) return null;
 
   const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
-    <div className={compact ? "inline-flex" : "block"}>
+    <div
+      ref={wrapperRef}
+      className={compact ? "relative inline-flex" : "relative block"}
+    >
       <button
         type="button"
         onClick={(e) => {
@@ -56,15 +88,19 @@ export function EvidenceChevron({
 
       {open && (
         <div
+          // stopPropagation so clicks inside the popover don't dismiss it.
+          onClick={(e) => e.stopPropagation()}
           className={
-            (compact ? "absolute z-10 mt-1 " : "mt-1.5 ") +
+            (compact ? "absolute left-0 top-full z-10 mt-1 " : "mt-1.5 ") +
             "rounded-[10px] p-2.5 text-[11px] leading-snug"
           }
           style={{
-            backgroundColor: "var(--surface-sunken)",
+            backgroundColor: "var(--surface)",
             border: "1px solid var(--border)",
             color: "var(--text-secondary)",
             maxWidth: 320,
+            minWidth: 220,
+            boxShadow: "0 6px 24px rgba(0,0,0,0.08)",
           }}
         >
           {reason && (
