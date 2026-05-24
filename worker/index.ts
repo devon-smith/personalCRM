@@ -20,6 +20,8 @@ import embeddingRefresh from "./tasks/embedding-refresh.js";
 import watchRenew from "./tasks/watch-renew.js";
 import circleGoogleSync from "./tasks/circle-google-sync.js";
 import openAlexAffiliationDiff from "./tasks/openalex-affiliation-diff.js";
+import gmailSync from "./tasks/gmail-sync.js";
+import calendarSync from "./tasks/calendar-sync.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -36,6 +38,8 @@ const taskList = {
   "watch-renew": watchRenew,
   "circle-google-sync": circleGoogleSync,
   "openalex-affiliation-diff": openAlexAffiliationDiff,
+  "gmail-sync": gmailSync,
+  "calendar-sync": calendarSync,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -52,6 +56,12 @@ const crontab = `
 # Nightly at 04:33 UTC: detect OpenAlex affiliation changes for tracked
 # researcher contacts.
 33 4 * * * openalex-affiliation-diff
+# Every 3 minutes: incremental Gmail sync (server-side counterpart to
+# the browser useAutoSync poll; once useAutoSync is retired, this is
+# the only Gmail-sync trigger).
+*/3 * * * * gmail-sync
+# Every 30 minutes: Calendar sync.
+*/30 * * * * calendar-sync
 `.trim();
 
 async function main() {
