@@ -18,6 +18,7 @@ import "dotenv/config";
 import { run } from "graphile-worker";
 import embeddingRefresh from "./tasks/embedding-refresh.js";
 import watchRenew from "./tasks/watch-renew.js";
+import circleGoogleSync from "./tasks/circle-google-sync.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -32,6 +33,7 @@ if (!connectionString) {
 const taskList = {
   "embedding-refresh": embeddingRefresh,
   "watch-renew": watchRenew,
+  "circle-google-sync": circleGoogleSync,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -43,6 +45,8 @@ const crontab = `
 */5 * * * * embedding-refresh
 # Every 6 days at 03:17 UTC: renew Gmail/Calendar push channels.
 17 3 */6 * * watch-renew
+# Nightly at 04:11 UTC: push CRM Circles → Google contact groups.
+11 4 * * * circle-google-sync
 `.trim();
 
 async function main() {

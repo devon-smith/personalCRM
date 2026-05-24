@@ -207,6 +207,12 @@ model Contact {
   orcid                     String?
   scholarlyProfileMatchedAt DateTime?
 
+  // People API resourceName for Google contact-group sync (3.2).
+  // Populated lazily on the first contacts sync after the 3.2
+  // migration; group-membership modifications need this ID rather
+  // than emails.
+  peopleApiResourceName String?
+
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   interactions       Interaction[]
   relationshipInsight RelationshipInsight?
@@ -360,11 +366,22 @@ model Circle {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Google contact-group sync (Milestone 3.2). CRM is source of truth;
+  // googleGroupResourceName points at the linked group in the user's
+  // Google Contacts, and googleGroupAccountId identifies which linked
+  // Google account owns it (when the user has multiple).
+  googleGroupResourceName String?
+  googleGroupAccountId    String?
+  googleSyncEnabled       Boolean   @default(false)
+  googleSyncedAt          DateTime?
+  googleSyncError         String?
+
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   contacts ContactCircle[]
 
   @@unique([userId, name])
   @@index([userId])
+  @@index([googleGroupResourceName])
 }
 
 model ContactCircle {
