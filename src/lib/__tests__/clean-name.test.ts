@@ -284,6 +284,52 @@ describe("cleanContactName — bug classes from second dry-run", () => {
   });
 });
 
+describe("cleanContactName — over-strip guard + trailing-punctuation sweep", () => {
+  // Catastrophic over-strip case from third dry-run. The aggressive trailing-
+  // comma strip used to chew past the real name when both sides looked like
+  // credentials (FELLOW DR DD SWAIN all matched the all-caps acronym pattern).
+  it("catastrophic over-strip: cred-heavy input is left alone, not reduced to credentials", () => {
+    const r = cleanContactName({ name: "PhD, LLB, MBA, MCOM, FELLOW DR DD SWAIN" });
+    // We can't recover the real name from this input; the guard's job
+    // is just to ensure we don't make it WORSE by returning a credential.
+    expect(r.name).not.toBe("PhD");
+    expect(r.name).not.toBe("LLB");
+    expect(r.name).not.toBe("MBA");
+  });
+
+  it("trailing dash artifact is swept after credential removal", () => {
+    expect(cleanContactName({ name: "Cena Kamali - MSc, MA" }).name).toBe("Cena Kamali");
+    expect(cleanContactName({ name: "Marc H. Hartmann - MBA" }).name).toBe("Marc H. Hartmann");
+  });
+
+  it("trailing period after a multi-letter token is swept", () => {
+    expect(cleanContactName({ name: "Daniel Castro. MD, MBA, MSc" }).name).toBe("Daniel Castro");
+  });
+
+  it("trailing period after a single-letter initial is preserved", () => {
+    // "Pejman H." — H. is an initial, must not become "Pejman H"
+    expect(cleanContactName({ name: "Pejman H." }).name).toBe("Pejman H.");
+    expect(cleanContactName({ name: "John N." }).name).toBe("John N.");
+    expect(cleanContactName({ name: "Jeffrey M." }).name).toBe("Jeffrey M.");
+  });
+
+  it("preserves single-letter initial mid-name", () => {
+    // "John A. Smith" — both initial and last name should survive untouched
+    expect(cleanContactName({ name: "John A. Smith" }).name).toBe("John A. Smith");
+  });
+
+  it("does not touch hyphenated surnames", () => {
+    expect(cleanContactName({ name: "Renée Sharabi-Levine" }).name).toBe("Renée Sharabi-Levine");
+    expect(cleanContactName({ name: "Joseph O'Connor-Smith" }).name).toBe("Joseph O'Connor-Smith");
+  });
+
+  it("handles combined dash + comma + period artifacts in one pass", () => {
+    expect(
+      cleanContactName({ name: "Joseph Yacura - M.B.A." }).name,
+    ).toBe("Joseph Yacura");
+  });
+});
+
 describe("inferFromEmail", () => {
   it("splits on dots", () => {
     expect(inferFromEmail("marcus.chen@x.com")).toBe("Marcus Chen");

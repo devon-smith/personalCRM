@@ -191,6 +191,16 @@ export function cleanContactName(input: {
     raw = post;
   }
 
+  // Sweep up trailing punctuation that the credential strip left behind.
+  // "Cena Kamali - MSc, MA" → "Cena Kamali -" after creds → "Cena Kamali"
+  // "Daniel Castro. MD, MBA"  → "Daniel Castro." after creds → "Daniel Castro"
+  // "Pejman H."               → unchanged (single-letter initial preserved)
+  const swept = sweepTrailingPunctuation(raw);
+  if (swept !== raw) {
+    if (!fixes.includes("trim")) fixes.push("trim");
+    raw = swept;
+  }
+
   // Email-as-name rescue.
   if (LOOKS_LIKE_EMAIL_RE.test(raw)) {
     let replacement: string | null = null;
@@ -283,6 +293,16 @@ function stripTrailingCredsAfterComma(s: string): string {
   const head = s.slice(0, idx).trim();
   const tail = s.slice(idx + 1).trim();
   if (!tail) return s;
+
+  // Guard: if the head is itself entirely credentials, the input is
+  // probably "CRED1, CRED2, ... NAME" and stripping the tail would leave
+  // us with a credential as the name. Bail. This prevents the catastrophic
+  // case where "PhD, LLB, MBA, MCOM, FELLOW DR DD SWAIN" was stripped down
+  // to just "PhD" — every left-side token was a credential AND the tail
+  // (FELLOW DR DD SWAIN) looked like credentials thanks to the all-caps
+  // pattern, so the loop devoured the whole name.
+  if (isAllCredentialString(head)) return s;
+
   const tokens = tail.split(/[\s,]+/).filter(Boolean);
   if (tokens.length === 0) return s;
 
@@ -302,6 +322,69 @@ function stripTrailingCredsAfterComma(s: string): string {
 function isMixedCaseHead(head: string): boolean {
   // Has at least one lowercase letter → not an all-caps CSV-style export.
   return /[a-z]/.test(head);
+}
+
+/**
+ * True when the input is comma/space-separated tokens that all look like
+ * credentials. Used as an over-strip guard.
+ */
+function isAllCredentialString(s: string): boolean {
+  const tokens = s.split(/[\s,]+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  return tokens.every(isCredentialTokenLikeAggressive);
+}
+
+/**
+ * Strip trailing punctuation left behind after credential removal —
+ * dangling separators that used to live between the name and the
+ * credentials.
+ *
+ * Cases handled:
+ *  - "Cena Kamali - "      → "Cena Kamali"    (dash separator)
+ *  - "Daniel Castro."      → "Daniel Castro"  (period separator)
+ *  - "Marc H."             → "Marc H."        (single-letter initial preserved)
+ *  - "name,"               → "name"           (trailing comma)
+ *  - "name -, "            → "name"           (combination)
+ *
+ * The period rule is the subtle one: drop a trailing period only when
+ * the last word-token has 2+ letters before it. "Pejman H." has a
+ * single-letter token + period (initial), so the period stays.
+ */
+function sweepTrailingPunctuation(s: string): string {
+  let out = s;
+
+  // Iteratively strip trailing dashes, commas, and qualifying periods.
+  // Loop because "name -, " needs both the comma and the dash removed.
+  let prev = "";
+  while (prev !== out) {
+    prev = out;
+
+    // Trailing comma (with optional surrounding whitespace).
+    out = out.replace(/\s*,\s*$/, "").trimEnd();
+
+    // Trailing dash separator (must be preceded by whitespace to avoid
+    // touching hyphenated names like "Sharabi-Levine" or "O'Connor-Smith").
+    out = out.replace(/\s+[-–—]\s*$/, "").trimEnd();
+
+    // Trailing period — drop only when the last token is long enough to
+    // be a real word. 4+ letters before the period.
+    //   "Pejman H."        → keep (1-letter initial)
+    //   "Bob Smith Jr."    → keep (2-letter generational abbreviation)
+    //   "Cleo III."        → keep (3-letter generational)
+    //   "Daniel Castro."   → drop (6-letter full word, period is a stray
+    //                              separator left from "Castro. MD")
+    if (out.endsWith(".")) {
+      const m = out.match(/(\S+)$/);
+      if (m) {
+        const lastTok = m[1];
+        if (/^[A-Za-zÀ-ɏ]{4,}\.$/.test(lastTok)) {
+          out = out.slice(0, -1).trimEnd();
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 function stripTrailingAcademicAfterSpace(s: string): string {
