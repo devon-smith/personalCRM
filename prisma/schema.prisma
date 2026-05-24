@@ -503,6 +503,7 @@ enum ChangelogType {
   JOB_CHANGE
   ROLE_CHANGE
   COMPANY_CHANGE
+  NEWS_MENTION
 }
 
 enum ChangelogStatus {

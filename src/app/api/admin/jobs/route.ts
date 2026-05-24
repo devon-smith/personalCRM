@@ -31,6 +31,7 @@ const CADENCE_HOURS: Record<string, number> = {
   "circle-google-sync": 24,            // daily
   "openalex-affiliation-diff": 24,     // daily
   "linkedin-notifications-scan": 24,   // daily
+  "signal-detection": 24 * 7,          // weekly
   "watch-renew": 24 * 6,               // every 6 days
 };
 export async function GET() {

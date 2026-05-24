@@ -23,6 +23,7 @@ import openAlexAffiliationDiff from "./tasks/openalex-affiliation-diff.js";
 import gmailSync from "./tasks/gmail-sync.js";
 import calendarSync from "./tasks/calendar-sync.js";
 import linkedinNotificationsScan from "./tasks/linkedin-notifications-scan.js";
+import signalDetection from "./tasks/signal-detection.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -42,6 +43,7 @@ const taskList = {
   "gmail-sync": gmailSync,
   "calendar-sync": calendarSync,
   "linkedin-notifications-scan": linkedinNotificationsScan,
+  "signal-detection": signalDetection,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -67,6 +69,9 @@ const crontab = `
 # Nightly at 04:55 UTC: scan recent LinkedIn notification emails for
 # job-change / promotion signals → ContactChangelog rows.
 55 4 * * * linkedin-notifications-scan
+# Weekly Mon 05:11 UTC: Brave Search for recent news mentions of
+# INNER_CIRCLE contacts → NEWS_MENTION ContactChangelog rows.
+11 5 * * 1 signal-detection
 `.trim();
 
 async function main() {
