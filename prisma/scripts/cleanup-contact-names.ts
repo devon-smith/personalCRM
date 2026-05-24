@@ -120,6 +120,9 @@ async function main() {
   }
 
   console.log(`\nApplying ${updates.length} updates in a single transaction...`);
+  // Prisma's default $transaction timeout is 5s, which is tight at ~800
+  // rows against a pooler connection. Bump to 2 minutes to cover the
+  // common case of cleaning up a full 30k-contact account.
   await prisma.$transaction(
     updates.map((u) =>
       prisma.contact.update({
@@ -127,6 +130,7 @@ async function main() {
         data: { name: u.name },
       }),
     ),
+    { timeout: 120_000 },
   );
   console.log(`Done.`);
 }

@@ -18,6 +18,7 @@ import {
   type OpenAlexAuthor,
   type OpenAlexWork,
 } from "./research/openalex";
+import { searchContactWeb, type WebSearchResult } from "./research/web-search";
 
 export interface AttendeePrep {
   contactId: string;
@@ -29,6 +30,7 @@ export interface AttendeePrep {
 
   history: HistorySection;
   scholarly: ScholarlySection | null;
+  openWeb: WebSearchResult | null;
   lastMeetingDelta: LastMeetingDelta | null;
 }
 
@@ -120,10 +122,11 @@ export async function buildMeetingPrep(
 
   const attendees = await Promise.all(
     contacts.map(async (c) => {
-      const [history, lastMeeting, scholarly] = await Promise.all([
+      const [history, lastMeeting, scholarly, openWeb] = await Promise.all([
         loadHistory(userId, c.id),
         loadLastMeetingDelta(userId, c.id),
         loadScholarly(c.id, c.name, c.openAlexAuthorId),
+        loadOpenWeb(userId, c.id, c.name, c.company),
       ]);
       return {
         contactId: c.id,
@@ -134,6 +137,7 @@ export async function buildMeetingPrep(
         avatarUrl: c.avatarUrl,
         history,
         scholarly,
+        openWeb,
         lastMeetingDelta: lastMeeting,
       } as AttendeePrep;
     }),
@@ -289,6 +293,21 @@ async function loadScholarly(
     };
   } catch (err) {
     console.error(`[meeting-prep] OpenAlex lookup failed for ${name}:`, err);
+    return null;
+  }
+}
+
+async function loadOpenWeb(
+  userId: string,
+  contactId: string,
+  name: string,
+  company: string | null,
+): Promise<WebSearchResult | null> {
+  try {
+    return await searchContactWeb({ userId, contactId, name, company });
+  } catch (err) {
+    // Web search failure must not break the rest of the dossier.
+    console.error(`[meeting-prep] web search failed for ${name}:`, err);
     return null;
   }
 }

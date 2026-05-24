@@ -311,11 +311,46 @@ function AttendeeCard({ attendee: a }: { attendee: AttendeePrep }) {
         )}
       </Section>
 
-      {/* Section 3 — Open web (placeholder; wired in follow-up) */}
+      {/* Section 3 — Open web */}
       <Section icon={Sparkles} title="Open web">
-        <p style={{ color: "var(--text-tertiary)" }}>
-          Recent web mentions and news will appear here. Coming in a follow-up commit.
-        </p>
+        {!a.openWeb ? (
+          <p style={{ color: "var(--text-tertiary)" }}>
+            Web search unavailable. (Set ANTHROPIC_API_KEY to enable.)
+          </p>
+        ) : a.openWeb.emptyResult ? (
+          <p style={{ color: "var(--text-tertiary)" }}>
+            No recent web mentions in the last 90 days.
+          </p>
+        ) : (
+          <div>
+            <p style={{ color: "var(--text-primary)" }}>{a.openWeb.summary}</p>
+            {a.openWeb.citations.length > 0 && (
+              <div className="mt-3">
+                <p
+                  className="text-[11px] font-medium uppercase tracking-wide mb-1"
+                  style={{ color: "var(--text-tertiary)" }}
+                >
+                  Sources
+                </p>
+                <ul className="space-y-1">
+                  {a.openWeb.citations.map((c) => (
+                    <li key={c.url} className="truncate">
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline"
+                        style={{ color: "var(--accent-color)" }}
+                      >
+                        {c.title ?? c.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </Section>
     </div>
   );
