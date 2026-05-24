@@ -23,29 +23,6 @@ export interface CircleHealth {
   actionItems: number;
   avgDaysBetweenInteractions: number | null;
   trend: "improving" | "stable" | "declining";
-
-  /**
-   * Breadth-based health (0-100). Percentage of circle members who have
-   * had any interaction in the last 12 months, weighted by tier (Inner
-   * Circle 3x, Professional 2x, Acquaintance 1x). Replaces the old
-   * cadence-based "fraction of contacts hit in time" framing — measures
-   * "is this circle alive" rather than "have I hit my cadence target".
-   */
-  breadthScore: number;
-
-  /**
-   * Contacts whose recent (last 30 days) interaction rate has dropped
-   * meaningfully vs. their prior baseline (days 31-90). Sorted by drift
-   * magnitude descending; top 3 surface as "Reignite this circle"
-   * suggestions on the UI. Empty when nobody qualifies.
-   */
-  driftingContacts: Array<{
-    contactId: string;
-    name: string;
-    /** 0..1; 1.0 = went from active to zero in the recent window. */
-    driftMagnitude: number;
-    daysSinceLastInteraction: number | null;
-  }>;
 }
 
 // ─── Main functions ─────────────────────────────────────────
@@ -67,7 +44,6 @@ export async function getCircleHealth(
             select: {
               id: true,
               name: true,
-              tier: true,
               lastInteraction: true,
               importedAt: true,
             },
@@ -94,8 +70,6 @@ export async function getCircleHealth(
       actionItems: 0,
       avgDaysBetweenInteractions: null,
       trend: "stable",
-      breadthScore: 0,
-      driftingContacts: [],
     };
   }
 
@@ -194,14 +168,6 @@ export async function getCircleHealth(
   if (monthCount > prevMonthCount * 1.2) trend = "improving";
   else if (monthCount < prevMonthCount * 0.8) trend = "declining";
 
-  // Breadth-based health + drift detection. These supplement the
-  // cadence-based warmth above with metrics that ask "is this circle
-  // alive?" rather than "did I hit my follow-up target?".
-  const { breadthScore, driftingContacts } = await computeBreadthAndDrift(
-    userId,
-    circle.contacts.map((cc) => cc.contact),
-  );
-
   return {
     circleId: circle.id,
     circleName: circle.name,
@@ -215,144 +181,7 @@ export async function getCircleHealth(
     actionItems,
     avgDaysBetweenInteractions: avgDays,
     trend,
-    breadthScore,
-    driftingContacts,
   };
-}
-
-// ─── Breadth + drift computation ────────────────────────────
-
-interface CircleContact {
-  id: string;
-  name: string;
-  tier: string;
-  lastInteraction: Date | null;
-}
-
-const TIER_WEIGHT: Record<string, number> = {
-  INNER_CIRCLE: 3,
-  PROFESSIONAL: 2,
-  ACQUAINTANCE: 1,
-};
-
-/**
- * Pure breadth-score calculation. Exported for unit testing.
- * Returns 0..100.
- */
-export function computeBreadthScore(
-  contacts: Array<{ tier: string; lastInteraction: Date | null }>,
-  windowMs: number = 365 * 86_400_000,
-  now: number = Date.now(),
-): number {
-  if (contacts.length === 0) return 0;
-  const cutoff = new Date(now - windowMs);
-  let weightedActive = 0;
-  let weightedTotal = 0;
-  for (const c of contacts) {
-    const w = TIER_WEIGHT[c.tier] ?? 1;
-    weightedTotal += w;
-    if (c.lastInteraction && c.lastInteraction >= cutoff) {
-      weightedActive += w;
-    }
-  }
-  return weightedTotal > 0
-    ? Math.round((weightedActive / weightedTotal) * 100)
-    : 0;
-}
-
-/**
- * Pure drift classification. Returns whether a contact qualifies as
- * "drifting" + the magnitude (0..1, higher = more drift).
- */
-export function classifyDrift(
-  recentCount: number,
-  priorCount: number,
-  recentWindowDays: number = 30,
-  priorWindowDays: number = 60,
-): { drifting: boolean; magnitude: number } {
-  const recentRate = recentCount / recentWindowDays;
-  const priorRate = priorCount / priorWindowDays;
-  // Floor below which the baseline is too small to draw drift conclusions
-  // from. 0.1/day = 6 interactions over 60 days.
-  if (priorRate < 0.1) return { drifting: false, magnitude: 0 };
-  if (recentRate >= priorRate * 0.5) return { drifting: false, magnitude: 0 };
-  return {
-    drifting: true,
-    magnitude: Math.min(1, 1 - recentRate / priorRate),
-  };
-}
-
-/**
- * Compute the breadth health metric + identify drifting contacts.
- * Runs one grouped count to avoid an N+1 over circle members.
- */
-async function computeBreadthAndDrift(
-  userId: string,
-  contacts: CircleContact[],
-): Promise<{
-  breadthScore: number;
-  driftingContacts: CircleHealth["driftingContacts"];
-}> {
-  if (contacts.length === 0) return { breadthScore: 0, driftingContacts: [] };
-
-  const now = Date.now();
-  const thirtyDaysAgo = new Date(now - 30 * 86_400_000);
-  const ninetyDaysAgo = new Date(now - 90 * 86_400_000);
-
-  // Breadth: weighted fraction of contacts with any interaction in the
-  // last 12 months. Pure helper so the math is unit-testable.
-  const breadthScore = computeBreadthScore(contacts);
-
-  // Drift: group interactions per contact for recent (0-30) and prior
-  // (31-90) windows in one grouped query each. The prior window is
-  // intentionally 2x the recent window so a single quiet week doesn't
-  // dominate the baseline.
-  const contactIds = contacts.map((c) => c.id);
-  const [recent, prior] = await Promise.all([
-    prisma.interaction.groupBy({
-      by: ["contactId"],
-      where: {
-        userId,
-        contactId: { in: contactIds },
-        occurredAt: { gte: thirtyDaysAgo },
-      },
-      _count: { _all: true },
-    }),
-    prisma.interaction.groupBy({
-      by: ["contactId"],
-      where: {
-        userId,
-        contactId: { in: contactIds },
-        occurredAt: { gte: ninetyDaysAgo, lt: thirtyDaysAgo },
-      },
-      _count: { _all: true },
-    }),
-  ]);
-
-  const recentByContact = new Map(recent.map((r) => [r.contactId, r._count._all]));
-  const priorByContact = new Map(prior.map((p) => [p.contactId, p._count._all]));
-
-  const driftingContacts: CircleHealth["driftingContacts"] = [];
-  for (const c of contacts) {
-    const recentCount = recentByContact.get(c.id) ?? 0;
-    const priorCount = priorByContact.get(c.id) ?? 0;
-    const drift = classifyDrift(recentCount, priorCount);
-    if (!drift.drifting) continue;
-
-    const daysSinceLastInteraction = c.lastInteraction
-      ? Math.floor((now - c.lastInteraction.getTime()) / 86_400_000)
-      : null;
-
-    driftingContacts.push({
-      contactId: c.id,
-      name: c.name,
-      driftMagnitude: drift.magnitude,
-      daysSinceLastInteraction,
-    });
-  }
-
-  driftingContacts.sort((a, b) => b.driftMagnitude - a.driftMagnitude);
-  return { breadthScore, driftingContacts: driftingContacts.slice(0, 3) };
 }
 
 export async function getAllCircleHealth(
