@@ -488,12 +488,12 @@ export function Inbox() {
         className="flex items-center justify-between px-4 sm:px-6 pt-5 pb-0"
       >
         <div
-          className="flex items-center gap-1 rounded-xl p-1"
-          style={{ backgroundColor: "var(--surface-sunken)" }}
+          className="flex items-center gap-1 rounded-full p-1"
+          style={{ backgroundColor: "var(--surface-sand-raised)" }}
         >
           <button
             onClick={() => setActiveTab("inbox")}
-            className="relative flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-[13px] font-medium transition-all"
+            className="relative flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
             style={{
               backgroundColor:
                 activeTab === "inbox" ? "var(--surface, #fff)" : "transparent",
@@ -512,13 +512,13 @@ export function Inbox() {
             Inbox
             {inboxCount > 0 && (
               <span
-                className="rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                className="rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums"
                 style={{
                   backgroundColor:
                     activeTab === "inbox"
-                      ? "var(--status-urgent, #DC2626)"
+                      ? "var(--accent-color)"
                       : "var(--text-tertiary)",
-                  color: "#fff",
+                  color: "var(--text-inverse)",
                 }}
               >
                 {inboxCount}
@@ -527,7 +527,7 @@ export function Inbox() {
           </button>
           <button
             onClick={() => setActiveTab("groups")}
-            className="relative flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-[13px] font-medium transition-all"
+            className="relative flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
             style={{
               backgroundColor:
                 activeTab === "groups" ? "var(--surface, #fff)" : "transparent",
@@ -546,14 +546,11 @@ export function Inbox() {
             Groups
             {groupCount > 0 && (
               <span
-                className="rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                className="rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums"
                 style={{
-                  backgroundColor:
-                    activeTab === "groups"
-                      ? "var(--text-tertiary)"
-                      : "var(--text-tertiary)",
-                  color: "#fff",
-                  opacity: activeTab === "groups" ? 0.7 : 0.5,
+                  backgroundColor: "var(--text-tertiary)",
+                  color: "var(--text-inverse)",
+                  opacity: activeTab === "groups" ? 0.9 : 0.6,
                 }}
               >
                 {groupCount}
