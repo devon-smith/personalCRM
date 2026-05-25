@@ -116,8 +116,31 @@ async function indexForUser(
   const needingBody = candidates.filter((c) => !c.fullBody).map((c) => c.gmailId);
   let fetched = new Map<string, { body: string }>();
   if (needingBody.length > 0) {
-    fetched = await fetchMessageBodiesBatch(userId, needingBody);
-    summary.bodiesFetched = fetched.size;
+    const result = await fetchMessageBodiesBatch(userId, needingBody);
+    fetched = result.bodies;
+    summary.bodiesFetched = result.bodies.size;
+
+    if (result.errors.size > 0 || result.notFound > 0 || result.noBody > 0) {
+      helpers.logger.info(
+        `voice-corpus: fetch-body breakdown — ok=${result.bodies.size} ` +
+          `notFound=${result.notFound} noBody=${result.noBody} errors=${result.errors.size}`,
+      );
+      const categories = new Map<string, { count: number; sampleId: string }>();
+      for (const [gmailId, msg] of result.errors) {
+        const key = categorizeError(msg);
+        const prev = categories.get(key);
+        if (prev) prev.count++;
+        else categories.set(key, { count: 1, sampleId: gmailId });
+      }
+      const sorted = [...categories.entries()].sort((a, b) => b[1].count - a[1].count);
+      for (const [cat, { count, sampleId }] of sorted.slice(0, 5)) {
+        const exampleMsg = result.errors.get(sampleId) ?? "";
+        helpers.logger.info(
+          `voice-corpus:   [${count}x] ${cat} (e.g. id=${sampleId}: ${exampleMsg.slice(0, 180)})`,
+        );
+      }
+    }
+
     // Persist bodies — even if a row later fails embedding, we don't
     // want to re-fetch on the next run.
     for (const [gmailId, { body }] of fetched) {
@@ -247,6 +270,23 @@ async function indexForUser(
 function truncateForEmbedding(text: string): string {
   if (text.length <= 8000) return text;
   return text.slice(0, 8000);
+}
+
+/**
+ * Group similar fetch-body errors so the log summary stays short on a
+ * 200-email batch. Normalizes away the per-call gmailId and exact text
+ * payloads while keeping the failure mode visible.
+ */
+function categorizeError(msg: string): string {
+  const httpMatch = msg.match(/^HTTP (\d{3})/);
+  if (httpMatch) return `HTTP ${httpMatch[1]}`;
+  if (/no valid google tokens/i.test(msg)) return "no_valid_google_tokens";
+  if (/invalid_grant/i.test(msg)) return "invalid_grant";
+  if (/Failed to refresh/i.test(msg)) return "token_refresh_failed";
+  if (/ENOTFOUND|ECONNRESET|ETIMEDOUT/i.test(msg)) return "network";
+  if (/Unexpected token|JSON/i.test(msg)) return "json_parse";
+  if (/base64|Buffer/i.test(msg)) return "base64_decode";
+  return msg.slice(0, 60).replace(/[a-f0-9]{16,}/gi, "<id>");
 }
 
 export default voiceCorpusIndex;

@@ -30,6 +30,16 @@ export interface FetchedEmailBody {
   fromHtml: boolean;
 }
 
+export interface FetchBatchResult {
+  bodies: Map<string, FetchedEmailBody>;
+  /** gmailId → error message for every failure. Empty on full success. */
+  errors: Map<string, string>;
+  /** Count of messages where Gmail returned 404 (deleted). */
+  notFound: number;
+  /** Count of messages where the response was OK but body extraction returned null. */
+  noBody: number;
+}
+
 /**
  * Fetch a single message's body. Returns null if Gmail returns 404 (the
  * message was deleted between list and get) or if the body extraction
@@ -65,8 +75,11 @@ export async function fetchMessageBodiesBatch(
   userId: string,
   gmailIds: ReadonlyArray<string>,
   concurrency: number = 4,
-): Promise<Map<string, FetchedEmailBody>> {
-  const out = new Map<string, FetchedEmailBody>();
+): Promise<FetchBatchResult> {
+  const bodies = new Map<string, FetchedEmailBody>();
+  const errors = new Map<string, string>();
+  let notFound = 0;
+  let noBody = 0;
   const queue = [...gmailIds];
 
   async function worker() {
@@ -74,16 +87,36 @@ export async function fetchMessageBodiesBatch(
       const id = queue.shift();
       if (!id) return;
       try {
-        const result = await fetchMessageBody(userId, id);
-        if (result) out.set(id, result);
-      } catch {
-        // Skip; aggregate failure count is the caller's concern.
+        const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`;
+        const res = await googleFetch(userId, url);
+        if (res.status === 404) {
+          notFound++;
+          continue;
+        }
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          errors.set(id, `HTTP ${res.status}: ${text.slice(0, 200)}`);
+          continue;
+        }
+        const message = (await res.json()) as GmailMessageWithBody;
+        const extracted = extractBody(message.payload);
+        if (!extracted) {
+          noBody++;
+          continue;
+        }
+        bodies.set(id, {
+          gmailId: id,
+          body: extracted.body,
+          fromHtml: extracted.fromHtml,
+        });
+      } catch (err) {
+        errors.set(id, err instanceof Error ? err.message : String(err));
       }
     }
   }
 
   await Promise.all(Array.from({ length: concurrency }, () => worker()));
-  return out;
+  return { bodies, errors, notFound, noBody };
 }
 
 // ─── Body extraction ───────────────────────────────────────
