@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { AttendeePrep } from "@/lib/meeting-prep";
+import { Surface, SectionLabel } from "@/components/ds";
 
 interface PrepResponse {
   eventTitle: string;
@@ -86,26 +87,42 @@ export default function MeetingPrepPage({
       </Link>
 
       <div className="crm-animate-enter">
-        <h1 className="ds-display-lg">{data.eventTitle}</h1>
-        <p className="mt-1 ds-caption">
-          {formatEventTime(data.eventStartTime)}
-          {data.eventEndTime && ` – ${formatEventTime(data.eventEndTime)}`}
-          {data.eventHtmlLink && (
-            <>
-              {" · "}
-              <a
-                href={data.eventHtmlLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1"
-                style={{ color: "var(--accent-color)" }}
-              >
-                Open in Calendar
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </>
+        <h1 className="ds-display-xl">{data.eventTitle}</h1>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <MetaPill>{formatEventTime(data.eventStartTime)}</MetaPill>
+          {data.eventEndTime && (
+            <MetaPill>
+              {formatDurationMinutes(
+                Math.round(
+                  (new Date(data.eventEndTime).getTime() - new Date(data.eventStartTime).getTime()) / 60000,
+                ),
+              )}
+            </MetaPill>
           )}
-        </p>
+          {data.attendees.length > 0 && (
+            <MetaPill>
+              {data.attendees.length} attendee{data.attendees.length === 1 ? "" : "s"} on file
+            </MetaPill>
+          )}
+          {data.eventHtmlLink && (
+            <a
+              href={data.eventHtmlLink}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[12px] font-medium inline-flex items-center gap-1 transition-colors"
+              style={{ color: "var(--text-secondary)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text-primary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-secondary)";
+              }}
+            >
+              Open in Calendar
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Unknown attendees notice */}
@@ -142,12 +159,15 @@ export default function MeetingPrepPage({
 
 function AttendeeCard({ attendee: a }: { attendee: AttendeePrep }) {
   return (
-    <div className="crm-animate-enter">
+    <Surface tone="mist" padded className="crm-animate-enter p-6 sm:p-8">
       {/* Attendee header */}
-      <div className="flex items-center gap-3 mb-4">
-        <Avatar className="h-12 w-12">
+      <div className="flex items-start gap-4 mb-5">
+        <Avatar className="h-14 w-14 shrink-0">
           {a.avatarUrl && <AvatarImage src={a.avatarUrl} alt={a.contactName} />}
-          <AvatarFallback>
+          <AvatarFallback
+            className="text-[15px] font-semibold"
+            style={{ backgroundColor: "var(--surface-mist-raised)", color: "var(--text-primary)" }}
+          >
             {a.contactName
               .split(" ")
               .map((n) => n[0])
@@ -158,27 +178,21 @@ function AttendeeCard({ attendee: a }: { attendee: AttendeePrep }) {
         </Avatar>
         <div className="min-w-0 flex-1">
           <Link
-            href={`/people/${a.contactId}`}
-            className="ds-heading-md font-medium hover:underline"
-            style={{ color: "var(--text-primary)" }}
+            href={`/people?contact=${a.contactId}`}
+            className="ds-display-lg hover:underline truncate inline-block"
+            style={{ fontSize: "1.5rem" }}
           >
             {a.contactName}
           </Link>
-          <p className="ds-caption">
-            {[a.role, a.company].filter(Boolean).join(" at ") || a.email}
+          <p className="ds-body-md mt-0.5" style={{ color: "var(--text-secondary)" }}>
+            {[a.role, a.company].filter(Boolean).join(" · ") || a.email}
           </p>
+          {a.lastMeetingDelta && (
+            <div className="mt-2">
+              <MetaPill>Last met {a.lastMeetingDelta.daysSince}d ago</MetaPill>
+            </div>
+          )}
         </div>
-        {a.lastMeetingDelta && (
-          <span
-            className="text-[11px] px-2 py-1 rounded-full"
-            style={{
-              backgroundColor: "var(--surface-sunken)",
-              color: "var(--text-tertiary)",
-            }}
-          >
-            Last met {a.lastMeetingDelta.daysSince}d ago
-          </span>
-        )}
       </div>
 
       {/* Section 1 — Your history */}
@@ -352,7 +366,7 @@ function AttendeeCard({ attendee: a }: { attendee: AttendeePrep }) {
           </div>
         )}
       </Section>
-    </div>
+    </Surface>
   );
 }
 
@@ -366,24 +380,27 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="mb-5 rounded-[14px] p-5"
-      style={{
-        border: "1px solid var(--border)",
-        backgroundColor: "var(--surface)",
-      }}
-    >
+    <Surface tone="stone" padded className="mb-4 p-5">
       <div className="flex items-center gap-2 mb-3">
-        <Icon className="h-3.5 w-3.5" style={{ color: "var(--accent-color)" }} />
-        <span
-          className="text-[11px] font-medium uppercase tracking-wide"
-          style={{ color: "var(--text-tertiary)" }}
-        >
-          {title}
-        </span>
+        <Icon className="h-3.5 w-3.5" strokeWidth={1.7} style={{ color: "var(--text-secondary)" }} />
+        <SectionLabel>{title}</SectionLabel>
       </div>
       <div className="ds-body-sm">{children}</div>
-    </div>
+    </Surface>
+  );
+}
+
+function MetaPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-medium"
+      style={{
+        backgroundColor: "var(--accent-soft)",
+        color: "var(--text-secondary)",
+      }}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -396,6 +413,14 @@ function formatEventTime(iso: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatDurationMinutes(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 function formatDate(iso: string): string {

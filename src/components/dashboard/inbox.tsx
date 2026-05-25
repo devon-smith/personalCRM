@@ -1400,24 +1400,28 @@ function InboxRow({
         Already replied? Tap to clear
       </button>
 
-      {/* Meta + Actions */}
-      <div className="flex items-center gap-2 mt-2">
+      {/* Meta + Actions — actions appear on hover (or focus) on desktop;
+          always visible on touch so they remain reachable without hover. */}
+      <div
+        className="flex items-center gap-2 mt-2 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100"
+        style={{ transitionDuration: "180ms" }}
+      >
         {replyUrl ? (
           <a
             href={replyUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2 sm:py-1.5 text-[12px] font-medium transition-colors"
+            className="flex items-center gap-1.5 rounded-full px-3 py-2 sm:py-1.5 text-[12px] font-medium transition-colors"
             style={{
-              backgroundColor: "#1A1A1A",
-              color: "#fff",
+              backgroundColor: "var(--accent-color)",
+              color: "var(--text-inverse)",
               letterSpacing: "-0.01em",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#333";
+              e.currentTarget.style.backgroundColor = "var(--accent-hover)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#1A1A1A";
+              e.currentTarget.style.backgroundColor = "var(--accent-color)";
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1427,17 +1431,17 @@ function InboxRow({
         ) : (
           <a
             href={`/people?contact=${item.contactId}`}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
             style={{
-              backgroundColor: "#1A1A1A",
-              color: "#fff",
+              backgroundColor: "var(--accent-color)",
+              color: "var(--text-inverse)",
               letterSpacing: "-0.01em",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#333";
+              e.currentTarget.style.backgroundColor = "var(--accent-hover)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#1A1A1A";
+              e.currentTarget.style.backgroundColor = "var(--accent-color)";
             }}
           >
             View contact
@@ -1449,15 +1453,15 @@ function InboxRow({
         <div className="relative">
           <button
             onClick={() => setShowSnooze(!showSnooze)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
             style={{
-              border: "1px solid #E2E4E8",
-              color: "#4A4E54",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
               backgroundColor: "transparent",
               letterSpacing: "-0.01em",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F5F6F8";
+              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
@@ -1481,15 +1485,15 @@ function InboxRow({
         {item.isGroupChat && (
           <button
             onClick={onDismiss}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
             style={{
-              border: "1px solid #E2E4E8",
-              color: "#4A4E54",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
               backgroundColor: "transparent",
               letterSpacing: "-0.01em",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F5F6F8";
+              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";

@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import {
-  X, Pencil, Trash2, Mail, ExternalLink, Sparkles, Tag,
-  Loader2, Linkedin, Plus, Phone, StickyNote, Archive,
-  Merge, Calendar, Send,
+  X, Pencil, Mail, Sparkles, Loader2, Linkedin, Plus, Phone,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -16,6 +14,7 @@ import { useContact, useDeleteContact, useUpdateContact } from "@/lib/hooks/use-
 import { useMomentum } from "@/lib/hooks/use-momentum";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import { Sparkline, SparklineBadge } from "@/components/ui/sparkline";
+import { Pill as DsPill } from "@/components/ds";
 import { InteractionTimeline } from "@/components/contacts/interaction-timeline";
 import { ConversationView } from "@/components/contacts/conversation-view";
 import { VoiceRecorder } from "@/components/notes/voice-recorder";
@@ -23,17 +22,6 @@ import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import Link from "next/link";
-
-const sourceLabels: Record<string, string> = {
-  MANUAL: "Manual",
-  CSV_IMPORT: "CSV",
-  GOOGLE_CONTACTS: "Google",
-  GMAIL_DISCOVER: "Gmail",
-  APPLE_CONTACTS: "Apple",
-  IMESSAGE: "iMessage",
-  LINKEDIN: "LinkedIn",
-  WHATSAPP: "WhatsApp",
-};
 
 const moodLabels: Record<string, { label: string; color: string; bg: string }> = {
   POSITIVE: { label: "Positive", color: "#4A8C5E", bg: "#EBF5EE" },
@@ -306,120 +294,153 @@ export function ContactDetailPanel({
     ? contact.interactions[contact.interactions.length - 1]
     : null;
 
+  const subline = [
+    contact.role && contact.company ? `${contact.role} at ${contact.company}` : contact.role || contact.company,
+    contact.lastInteraction
+      ? `last contact ${formatDistanceToNow(new Date(contact.lastInteraction))} ago`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-start justify-between px-6 pt-6 pb-3">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-16 w-16 rounded-2xl">
-            <AvatarFallback
-              className="text-lg font-semibold rounded-2xl"
-              style={{
-                backgroundColor: getAvatarColor(contact.name).bg,
-                color: getAvatarColor(contact.name).text,
-              }}
-            >
-              {getInitials(contact.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h2 className="text-[20px] font-bold tracking-tight flex items-center gap-1.5" style={{ color: "var(--crm-text-primary)" }}>
-              {contact.name}
-            </h2>
-            {contact.company && (
-              <p className="mt-0.5 text-[14px]" style={{ color: "var(--crm-text-secondary)" }}>
-                {contact.role ? `${contact.role} at ` : ""}
-                {contact.company}
-              </p>
-            )}
-            {/* Source badges */}
-            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
-              {contact.source && (
-                <Badge variant="outline" className="text-[10px] text-gray-400 border-gray-200 py-0">
-                  {sourceLabels[contact.source] ?? contact.source}
-                </Badge>
-              )}
-              {contact.circles?.map((cc) => (
-                <span
-                  key={cc.circle.id}
-                  className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
-                  style={{ backgroundColor: `${cc.circle.color}15`, color: cc.circle.color }}
+      <div className="px-6 pt-6 pb-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-4 min-w-0">
+            <Avatar className="h-14 w-14 rounded-2xl shrink-0">
+              <AvatarFallback
+                className="text-[15px] font-semibold rounded-2xl"
+                style={{
+                  backgroundColor: getAvatarColor(contact.name).bg,
+                  color: getAvatarColor(contact.name).text,
+                }}
+              >
+                {getInitials(contact.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <h2 className="ds-display-lg truncate">{contact.name}</h2>
+              {subline && (
+                <p
+                  className="ds-body-md mt-1.5"
+                  style={{ color: "var(--text-secondary)" }}
                 >
-                  {cc.circle.name}
-                </span>
-              ))}
-            </div>
-            {/* Contact links */}
-            <div className="mt-1.5 flex items-center gap-3 text-[12px] flex-wrap">
-              {contact.email && (
-                <a href={`mailto:${contact.email}`} className="text-gray-500 hover:text-gray-900 truncate max-w-[200px]">
-                  {contact.email}
-                </a>
+                  {subline}
+                </p>
               )}
-              {((contactAny.additionalEmails as string[]) ?? []).map((ae: string) => (
-                <a key={ae} href={`mailto:${ae}`} className="text-gray-500 hover:text-gray-900 truncate max-w-[200px]">
-                  {ae}
-                </a>
-              ))}
-              {contact.phone && (
-                <a href={`tel:${contact.phone}`} className="text-gray-500 hover:text-gray-900">
-                  {contact.phone}
-                </a>
-              )}
-              {contact.linkedinUrl && (
-                <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-[#0A66C2] hover:opacity-80">
-                  <Linkedin className="h-3.5 w-3.5" />
-                </a>
+              {/* Tiny chips row: circles only. Source badge demoted into Details. */}
+              {contact.circles && contact.circles.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1">
+                  {contact.circles.map((cc) => (
+                    <span
+                      key={cc.circle.id}
+                      className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                      style={{ backgroundColor: `${cc.circle.color}1f`, color: cc.circle.color }}
+                    >
+                      {cc.circle.name}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => onEdit(contact.id)}
+              className="h-7 w-7 rounded-full inline-flex items-center justify-center transition-colors"
+              style={{ color: "var(--text-tertiary)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text-primary)";
+                e.currentTarget.style.backgroundColor = "var(--surface-mist-raised)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-tertiary)";
+                e.currentTarget.style.backgroundColor = "";
+              }}
+              aria-label="Edit contact"
+            >
+              <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+            </button>
+            <button
+              onClick={onClose}
+              className="h-7 w-7 rounded-full inline-flex items-center justify-center transition-colors"
+              style={{ color: "var(--text-tertiary)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text-primary)";
+                e.currentTarget.style.backgroundColor = "var(--surface-mist-raised)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-tertiary)";
+                e.currentTarget.style.backgroundColor = "";
+              }}
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors rounded-lg">
-          <X className="h-4 w-4" />
-        </Button>
       </div>
 
-      {/* Quick actions row */}
-      <div className="flex gap-1.5 px-6 pb-3 flex-wrap">
-        <Button variant="outline" size="sm" className="h-7 text-[11px] rounded-lg" onClick={() => onEdit(contact.id)}>
-          <Pencil className="mr-1 h-3 w-3" />
-          Edit
-        </Button>
-        {contact.email && (
-          <a href={`mailto:${contact.email}`}>
-            <Button variant="outline" size="sm" className="h-7 text-[11px] rounded-lg">
-              <Mail className="mr-1 h-3 w-3" />
-              Email
-            </Button>
-          </a>
-        )}
-        {contact.linkedinUrl && (
-          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm" className="h-7 text-[11px] rounded-lg">
-              <Linkedin className="mr-1 h-3 w-3" />
-              LinkedIn
-            </Button>
-          </a>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-[11px] rounded-lg"
-          onClick={handleAiSummary}
-          disabled={aiLoading}
-        >
-          {aiLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
-          Prep
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-[11px] rounded-lg"
+      {/* Primary action + secondaries */}
+      <div className="flex flex-wrap items-center gap-3 px-6 pb-4">
+        <DsPill
+          variant="filled"
+          tone="accent"
+          size="md"
           onClick={() => openComposer({ contactId: contact.id })}
         >
-          <Send className="mr-1 h-3 w-3" />
-          Draft
-        </Button>
+          Draft a message
+        </DsPill>
+        {contact.email && (
+          <a
+            href={`mailto:${contact.email}`}
+            className="text-[13px] font-medium transition-colors"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+          >
+            Email →
+          </a>
+        )}
+        <button
+          onClick={handleAiSummary}
+          disabled={aiLoading}
+          className="text-[13px] font-medium transition-colors disabled:opacity-50 inline-flex items-center gap-1"
+          style={{ color: "var(--text-secondary)" }}
+          onMouseEnter={(e) => {
+            if (!aiLoading) e.currentTarget.style.color = "var(--text-primary)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--text-secondary)";
+          }}
+        >
+          {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" strokeWidth={1.6} />}
+          {aiLoading ? "Generating…" : "Prep"}
+        </button>
+        {contact.linkedinUrl && (
+          <a
+            href={contact.linkedinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[13px] font-medium transition-colors inline-flex items-center gap-1"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+          >
+            <Linkedin className="h-3.5 w-3.5" strokeWidth={1.6} />
+            LinkedIn
+          </a>
+        )}
       </div>
 
       {/* AI Summary inline */}
