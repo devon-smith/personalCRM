@@ -42,6 +42,7 @@ import type { AutoCategorizeResult } from "@/app/api/circles/auto-categorize/rou
 import { CircleSuggestions } from "@/components/circles/circle-suggestions";
 import type { CircleIntelligence } from "@/app/api/circles/[id]/intelligence/route";
 import { NetworkMap } from "@/components/circles/network-map";
+import { Surface, SectionLabel } from "@/components/ds";
 
 // ─── Draggable contact pill ──────────────────────────────────────────
 function DraggableContact({
@@ -398,6 +399,7 @@ export default function CirclesPage() {
   const queryClient = useQueryClient();
   const [openCircleId, setOpenCircleId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
   const [editingCircle, setEditingCircle] = useState<CircleWithContacts | null>(null);
   const [categorizeResult, setCategorizeResult] = useState<AutoCategorizeResult | null>(null);
   const [activeContact, setActiveContact] = useState<CircleContact | null>(null);
@@ -623,9 +625,6 @@ export default function CirclesPage() {
         </div>
       )}
 
-      {/* Geographic network map */}
-      <NetworkMap />
-
       {/* Drag hint */}
       <p
         className="mt-4 ds-caption"
@@ -690,6 +689,40 @@ export default function CirclesPage() {
 
       {/* Suggested circles */}
       <CircleSuggestions />
+
+      {/* Network map — list-first, map second. Collapsed by default;
+          a single click expands. Stone surface ties it to the "time/
+          calendar" tone family even though it's a geographic view —
+          the visual takeaway is "context, not action." */}
+      <div className="mt-8">
+        <Surface tone="stone" padded={false} className="overflow-hidden">
+          <button
+            onClick={() => setMapExpanded((v) => !v)}
+            className="flex w-full items-center justify-between px-6 py-4 text-left"
+          >
+            <div>
+              <SectionLabel>Network map</SectionLabel>
+              <p
+                className="ds-body-sm mt-1"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Geographic clusters across your circles.
+              </p>
+            </div>
+            <span
+              className="text-[12px] font-medium transition-colors"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              {mapExpanded ? "Collapse" : "Expand"} →
+            </span>
+          </button>
+          {mapExpanded && (
+            <div className="px-6 pb-6">
+              <NetworkMap />
+            </div>
+          )}
+        </Surface>
+      </div>
 
       {/* Create dialog */}
       <CircleDialog

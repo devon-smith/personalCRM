@@ -223,9 +223,9 @@ export default function DashboardPage() {
     .map((c) => c.contactCount || 1);
 
   return (
-    <div className="space-y-8">
+    <div className="crm-stagger space-y-8">
       {/* Greeting */}
-      <div className="crm-animate-enter">
+      <div>
         <div className="ds-caption mb-2">{prettyDate()}</div>
         <h1 className="ds-display-xl">{greetingHeadline}</h1>
         <p className="ds-body-lg mt-3 max-w-[640px]" style={{ color: "var(--text-secondary)" }}>
