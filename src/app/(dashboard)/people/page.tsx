@@ -5,16 +5,16 @@ import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, Upload } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { ContactTable } from "@/components/contacts/contact-table";
+import { ContactList } from "@/components/contacts/contact-list";
 import { ContactDetailPanel } from "@/components/contacts/contact-detail-panel";
 import { ContactFormDialog } from "@/components/contacts/contact-form-dialog";
 import { ContactImportDialog } from "@/components/contacts/contact-import-dialog";
 import { useContacts } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
+import { Pill, FilterPill } from "@/components/ds";
 
 const sourceOptions = [
-  { value: "", label: "All Sources" },
+  { value: "", label: "All sources" },
   { value: "MANUAL", label: "Manual" },
   { value: "CSV_IMPORT", label: "CSV Import" },
   { value: "GOOGLE_CONTACTS", label: "Google Contacts" },
@@ -24,18 +24,22 @@ const sourceOptions = [
 ];
 
 const sortOptions = [
-  { value: "name", label: "Name" },
-  { value: "lastInteraction", label: "Last Contact" },
-  { value: "createdAt", label: "Date Added" },
+  { value: "name", label: "Name (A–Z)" },
+  { value: "lastInteraction", label: "Most recent" },
+  { value: "createdAt", label: "Date added" },
 ];
-
-const selectClass =
-  "h-9 rounded-[10px] px-3 text-sm outline-none transition-colors" +
-  " focus-visible:ring-[3px]";
 
 export default function ContactsPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center py-12"><p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>Loading contacts...</p></div>}>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-12">
+          <p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>
+            Loading contacts…
+          </p>
+        </div>
+      }
+    >
       <ContactsPageInner />
     </Suspense>
   );
@@ -63,14 +67,15 @@ function ContactsPageInner() {
   const [editId, setEditId] = useState<string | null>(null);
 
   useEffect(() => {
+    // URL → state sync. The lint rule against setState-in-effect doesn't
+    // apply cleanly here: we genuinely want subsequent URL changes
+    // (e.g. command-palette deep links) to update the selection while
+    // the page stays mounted.
     const contactId = searchParams.get("contact");
-    if (contactId) {
-      setSelectedId(contactId);
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (contactId) setSelectedId(contactId);
     const circleParam = searchParams.get("circle");
-    if (circleParam) {
-      setCircleId(circleParam);
-    }
+    if (circleParam) setCircleId(circleParam);
   }, [searchParams]);
 
   const debouncedSearch = useDebounce(search, 300);
@@ -82,116 +87,107 @@ function ContactsPageInner() {
       source: source || undefined,
       sort,
     }),
-    [debouncedSearch, circleId, source, sort]
+    [debouncedSearch, circleId, source, sort],
   );
 
   const { data: contacts, isLoading } = useContacts(filters);
+
+  const circleOptions = useMemo(
+    () => [
+      { value: "", label: "All circles" },
+      ...(circles ?? []).map((c) => ({ value: c.id, label: c.name })),
+    ],
+    [circles],
+  );
 
   function openCreate() {
     setEditId(null);
     setFormOpen(true);
   }
-
   function openEdit(id: string) {
     setEditId(id);
     setFormOpen(true);
   }
 
   return (
-    <div className="flex h-[calc(100vh-theme(spacing.14)-theme(spacing.14))] gap-0">
-      {/* Main content */}
+    <div className="flex h-[calc(100vh-theme(spacing.14))] gap-0">
+      {/* Main column */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
-          <h1 className="ds-display-lg">Contacts</h1>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setImportOpen(true)}>
-              <Upload className="mr-1.5 h-4 w-4" />
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
+          <h1 className="ds-display-xl">People</h1>
+          <div className="flex items-center gap-2">
+            <Pill
+              variant="outline"
+              tone="neutral"
+              size="md"
+              leadingIcon={<Upload className="h-3.5 w-3.5" strokeWidth={1.8} />}
+              onClick={() => setImportOpen(true)}
+            >
               Import
-            </Button>
-            <Button onClick={openCreate}>
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add Contact
-            </Button>
+            </Pill>
+            <Pill
+              variant="filled"
+              tone="accent"
+              size="md"
+              leadingIcon={<Plus className="h-3.5 w-3.5" strokeWidth={2} />}
+              onClick={openCreate}
+            >
+              Add contact
+            </Pill>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 pb-4">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
+        {/* Filter row — pill-shaped */}
+        <div className="flex flex-wrap items-center gap-2 pb-4">
+          <div className="relative flex-1 min-w-[220px] max-w-[420px]">
+            <Search
+              className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+              style={{ color: "var(--text-tertiary)" }}
+            />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, email, or company..."
-              className="pl-9"
+              placeholder="Search by name, email, or company"
+              className="pl-9 rounded-full"
+              style={{
+                backgroundColor: "var(--accent-soft)",
+                border: "1px solid transparent",
+              }}
             />
           </div>
-          <select
+          <FilterPill
+            label="All circles"
+            options={circleOptions}
             value={circleId}
             onChange={(e) => setCircleId(e.target.value)}
-            className={selectClass}
-            style={{
-              backgroundColor: "var(--surface)",
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <option value="">All Circles</option>
-            {circles?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <select
+            active={!!circleId}
+          />
+          <FilterPill
+            label="All sources"
+            options={sourceOptions}
             value={source}
             onChange={(e) => setSource(e.target.value)}
-            className={selectClass}
-            style={{
-              backgroundColor: "var(--surface)",
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            {sourceOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <select
+            active={!!source}
+          />
+          <FilterPill
+            label="Sort"
+            options={sortOptions}
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className={selectClass}
-            style={{
-              backgroundColor: "var(--surface)",
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            {sortOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
-        {/* Table */}
-        <div
-          className="flex-1 overflow-y-auto rounded-[14px]"
-          style={{
-            border: "1px solid var(--border)",
-            backgroundColor: "var(--surface)",
-          }}
-        >
+        {/* List */}
+        <div className="flex-1 overflow-hidden">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>Loading contacts...</p>
+              <p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>
+                Loading contacts…
+              </p>
             </div>
           ) : (
-            <ContactTable
+            <ContactList
               contacts={contacts ?? []}
               onSelect={setSelectedId}
               selectedId={selectedId}
@@ -205,8 +201,8 @@ function ContactsPageInner() {
         <div
           className="w-[520px] shrink-0 overflow-hidden"
           style={{
-            borderLeft: "1px solid var(--border)",
-            backgroundColor: "var(--surface)",
+            borderLeft: "1px solid var(--border-subtle)",
+            backgroundColor: "var(--surface-mist)",
           }}
         >
           <ContactDetailPanel
@@ -217,18 +213,8 @@ function ContactsPageInner() {
         </div>
       )}
 
-      {/* Add/Edit Dialog */}
-      <ContactFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        editId={editId}
-      />
-
-      {/* Import Dialog */}
-      <ContactImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-      />
+      <ContactFormDialog open={formOpen} onOpenChange={setFormOpen} editId={editId} />
+      <ContactImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   );
 }

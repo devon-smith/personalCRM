@@ -66,7 +66,7 @@ export function TravelCard() {
 
   return (
     <div
-      className="crm-card mt-6 rounded-[14px] p-5"
+      className="crm-card tone-stone mt-6 rounded-[24px] p-5"
       style={{
         border: "1px solid var(--border)",
         backgroundColor: "var(--surface)",

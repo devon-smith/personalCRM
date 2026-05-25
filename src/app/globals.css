@@ -279,6 +279,14 @@
   transform: translateY(-2px);
 }
 
+/* Tone modifiers — add `tone-X` next to `crm-card` to switch its background.
+   Lets legacy Card-wrapped surfaces inherit the new palette without
+   rewriting every internal layout. */
+.crm-card.tone-sand  { background: var(--surface-sand); }
+.crm-card.tone-mist  { background: var(--surface-mist); }
+.crm-card.tone-olive { background: var(--surface-olive); }
+.crm-card.tone-stone { background: var(--surface-stone); }
+
 /* ─── Surface tones (Intelly-grade primitive backing) ─── */
 .ds-surface { border-radius: 24px; box-shadow: 0 2px 8px rgba(27,26,23,0.04); transition: box-shadow 180ms var(--ease-out), transform 180ms var(--ease-out); }
 .ds-surface-sand  { background: var(--surface-sand);  }
@@ -311,6 +319,64 @@
 
 .crm-cold-pulse {
   animation: crm-cold-pulse 3s ease-in-out infinite;
+}
+
+/* ─── Dialog overlay: frosted backdrop ─── */
+[data-slot="dialog-overlay"] {
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  background-color: rgba(27,26,23,0.28) !important;
+}
+
+/* ─── Command palette ─── */
+.ds-command-palette {
+  border-radius: 24px !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: 0 24px 64px rgba(27,26,23,0.18), 0 4px 16px rgba(27,26,23,0.06) !important;
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: 620px !important;
+  overflow: hidden !important;
+  animation: ds-cmd-enter 200ms var(--ease-out) both !important;
+}
+@keyframes ds-cmd-enter {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.ds-command-palette [data-slot="command-input-wrapper"] {
+  border: none !important;
+  padding: 14px 18px !important;
+  height: auto !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+.ds-command-palette [data-slot="command-input"] {
+  font-size: 15px !important;
+  height: auto !important;
+  padding: 4px 0 !important;
+}
+.ds-command-palette [cmdk-group-heading] {
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  font-size: 10.5px !important;
+  color: var(--text-tertiary) !important;
+  font-weight: 600 !important;
+  padding: 14px 18px 6px !important;
+}
+.ds-command-palette [cmdk-item] {
+  padding: 10px 14px !important;
+  margin: 2px 6px !important;
+  border-radius: 12px !important;
+  font-size: 14px !important;
+  color: var(--text-primary) !important;
+}
+.ds-command-palette [cmdk-item][data-selected="true"] {
+  background-color: var(--surface-mist) !important;
+  color: var(--text-primary) !important;
+}
+.ds-command-palette [data-slot="command-list"] {
+  max-height: 420px !important;
+  padding-bottom: 8px !important;
 }
 
 /* Stagger children */

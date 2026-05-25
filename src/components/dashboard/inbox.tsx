@@ -482,7 +482,7 @@ export function Inbox() {
       : loadingNR;
 
   return (
-    <div className="crm-card overflow-hidden">
+    <div className="crm-card tone-sand overflow-hidden">
       {/* ─── Tab bar ────────────────────────────────────────── */}
       <div
         className="flex items-center justify-between px-4 sm:px-6 pt-5 pb-0"
@@ -1698,7 +1698,7 @@ export function ActionItemsCard() {
   if (!isLoading && items.length === 0) return null;
 
   return (
-    <div className="crm-card overflow-hidden">
+    <div className="crm-card tone-sand overflow-hidden">
       <div className="px-6 pt-5 pb-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

@@ -116,9 +116,11 @@ export function CommandPalette({
       open={open}
       onOpenChange={handleOpenChange}
       shouldFilter={false}
+      className="ds-command-palette"
+      showCloseButton={false}
     >
       <CommandInput
-        placeholder="Search contacts, pages, and actions..."
+        placeholder="Search people, pages, actions…"
         value={query}
         onValueChange={setQuery}
       />
