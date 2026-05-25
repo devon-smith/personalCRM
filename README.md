@@ -20,6 +20,31 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## macOS dev gotcha — Turbopack cache write race
+
+Next.js 16.1 (+ Turbopack) sometimes loses a write race during cold-start
+on macOS, producing symptoms like:
+
+- `Persisting failed: Another write batch or compaction is already active`
+  in the dev log
+- `routes-manifest.json` missing from `.next/dev/`
+- Pages returning 500 once you sign in (middleware still works, render
+  pipeline doesn't)
+
+The root cause is Spotlight indexing `.next/cache/` concurrently with
+Turbopack's atomic-write-then-rename pattern. The fix is one-time:
+
+1. **Exclude `.next/` from Spotlight**: System Settings → Spotlight → Privacy →
+   add the project folder.
+2. If you already hit the race in a session, a *warm restart* (Ctrl+C the
+   dev server and `npm run dev` again — **do not** `rm -rf .next`) usually
+   recovers; the partial cache from the failed run usually has enough state
+   to settle on the second try.
+
+If you're getting bitten repeatedly even with Spotlight excluded, pin Next
+to the last known-stable point release (`npm i next@16.0.4 --save-exact`)
+until the upstream race is fixed.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

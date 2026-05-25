@@ -68,7 +68,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1">
-          <div className="mx-auto w-full max-w-[1100px] px-4 sm:px-8 lg:px-10 py-6 sm:py-10 pb-20 sm:pb-12">
+          <div className="mx-auto w-full max-w-[1280px] px-4 sm:px-8 lg:px-10 py-6 sm:py-10 pb-20 sm:pb-12">
             {children}
           </div>
         </main>

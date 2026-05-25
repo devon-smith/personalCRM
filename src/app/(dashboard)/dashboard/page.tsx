@@ -28,6 +28,8 @@ import { SyncAlerts } from "@/components/dashboard/sync-alerts";
 import { MomentToConnect } from "@/components/dashboard/moment-to-connect";
 import { TravelCard } from "@/components/dashboard/travel-card";
 import { Surface, StatTile, Sparkline } from "@/components/ds";
+import { MiniCalendar } from "@/components/dashboard/mini-calendar";
+import { TodayTimeline, AddEventPill } from "@/components/dashboard/today-timeline";
 
 // Tone hex map mirrors the one in Surface. Inline styles win over the
 // shadcn Card's `bg-card` utility by specificity, so this is the only
@@ -234,7 +236,9 @@ export default function DashboardPage() {
     .map((c) => c.contactCount || 1);
 
   return (
-    <div className="crm-stagger space-y-8">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] lg:gap-8">
+      {/* Main column */}
+      <div className="crm-stagger space-y-8 min-w-0">
       {/* Greeting */}
       <div>
         <div className="ds-caption mb-2">{prettyDate()}</div>
@@ -594,6 +598,25 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      </div>{/* end main column */}
+
+      {/* Right rail — desktop only. Mini-calendar anchor, today's
+          chronological strip, single "Add event" CTA. Stays sticky
+          so it follows the scroll on long dashboards. */}
+      <aside className="hidden lg:block">
+        <div className="sticky top-6 space-y-5">
+          <div
+            className="rounded-3xl p-4"
+            style={{ backgroundColor: "#FFFFFF", boxShadow: "0 2px 8px rgba(27,26,23,0.04)" }}
+          >
+            <MiniCalendar />
+            <div className="mt-4">
+              <AddEventPill />
+            </div>
+          </div>
+          <TodayTimeline />
+        </div>
+      </aside>
     </div>
   );
 }
