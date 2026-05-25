@@ -268,10 +268,61 @@ export function candidateNgrams(cleanedBody: string): string[] {
   return Array.from(ngrams);
 }
 
+// ─── Per-user detected signatures (M6.1.1) ─────────────────
+
+/**
+ * Strip per-user signature lines from a body. Cuts from the first
+ * line that matches any sig line (in the back half of the body) to
+ * end-of-body.
+ *
+ * Lives here rather than in signature-detector.ts to avoid a circular
+ * import — signature-detector consumes stripQuotedAndSignature above.
+ */
+function normalizeForMatch(line: string): string {
+  return line.replace(/\s+/g, " ").trim();
+}
+
+export function stripDetectedSignatures(
+  body: string,
+  signatureLines: ReadonlyArray<string>,
+): string {
+  if (signatureLines.length === 0) return body;
+  const sigSet = new Set(signatureLines);
+  const lines = body.split("\n");
+  // Conservative: only honor a sig match in the back half. A sig
+  // line accidentally appearing in body content shouldn't truncate
+  // the email mid-thought.
+  const halfwayIdx = Math.floor(lines.length / 2);
+  for (let i = halfwayIdx; i < lines.length; i++) {
+    if (sigSet.has(normalizeForMatch(lines[i]))) {
+      return lines.slice(0, i).join("\n").trimEnd();
+    }
+  }
+  return body;
+}
+
 // ─── Top-level extractor ───────────────────────────────────
 
-export function extractFeatures(body: string): ExtractedFeatures {
-  const cleanedBody = stripQuotedAndSignature(body);
+/**
+ * Extract voice features from an email body.
+ *
+ * @param body Raw email body as fetched from Gmail.
+ * @param signatureLines Per-user signature lines from
+ *   VoiceProfile.signatureLines (M6.1.1). Applied BEFORE the
+ *   built-in RFC 3676 / quoted-reply stripping. Pass `[]` for the
+ *   first-ever run when no signatures have been detected yet.
+ */
+export function extractFeatures(
+  body: string,
+  signatureLines: ReadonlyArray<string> = [],
+): ExtractedFeatures {
+  // Per-user statistical signatures land here first — they catch
+  // footer blocks (e.g., "Jennifer Aaker | Stanford GSB") that have
+  // no RFC 3676 delimiter and would otherwise dominate the n-gram
+  // ranking. Then the existing strip handles -- delimiters, quoted
+  // replies, mobile trailers.
+  const sigStripped = stripDetectedSignatures(body, signatureLines);
+  const cleanedBody = stripQuotedAndSignature(sigStripped);
   return {
     opening: detectOpening(cleanedBody),
     closing: detectClosing(cleanedBody),

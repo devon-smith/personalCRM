@@ -21,6 +21,7 @@ import type { Task } from "graphile-worker";
 import { PrismaClient } from "../../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { extractFeatures } from "../../src/lib/voice/feature-extraction";
+import { detectSignatureLines } from "../../src/lib/voice/signature-detector";
 import {
   classifyRecipient,
   clearRelationshipClassifierCache,
@@ -57,9 +58,9 @@ const voiceCorpusIndex: Task = async (rawPayload, helpers) => {
       clearRelationshipClassifierCache();
       const summary = await indexForUser(prisma, userId, helpers, payload.rebuild ?? false);
       helpers.logger.info(
-        `voice-corpus: user=${userId} fetched=${summary.bodiesFetched} ` +
-          `indexed=${summary.examplesWritten} skipped=${summary.skipped} ` +
-          `embedFailed=${summary.embedFailures}`,
+        `voice-corpus: user=${userId} sigLines=${summary.signatureLinesDetected} ` +
+          `fetched=${summary.bodiesFetched} indexed=${summary.examplesWritten} ` +
+          `skipped=${summary.skipped} embedFailed=${summary.embedFailures}`,
       );
     }
   } finally {
@@ -72,6 +73,7 @@ interface RunSummary {
   examplesWritten: number;
   skipped: number;
   embedFailures: number;
+  signatureLinesDetected: number;
 }
 
 async function indexForUser(
@@ -85,6 +87,7 @@ async function indexForUser(
     examplesWritten: 0,
     skipped: 0,
     embedFailures: 0,
+    signatureLinesDetected: 0,
   };
 
   // Candidate set: OUTBOUND emails that aren't automated, and that
@@ -153,6 +156,23 @@ async function indexForUser(
     }
   }
 
+  // Step 1.5: detect per-user signature lines from the corpus (M6.1.1).
+  // Pull a wider sample than this batch — fullBody-populated rows from
+  // previous runs improve detection accuracy. Bounded to 1000 to keep
+  // memory reasonable; signature patterns stabilize well before that.
+  const signatureLines = await detectUserSignatureLines(prisma, userId);
+  summary.signatureLinesDetected = signatureLines.length;
+  await prisma.voiceProfile.upsert({
+    where: { userId },
+    create: {
+      userId,
+      learned: {},
+      overrides: { removedPhrases: [], assertions: {} },
+      signatureLines,
+    },
+    update: { signatureLines },
+  });
+
   // Step 2: per-email: extract features, classify recipient.
   interface PreparedExample {
     emailMessageId: string;
@@ -176,7 +196,7 @@ async function indexForUser(
       summary.skipped++;
       continue;
     }
-    const features = extractFeatures(body);
+    const features = extractFeatures(body, signatureLines);
     // Skip empty / boilerplate-only emails — no useful voice signal.
     if (features.wordCount < 5) {
       summary.skipped++;
@@ -287,6 +307,39 @@ function categorizeError(msg: string): string {
   if (/Unexpected token|JSON/i.test(msg)) return "json_parse";
   if (/base64|Buffer/i.test(msg)) return "base64_decode";
   return msg.slice(0, 60).replace(/[a-f0-9]{16,}/gi, "<id>");
+}
+
+/**
+ * Pull the corpus of fullBody-populated outbound emails for this user
+ * and run statistical signature detection. Caller persists the result
+ * onto VoiceProfile.signatureLines.
+ *
+ * Wider sample than the per-run batch (up to 1000) — signature patterns
+ * stabilize quickly so we don't need every email, just enough that the
+ * 30% threshold separates signal from noise.
+ */
+const SIGNATURE_DETECTION_CORPUS_SIZE = 1000;
+
+async function detectUserSignatureLines(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<string[]> {
+  const bodies = await prisma.emailMessage.findMany({
+    where: {
+      userId,
+      direction: "OUTBOUND",
+      isAutomated: false,
+      fullBody: { not: null },
+    },
+    orderBy: { occurredAt: "desc" },
+    take: SIGNATURE_DETECTION_CORPUS_SIZE,
+    select: { fullBody: true },
+  });
+  const texts = bodies
+    .map((b) => b.fullBody)
+    .filter((b): b is string => b !== null);
+  const result = detectSignatureLines(texts);
+  return result.lines;
 }
 
 export default voiceCorpusIndex;

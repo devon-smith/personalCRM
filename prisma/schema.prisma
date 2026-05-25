@@ -577,6 +577,12 @@ model VoiceProfile {
   userId            String    @unique
   learned           Json      @default("{}")
   overrides         Json      @default("{}")
+  // Per-user signature lines detected via statistical frequency analysis
+  // (M6.1.1). Lines appearing verbatim at end-of-body in ≥30% of emails
+  // are signature. Stripped before feature extraction so n-grams /
+  // opening / closing detection don't pick up Jennifer's footer block
+  // as "voice." Sorted longest-first for deterministic display.
+  signatureLines    String[]  @default([])
   indexedEmailCount Int       @default(0)
   oldestIndexedAt   DateTime?
   newestIndexedAt   DateTime?
