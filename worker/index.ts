@@ -32,6 +32,7 @@ import calendarSync from "./tasks/calendar-sync.js";
 import linkedinNotificationsScan from "./tasks/linkedin-notifications-scan.js";
 import signalDetection from "./tasks/signal-detection.js";
 import morningBrief from "./tasks/morning-brief.js";
+import voiceCorpusIndex from "./tasks/voice-corpus-index.js";
 
 // WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
 // connection (port 5432) when the pooler (6543) hits its session limit. The
@@ -57,6 +58,7 @@ const taskList = {
   "linkedin-notifications-scan": linkedinNotificationsScan,
   "signal-detection": signalDetection,
   "morning-brief": morningBrief,
+  "voice-corpus-index": voiceCorpusIndex,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -89,6 +91,10 @@ const crontab = `
 # (priorities + meetings + moment-to-connect + overnight signals) and
 # save as a Gmail draft for the user to skim & send.
 30 13 * * 1-5 morning-brief
+# Weekly Sun 09:42 UTC: top up the voice corpus with recently-sent mail.
+# Idempotent — only fetches bodies + extracts features for emails that
+# don't already have a VoiceExample row.
+42 9 * * 0 voice-corpus-index
 `.trim();
 
 async function main() {

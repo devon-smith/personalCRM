@@ -36,20 +36,22 @@ model User {
   extensionTokens      ExtensionToken[]
   inboxItems           InboxItem[]
   threads              Thread[]
+  voiceProfile         VoiceProfile?
+  voiceExamples        VoiceExample[]
 }
 
 model Account {
-  id                String  @id @default(uuid())
+  id                String    @id @default(uuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?   @db.Text
+  access_token      String?   @db.Text
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?   @db.Text
   session_state     String?
   needsReconnect    Boolean   @default(false)
   lastRefreshAt     DateTime?
@@ -89,9 +91,9 @@ model ContactsSyncCursor {
 
 model ExternalResearchCache {
   id          String   @id @default(uuid())
-  source      String   // "openalex" | "crossref" | "semanticscholar" | "orcid"
-  kind        String   // "author_search" | "author" | "works" | "doi" | ...
-  externalKey String   // the search query, author id, DOI, etc.
+  source      String // "openalex" | "crossref" | "semanticscholar" | "orcid"
+  kind        String // "author_search" | "author" | "works" | "doi" | ...
+  externalKey String // the search query, author id, DOI, etc.
   data        Json
   fetchedAt   DateTime @default(now())
   expiresAt   DateTime
@@ -103,10 +105,10 @@ model ExternalResearchCache {
 model AIGenerationLog {
   id        String   @id @default(uuid())
   userId    String
-  feature   String   // "draft" | "classify" | "insight" | ...
+  feature   String // "draft" | "classify" | "insight" | ...
   model     String
-  inputRefs Json?    // string[] of source record IDs the prompt drew from
-  outputId  String?  // FK-ish reference to whatever record stored the result
+  inputRefs Json? // string[] of source record IDs the prompt drew from
+  outputId  String? // FK-ish reference to whatever record stored the result
   tokensIn  Int?
   tokensOut Int?
   cacheHit  Boolean?
@@ -164,35 +166,35 @@ enum SightingResolution {
 }
 
 model Contact {
-  id              String      @id @default(uuid())
-  userId          String
-  name            String
+  id               String        @id @default(uuid())
+  userId           String
+  name             String
   email            String?
-  additionalEmails  String[]  @default([])
-  phone             String?
-  additionalPhones  String[]  @default([])
-  company           String?
-  role              String?
-  tier              ContactTier @default(PROFESSIONAL)
-  tags              String[]
-  nicknames         String[]  @default([])
-  aliases           String[]  @default([])
-  linkedinUrl     String?
-  city            String?
-  state           String?
-  country         String?
-  latitude        Float?
-  longitude       Float?
-  notes           String?     @db.Text
-  followUpDays    Int?
-  lastInteraction DateTime?
-  avatarUrl       String?
-  birthday        DateTime?   @db.Date
-  howWeMet        String?     @db.Text
-  source          ContactSource @default(MANUAL)
-  importedAt      DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  additionalEmails String[]      @default([])
+  phone            String?
+  additionalPhones String[]      @default([])
+  company          String?
+  role             String?
+  tier             ContactTier   @default(PROFESSIONAL)
+  tags             String[]
+  nicknames        String[]      @default([])
+  aliases          String[]      @default([])
+  linkedinUrl      String?
+  city             String?
+  state            String?
+  country          String?
+  latitude         Float?
+  longitude        Float?
+  notes            String?       @db.Text
+  followUpDays     Int?
+  lastInteraction  DateTime?
+  avatarUrl        String?
+  birthday         DateTime?     @db.Date
+  howWeMet         String?       @db.Text
+  source           ContactSource @default(MANUAL)
+  importedAt       DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   // pgvector embedding for semantic search. 512 dims matches the Voyage AI
   // voyage-3-lite model. Managed via raw SQL — Prisma doesn't natively
@@ -203,9 +205,9 @@ model Contact {
 
   // Scholarly profile linkage (Milestone 2.3 — Meeting prep dossier).
   // Populated when the prep flow matches a contact to OpenAlex / ORCID.
-  openAlexAuthorId          String?
-  orcid                     String?
-  scholarlyProfileMatchedAt DateTime?
+  openAlexAuthorId             String?
+  orcid                        String?
+  scholarlyProfileMatchedAt    DateTime?
   // Last observed OpenAlex institution; used by the nightly diff job
   // (Milestone 3.5) to detect affiliation changes.
   lastSeenScholarlyInstitution String?
@@ -216,18 +218,18 @@ model Contact {
   // than emails.
   peopleApiResourceName String?
 
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  interactions       Interaction[]
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interactions        Interaction[]
   relationshipInsight RelationshipInsight?
-  circles            ContactCircle[]
-  actionItems        ActionItem[]
-  sightings          ContactSighting[]
-  journalEntries     JournalEntry[]
-  changelog          ContactChangelog[]
-  emailMessages      EmailMessage[]
-  drafts             Draft[]
+  circles             ContactCircle[]
+  actionItems         ActionItem[]
+  sightings           ContactSighting[]
+  journalEntries      JournalEntry[]
+  changelog           ContactChangelog[]
+  emailMessages       EmailMessage[]
+  drafts              Draft[]
 
-  inboxItems         InboxItem[]
+  inboxItems InboxItem[]
 
   @@index([userId])
   @@index([email])
@@ -248,32 +250,32 @@ enum InteractionDirection {
 }
 
 model Interaction {
-  id         String               @id @default(uuid())
-  contactId  String
-  userId     String
-  type       InteractionType
-  direction  InteractionDirection
-  channel    String?
-  subject    String?
-  summary    String?              @db.Text
-  occurredAt DateTime
+  id          String               @id @default(uuid())
+  contactId   String
+  userId      String
+  type        InteractionType
+  direction   InteractionDirection
+  channel     String?
+  subject     String?
+  summary     String?              @db.Text
+  occurredAt  DateTime
   sourceId    String?
   dismissedAt DateTime?
   createdAt   DateTime             @default(now())
 
   // Stable conversation identifier (legacy — migrating to Thread model)
   chatId      String?
-  isGroupChat Boolean              @default(false)
+  isGroupChat Boolean @default(false)
   chatName    String?
 
   // Thread FK (canonical conversation identity, replaces chatId)
-  threadId    String?
-  thread      Thread?              @relation(fields: [threadId], references: [id])
+  threadId String?
+  thread   Thread? @relation(fields: [threadId], references: [id])
 
   // Layer 3: AI classification (null = unclassified, fail-open)
   needsReply           Boolean?
-  needsReplyReason     String?    // "question", "request", "emotional", "open_thread", "acknowledged", "winding_down", "fyi", "not_addressed"
-  needsReplyConfidence Float?     // 0.0 - 1.0
+  needsReplyReason     String? // "question", "request", "emotional", "open_thread", "acknowledged", "winding_down", "fyi", "not_addressed"
+  needsReplyConfidence Float? // 0.0 - 1.0
   classifiedAt         DateTime?
 
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -295,19 +297,19 @@ model Interaction {
 // (iMessage chat ROWIDs, Gmail threadIds, LinkedIn DMs, etc.)
 
 model Thread {
-  id              String    @id @default(cuid())
-  userId          String
-  source          String    // "imessage", "gmail", "linkedin", "whatsapp", "calendar"
-  sourceThreadId  String    // original ID from source (e.g., chat ROWID, Gmail threadId)
-  isGroup         Boolean   @default(false)
-  displayName     String?   // computed: group name or primary contact name
-  lastActivityAt  DateTime
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String   @id @default(cuid())
+  userId         String
+  source         String // "imessage", "gmail", "linkedin", "whatsapp", "calendar"
+  sourceThreadId String // original ID from source (e.g., chat ROWID, Gmail threadId)
+  isGroup        Boolean  @default(false)
+  displayName    String? // computed: group name or primary contact name
+  lastActivityAt DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  participants    ThreadParticipant[]
-  interactions    Interaction[]
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  participants ThreadParticipant[]
+  interactions Interaction[]
 
   @@unique([userId, source, sourceThreadId])
   @@index([userId, lastActivityAt])
@@ -331,8 +333,8 @@ model RelationshipInsight {
   id          String   @id @default(uuid())
   contactId   String   @unique
   userId      String
-  healthScore Int      // 0-100
-  healthLabel String   // thriving | stable | fading | dormant
+  healthScore Int // 0-100
+  healthLabel String // thriving | stable | fading | dormant
   summary     String   @db.Text
   actions     String[] // recommended actions
   computedAt  DateTime @default(now())
@@ -415,15 +417,15 @@ model ActionItem {
   contactId      String?
   status         ActionItemStatus @default(OPEN)
   title          String
-  context        String?          @db.Text  // snippet of the email that triggered it
-  sourceId       String?          // Gmail message ID
-  threadId       String?          // Gmail thread ID for grouping
-  channel        String?          // "gmail", "iMessage", "SMS", "linkedin"
-  classification String?          // "action_required", "invitation", "fyi"
+  context        String?          @db.Text // snippet of the email that triggered it
+  sourceId       String? // Gmail message ID
+  threadId       String? // Gmail thread ID for grouping
+  channel        String? // "gmail", "iMessage", "SMS", "linkedin"
+  classification String? // "action_required", "invitation", "fyi"
   dueDate        DateTime?
   extractedAt    DateTime         @default(now())
   resolvedAt     DateTime?
-  resolvedBy     String?          // "auto" | "manual"
+  resolvedBy     String? // "auto" | "manual"
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -435,10 +437,10 @@ model ActionItem {
 // ─── Contact Sightings (Identity Resolution) ─────────────────
 
 model ContactSighting {
-  id          String             @id @default(uuid())
+  id          String        @id @default(uuid())
   userId      String
   source      ContactSource
-  externalId  String?            // source-specific ID for idempotency
+  externalId  String? // source-specific ID for idempotency
   name        String?
   email       String?
   phone       String?
@@ -449,15 +451,15 @@ model ContactSighting {
   state       String?
   country     String?
   linkedinUrl String?
-  rawData     Json?              // full original payload
-  seenAt      DateTime           @default(now())
-  createdAt   DateTime           @default(now())
+  rawData     Json? // full original payload
+  seenAt      DateTime      @default(now())
+  createdAt   DateTime      @default(now())
 
   // Resolution outcome
-  contactId   String?
-  resolution  SightingResolution @default(PENDING)
-  confidence  Float?
-  resolvedAt  DateTime?
+  contactId  String?
+  resolution SightingResolution @default(PENDING)
+  confidence Float?
+  resolvedAt DateTime?
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -488,7 +490,7 @@ model JournalEntry {
   // Voice-memo support (Milestone 3.1). source="voice" when content
   // came from a Whisper transcription; voiceDurationSec measures the
   // original recording length for display.
-  source           String  @default("manual")
+  source           String @default("manual")
   voiceDurationSec Int?
 
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -514,17 +516,17 @@ enum ChangelogStatus {
 }
 
 model ContactChangelog {
-  id          String          @id @default(uuid())
-  contactId   String
-  userId      String
-  type        ChangelogType
-  field       String          // "company", "role"
-  oldValue    String?
-  newValue    String?
-  source      String          @default("linkedin_reimport")
-  status      ChangelogStatus @default(PENDING)
-  detectedAt  DateTime        @default(now())
-  actedAt     DateTime?
+  id         String          @id @default(uuid())
+  contactId  String
+  userId     String
+  type       ChangelogType
+  field      String // "company", "role"
+  oldValue   String?
+  newValue   String?
+  source     String          @default("linkedin_reimport")
+  status     ChangelogStatus @default(PENDING)
+  detectedAt DateTime        @default(now())
+  actedAt    DateTime?
 
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
@@ -535,29 +537,88 @@ model ContactChangelog {
 // ─── Email Inbox (all synced emails, matched or not) ────────
 
 model EmailMessage {
-  id            String    @id @default(uuid())
-  userId        String
-  gmailId       String    // Gmail message ID for dedup
-  threadId      String?   // Gmail thread ID
-  fromEmail     String
-  fromName      String?
-  toEmail       String
-  subject       String?
-  snippet       String?   @db.Text
-  direction     InteractionDirection
-  occurredAt    DateTime
-  contactId     String?   // null if sender not in contacts
-  contactName   String?   // resolved name if matched
-  isRead        Boolean   @default(false)
-  isAutomated   Boolean   @default(false) // true if List-Unsubscribe or Precedence: bulk/list detected
-  createdAt     DateTime  @default(now())
+  id          String               @id @default(uuid())
+  userId      String
+  gmailId     String // Gmail message ID for dedup
+  threadId    String? // Gmail thread ID
+  fromEmail   String
+  fromName    String?
+  toEmail     String
+  subject     String?
+  snippet     String?              @db.Text
+  // Full RFC 822 body — populated by the voice-corpus-index worker for
+  // OUTBOUND emails (M6.1). Stays null for inbound until we have a
+  // reason to fetch them too. Nullable so backfill is incremental.
+  fullBody    String?              @db.Text
+  direction   InteractionDirection
+  occurredAt  DateTime
+  contactId   String? // null if sender not in contacts
+  contactName String? // resolved name if matched
+  isRead      Boolean              @default(false)
+  isAutomated Boolean              @default(false) // true if List-Unsubscribe or Precedence: bulk/list detected
+  createdAt   DateTime             @default(now())
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  voiceExample VoiceExample?
 
   @@unique([userId, gmailId])
   @@index([userId, occurredAt])
   @@index([contactId])
+}
+
+// ─── Voice Model (Phase 6) ──────────────────────────────────
+// One row per user. Holds the learned voice fingerprint (aggregated
+// from VoiceExample rows by the worker) plus manual overrides from
+// /settings/voice. The worker regenerates `learned` on each re-index;
+// `overrides` is sticky across re-indexing.
+model VoiceProfile {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  learned           Json      @default("{}")
+  overrides         Json      @default("{}")
+  indexedEmailCount Int       @default(0)
+  oldestIndexedAt   DateTime?
+  newestIndexedAt   DateTime?
+  lastIndexedAt     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// One row per indexed outbound email. Deterministically-extracted
+// features power the fingerprint UI (M6.2); the vector embedding
+// powers few-shot retrieval in M6.3.
+//
+// Relationship type values match src/lib/voice/relationship-classifier.ts:
+// former_student | peer_faculty | industry_exec | media | family | board
+// | casual | unknown.
+model VoiceExample {
+  id               String   @id @default(uuid())
+  userId           String
+  emailMessageId   String   @unique
+  gmailId          String
+  relationshipType String
+  openingType      String?
+  closingType      String?
+  wordCount        Int
+  avgSentenceLen   Float
+  signaturePhrases String[] @default([])
+  sentAt           DateTime
+  indexedAt        DateTime @default(now())
+
+  // 512-dim Voyage embedding for semantic similarity retrieval.
+  // Managed via raw SQL — Prisma doesn't natively support the vector
+  // type, so `Unsupported` keeps the column visible in the schema
+  // without breaking the query API.
+  embedding Unsupported("vector(512)")?
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailMessage EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+
+  @@index([userId, relationshipType])
+  @@index([userId, sentAt(sort: Desc)])
 }
 
 // ─── Drafts (persistent AI-generated messages) ──────────────
@@ -582,7 +643,7 @@ model Draft {
   contactId   String
   status      DraftStatus @default(DRAFT)
   type        DraftType
-  tone        String      // casual, warm, professional, congratulatory, checking_in
+  tone        String // casual, warm, professional, congratulatory, checking_in
   content     String      @db.Text
   subjectLine String?
   createdAt   DateTime    @default(now())
@@ -616,7 +677,7 @@ model GmailSyncState {
   syncEnabled          Boolean   @default(false)
   contactsImported     Boolean   @default(false)
   additionalUserEmails String[]  @default([]) // Other email addresses belonging to this user (for direction detection)
-  unmatchedSenders     Json?     // Array of { email: string, count: number } — senders with no matching contact
+  unmatchedSenders     Json? // Array of { email: string, count: number } — senders with no matching contact
   mutedThreads         String[]  @default([]) // Gmail threadIds that the user has muted (auto-dismiss future inbound)
   /// When the active Gmail Pub/Sub watch expires (1.2). Renewed by the
   /// worker watch-renew task; null when push sync isn't configured.
@@ -631,15 +692,15 @@ model GmailSyncState {
 /// pair so multi-calendar setups can each have their own watch.
 /// channelId + resourceId are required to stop a channel cleanly.
 model CalendarWatchChannel {
-  id          String   @id @default(uuid())
-  userId      String
-  accountId   String
-  calendarId  String
-  channelId   String
-  resourceId  String
-  expiration  DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(uuid())
+  userId     String
+  accountId  String
+  calendarId String
+  channelId  String
+  resourceId String
+  expiration DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([accountId, calendarId])
   @@index([expiration])
@@ -655,7 +716,7 @@ model WhatsAppSyncState {
   lastMessageAt   DateTime?
   messagesSynced  Int       @default(0)
   contactsMatched Int       @default(0)
-  unmatchedChats  Json?     // Array of { phone, displayName, messageCount }
+  unmatchedChats  Json? // Array of { phone, displayName, messageCount }
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -667,22 +728,21 @@ model WhatsAppSyncState {
 model IMessageSyncState {
   id              String    @id @default(uuid())
   userId          String
-  handleId        String    // phone number or email
-  contactId       String?   // matched CRM contact ID (for reverse lookup)
-  service         String    // "iMessage" or "SMS"
-  lastMessageGuid String?   // GUID of the most recent synced message
+  handleId        String // phone number or email
+  contactId       String? // matched CRM contact ID (for reverse lookup)
+  service         String // "iMessage" or "SMS"
+  lastMessageGuid String? // GUID of the most recent synced message
   lastSyncAt      DateTime?
   messageCount    Int       @default(0)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, handleId])
   @@index([userId])
   @@index([userId, contactId])
 }
-
 
 // ─── Extension Auth Tokens (Chrome extension bearer auth) ────
 
@@ -709,24 +769,24 @@ enum InboxItemStatus {
 }
 
 model InboxItem {
-  id          String          @id @default(uuid())
-  userId      String
-  contactId   String
-  channel     String          // normalized: "text", "email", "linkedin"
-  threadKey   String          @default("") // group chat ID or email thread ID
+  id        String @id @default(uuid())
+  userId    String
+  contactId String
+  channel   String // normalized: "text", "email", "linkedin"
+  threadKey String @default("") // group chat ID or email thread ID
 
   status      InboxItemStatus @default(OPEN)
   resolvedAt  DateTime?
-  resolvedBy  String?         // "auto_sync" | "manual" | "dismissed" | "snoozed"
+  resolvedBy  String? // "auto_sync" | "manual" | "dismissed" | "snoozed"
   snoozeUntil DateTime?
 
   // Denormalized contact info (avoids JOINs on every render)
-  contactName      String
-  company          String?
-  tier             String
-  isGroupChat      Boolean     @default(false)
-  contactEmail     String?
-  contactPhone     String?
+  contactName        String
+  company            String?
+  tier               String
+  isGroupChat        Boolean @default(false)
+  contactEmail       String?
+  contactPhone       String?
   contactLinkedinUrl String?
 
   // The inbound trigger
@@ -734,20 +794,20 @@ model InboxItem {
   triggerAt            DateTime
 
   // Cached message previews (JSON array, updated on each new inbound)
-  messagePreview  Json?      // [{summary, occurredAt, channel}]
-  messageCount    Int         @default(1)
+  messagePreview Json? // [{summary, occurredAt, channel}]
+  messageCount   Int   @default(1)
 
   // Cached priority (recomputed on create/update)
-  priority        String?    // "high", "medium", "low"
-  priorityScore   Int?       // 0-100
+  priority      String? // "high", "medium", "low"
+  priorityScore Int? // 0-100
 
   // Provenance — why this item is here, with source records the user can audit.
-  sourceSystem    String?    // "gmail" | "imessage" | "linkedin" | "whatsapp"
-  sourceRecordIds Json?      // string[] like ["interaction:abc", "email:xyz"]
-  surfacedReason  String?    // persisted score breakdown ("Inner circle · Sent today")
+  sourceSystem    String? // "gmail" | "imessage" | "linkedin" | "whatsapp"
+  sourceRecordIds Json? // string[] like ["interaction:abc", "email:xyz"]
+  surfacedReason  String? // persisted score breakdown ("Inner circle · Sent today")
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)

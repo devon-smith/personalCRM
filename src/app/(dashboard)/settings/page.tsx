@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Trash2, Plus } from "lucide-react";
 import { CircleIcon } from "@/components/ui/circle-icon";
 import Link from "next/link";
-import { Plug } from "lucide-react";
+import { Plug, MessageSquareText } from "lucide-react";
 import { NicknameMatches } from "@/components/settings/nickname-matches";
 
 export default function SettingsPage() {
@@ -40,6 +40,27 @@ export default function SettingsPage() {
         <div className="flex-1">
           <p className="ds-heading-sm">Integrations</p>
           <p className="ds-caption mt-0.5">Manage connected sources, sync data, and view data health</p>
+        </div>
+        <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
+      </Link>
+
+      {/* Link to Voice settings */}
+      <Link
+        href="/settings/voice"
+        className="crm-animate-enter crm-card flex items-center gap-3 p-5 transition-colors"
+        style={{ animationDelay: "40ms" }}
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--surface)"; }}
+      >
+        <div
+          className="flex h-10 w-10 items-center justify-center rounded-[10px]"
+          style={{ backgroundColor: "var(--surface-sunken)" }}
+        >
+          <MessageSquareText className="h-5 w-5" style={{ color: "var(--text-secondary)" }} />
+        </div>
+        <div className="flex-1">
+          <p className="ds-heading-sm">Your voice</p>
+          <p className="ds-caption mt-0.5">How drafts learn from the way you write. Inspect and correct the patterns we found.</p>
         </div>
         <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
       </Link>
