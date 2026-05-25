@@ -16,7 +16,7 @@ import type { UpcomingEvent } from "@/lib/calendar";
 
 interface DraftLite {
   id: string;
-  contactName: string;
+  contact: { name: string } | null;
   subjectLine: string | null;
   updatedAt: string;
 }
@@ -71,12 +71,13 @@ export function TodayTimeline() {
     }
 
     for (const d of draftsData?.drafts ?? []) {
+      const name = d.contact?.name ?? "Unknown contact";
       items.push({
         id: `d-${d.id}`,
         kind: "draft",
         time: null,
-        title: d.subjectLine ?? `Draft to ${d.contactName}`,
-        subtitle: `to ${d.contactName}`,
+        title: d.subjectLine ?? `Draft to ${name}`,
+        subtitle: `to ${name}`,
         href: `/dashboard#drafts`,
       });
     }

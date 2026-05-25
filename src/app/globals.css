@@ -342,12 +342,16 @@
   animation: ds-cmd-enter 200ms var(--ease-out) both !important;
 }
 /* Re-center the palette within the content area (right of the 232px
-   rail) instead of the viewport. The rail makes a viewport-centered
-   dialog read ~116px too far left to the eye. Desktop only — on
-   mobile the rail is hidden and viewport-center is correct. */
+   rail). margin-left interacts unpredictably with shadcn's
+   `translate-x-[-50%]` centering when combined with width:100% +
+   max-width — overriding `left` directly is unambiguous. The
+   translate-x: -50% (already on the element from Tailwind class
+   utilities AND retained as the animation end-state) still pulls
+   the element back by half its own width, so anchoring `left` at
+   `50% + 116px` puts the dialog's CENTER at viewport_center + 116px. */
 @media (min-width: 640px) {
   .ds-command-palette {
-    margin-left: 116px !important;
+    left: calc(50% + 116px) !important;
   }
 }
 @keyframes ds-cmd-enter {
