@@ -110,7 +110,7 @@ function ContactsPageInner() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-theme(spacing.14))] gap-0">
+    <div className="relative flex h-[calc(100vh-theme(spacing.14))] gap-0">
       {/* Main column */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
@@ -196,13 +196,16 @@ function ContactsPageInner() {
         </div>
       </div>
 
-      {/* Detail panel slide-over */}
+      {/* Detail panel — floats over the right edge of the list so the
+          list stays in view at narrow widths. Hex background so the
+          mist tone reaches the screen regardless of CSS-var cascade. */}
       {selectedId && (
         <div
-          className="w-[520px] shrink-0 overflow-hidden"
+          className="absolute right-0 top-0 bottom-0 w-full sm:w-[520px] overflow-hidden z-20 animate-in slide-in-from-right duration-200"
           style={{
-            borderLeft: "1px solid var(--border-subtle)",
-            backgroundColor: "var(--surface-mist)",
+            borderLeft: "1px solid #ECE7D9",
+            backgroundColor: "#E8E4DC",
+            boxShadow: "-12px 0 32px rgba(27,26,23,0.08)",
           }}
         >
           <ContactDetailPanel

@@ -482,7 +482,10 @@ export function Inbox() {
       : loadingNR;
 
   return (
-    <div className="crm-card tone-sand overflow-hidden">
+    <div
+      className="crm-card overflow-hidden"
+      style={{ backgroundColor: "#F1ECDE" }}
+    >
       {/* ─── Tab bar ────────────────────────────────────────── */}
       <div
         className="flex items-center justify-between px-4 sm:px-6 pt-5 pb-0"
@@ -548,9 +551,9 @@ export function Inbox() {
               <span
                 className="rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums"
                 style={{
-                  backgroundColor: "var(--text-tertiary)",
+                  backgroundColor:
+                    activeTab === "groups" ? "var(--accent-color)" : "var(--text-tertiary)",
                   color: "var(--text-inverse)",
-                  opacity: activeTab === "groups" ? 0.9 : 0.6,
                 }}
               >
                 {groupCount}
@@ -559,7 +562,7 @@ export function Inbox() {
           </button>
           <button
             onClick={() => setActiveTab("activity")}
-            className="rounded-lg px-4 py-1.5 text-[13px] font-medium transition-all"
+            className="rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
             style={{
               backgroundColor:
                 activeTab === "activity"
@@ -715,27 +718,26 @@ function InboxTab({
 
   return (
     <div className="space-y-4">
-      {/* Bulk "Clear all replied" button — when 3+ items */}
+      {/* Bulk "Clear all replied" — quiet moss chip, top-right of the
+          waiting list. Bulk dismiss should not shout louder than the
+          things being dismissed. */}
       {waitingItems.length >= 3 && (
-        <button
-          onClick={onBulkResolve}
-          className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[12px] font-medium transition-colors"
-          style={{
-            backgroundColor: "rgba(5,150,105,0.06)",
-            border: "1px solid rgba(5,150,105,0.15)",
-            color: "#059669",
-            letterSpacing: "-0.01em",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.10)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.06)";
-          }}
-        >
-          <Check className="h-3.5 w-3.5" />
-          Clear all — I&apos;ve replied to everything
-        </button>
+        <div className="flex justify-end">
+          <button
+            onClick={onBulkResolve}
+            className="inline-flex items-center gap-1.5 rounded-full pl-2 pr-3 py-1 text-[11.5px] font-medium transition-colors"
+            style={{ backgroundColor: "#E4EBE3", color: "#6B8A6E" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "#D6E2D5";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "#E4EBE3";
+            }}
+          >
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#6B8A6E" }} />
+            All replied · clear
+          </button>
+        </div>
       )}
 
       {/* Waiting on you — grouped by time */}
@@ -1010,10 +1012,10 @@ function GroupChatRow({
       {/* Draft indicator */}
       {item.hasDraft && (
         <div
-          className="flex items-center gap-1.5 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium"
-          style={{ backgroundColor: "rgba(245,158,11,0.08)", color: "#D97706" }}
+          className="flex items-center gap-1.5 mt-2 px-2.5 py-1.5 rounded-full text-[11px] font-medium w-fit"
+          style={{ backgroundColor: "#EFEAE0", color: "#5A574F" }}
         >
-          <Pencil className="h-3 w-3" />
+          <Pencil className="h-3 w-3" strokeWidth={1.7} />
           Draft in progress
         </div>
       )}
@@ -1053,28 +1055,27 @@ function GroupChatRow({
         </div>
       )}
 
-      {/* "Already replied?" — prominent green button */}
+      {/* "Already replied?" — quiet moss-tinted chip. Matches InboxRow. */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onResolve();
         }}
-        className="w-full flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 mt-2.5 text-[12px] font-medium transition-colors"
+        title="Mark as already replied"
+        className="mt-2 inline-flex items-center gap-1.5 rounded-full pl-2 pr-3 py-1 text-[11.5px] font-medium transition-colors"
         style={{
-          backgroundColor: "rgba(5,150,105,0.06)",
-          border: "1px solid rgba(5,150,105,0.15)",
-          color: "#059669",
-          letterSpacing: "-0.01em",
+          backgroundColor: "#E4EBE3",
+          color: "#6B8A6E",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.12)";
+          e.currentTarget.style.backgroundColor = "#D6E2D5";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.06)";
+          e.currentTarget.style.backgroundColor = "#E4EBE3";
         }}
       >
-        <Check className="h-3.5 w-3.5" />
-        Already replied? Tap to clear
+        <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#6B8A6E" }} />
+        Already replied
       </button>
 
       {/* Actions: Dismiss + Snooze */}
@@ -1241,12 +1242,12 @@ function InboxRow({
               <span
                 className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full hidden sm:inline-flex"
                 style={{
-                  backgroundColor: "rgba(245,158,11,0.08)",
-                  color: "#D97706",
+                  backgroundColor: "#EFEAE0",
+                  color: "#5A574F",
                   letterSpacing: "-0.01em",
                 }}
               >
-                <Pencil className="h-2.5 w-2.5" />
+                <Pencil className="h-2.5 w-2.5" strokeWidth={1.7} />
                 Draft in progress
               </span>
             ) : item.priorityReason ? (
@@ -1256,16 +1257,19 @@ function InboxRow({
                 <span
                   className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
                   style={{
+                    // New warm palette — high gets a soft terracotta whisper,
+                    // medium gets a warm sand chip, low is the quietest.
+                    // None of them should out-shout the message content.
                     backgroundColor: item.priority === "high"
-                      ? "rgba(239,68,68,0.08)"
+                      ? "#F5EAE3"
                       : item.priority === "medium"
-                        ? "rgba(245,158,11,0.08)"
-                        : "rgba(107,114,128,0.08)",
+                        ? "#EFEAE0"
+                        : "transparent",
                     color: item.priority === "high"
-                      ? "#DC2626"
+                      ? "#B86B4B"
                       : item.priority === "medium"
-                        ? "#D97706"
-                        : "#6B7280",
+                        ? "#5A574F"
+                        : "#8C8A82",
                     letterSpacing: "-0.01em",
                   }}
                 >
@@ -1702,7 +1706,10 @@ export function ActionItemsCard() {
   if (!isLoading && items.length === 0) return null;
 
   return (
-    <div className="crm-card tone-sand overflow-hidden">
+    <div
+      className="crm-card overflow-hidden"
+      style={{ backgroundColor: "#F1ECDE" }}
+    >
       <div className="px-6 pt-5 pb-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

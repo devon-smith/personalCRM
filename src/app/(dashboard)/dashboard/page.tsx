@@ -29,6 +29,17 @@ import { MomentToConnect } from "@/components/dashboard/moment-to-connect";
 import { TravelCard } from "@/components/dashboard/travel-card";
 import { Surface, StatTile, Sparkline } from "@/components/ds";
 
+// Tone hex map mirrors the one in Surface. Inline styles win over the
+// shadcn Card's `bg-card` utility by specificity, so this is the only
+// way to actually push tone backgrounds onto Card-wrapped surfaces
+// without rewriting their internal layout.
+const TONE_BG = {
+  sand:  "#F1ECDE",
+  mist:  "#E8E4DC",
+  olive: "#DCDCC9",
+  stone: "#DDE3E3",
+} as const;
+
 function getGreeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
@@ -293,7 +304,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Recent Interactions */}
         {stats.recentInteractions?.length > 0 && (
-          <Card className="crm-card tone-mist border-0">
+          <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.mist }}>
             <CardHeader className="px-6 pt-6 pb-0">
               <CardTitle className="crm-section-label">Recent interactions</CardTitle>
             </CardHeader>
@@ -371,7 +382,7 @@ export default function DashboardPage() {
 
         {/* Strongest relationships */}
         {stats.recentlyActive.length > 0 && (
-          <Card className="crm-card tone-olive border-0">
+          <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.olive }}>
             <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
               <CardTitle className="crm-section-label">
                 Strongest relationships
@@ -482,7 +493,7 @@ export default function DashboardPage() {
         )}
 
         {/* Upcoming Meetings */}
-        <Card className="crm-card tone-stone border-0">
+        <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.stone }}>
           <CardContent className="px-6 py-6">
             <UpcomingMeetings />
           </CardContent>
@@ -492,7 +503,7 @@ export default function DashboardPage() {
         <BirthdaysCard />
 
         {/* Your Circles */}
-        <Card className="crm-card tone-olive border-0">
+        <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.olive }}>
           <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
             <CardTitle className="crm-section-label">Your circles</CardTitle>
             <Link
@@ -605,7 +616,7 @@ function ReviewQueueCard() {
   }
 
   return (
-    <Card className="crm-card tone-sand border-0">
+    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.sand }}>
       <CardContent className="px-6 py-6">
         <ReviewQueue />
       </CardContent>
@@ -627,7 +638,7 @@ function SmartSchedulingCard() {
   if (!data?.suggestions.length) return null;
 
   return (
-    <Card className="crm-card tone-stone border-0">
+    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.stone }}>
       <CardContent className="px-6 py-6">
         <SmartScheduling />
       </CardContent>
@@ -649,7 +660,7 @@ function LifeUpdatesCard() {
   if (!data?.entries.length) return null;
 
   return (
-    <Card className="crm-card tone-mist border-0">
+    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.mist }}>
       <CardContent className="px-6 py-6">
         <LifeUpdates />
       </CardContent>
@@ -671,7 +682,7 @@ function DraftQueueCard() {
   if (!data?.drafts.length) return null;
 
   return (
-    <Card className="crm-card tone-mist border-0">
+    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.mist }}>
       <CardContent className="px-6 py-6">
         <DraftQueue />
       </CardContent>
@@ -693,7 +704,7 @@ function BirthdaysCard() {
   if (!data?.birthdays.length) return null;
 
   return (
-    <Card className="crm-card tone-stone border-0">
+    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.stone }}>
       <CardContent className="px-6 py-6">
         <UpcomingBirthdays />
       </CardContent>

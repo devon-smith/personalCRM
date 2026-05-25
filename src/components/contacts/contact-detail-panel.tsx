@@ -297,7 +297,7 @@ export function ContactDetailPanel({
   const subline = [
     contact.role && contact.company ? `${contact.role} at ${contact.company}` : contact.role || contact.company,
     contact.lastInteraction
-      ? `last contact ${formatDistanceToNow(new Date(contact.lastInteraction))} ago`
+      ? `last contact ${formatDistanceToNow(new Date(contact.lastInteraction))}`
       : null,
   ]
     .filter(Boolean)

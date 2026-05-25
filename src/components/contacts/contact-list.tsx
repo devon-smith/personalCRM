@@ -71,7 +71,7 @@ export function ContactList({ contacts, onSelect, selectedId }: ContactListProps
               {group.items.map((contact) => {
                 const m = momentumMap.get(contact.id);
                 const lastContact = contact.lastInteraction
-                  ? `${formatDistanceToNow(new Date(contact.lastInteraction))} ago`
+                  ? formatDistanceToNow(new Date(contact.lastInteraction))
                   : "No contact yet";
                 return (
                   <li key={contact.id}>

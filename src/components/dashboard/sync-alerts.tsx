@@ -94,35 +94,10 @@ export function SyncAlerts() {
     action?: React.ReactNode;
   }> = [];
 
-  // Gmail re-auth alert
-  if (health.gmail.status === "expired") {
-    alerts.push({
-      key: "gmail-expired",
-      type: "warning",
-      icon: <Mail className="h-4 w-4" />,
-      message:
-        "Gmail sync paused — your Google token has expired. Re-connect to resume email sync.",
-      action: (
-        <a
-          href="/api/auth/add-google-account"
-          className="inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
-          style={{
-            backgroundColor: "rgba(239,68,68,0.1)",
-            color: "rgb(220,38,38)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.15)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.1)";
-          }}
-        >
-          Re-connect Google
-          <ExternalLink className="h-3 w-3" />
-        </a>
-      ),
-    });
-  }
+  // Note: gmail-expired alert removed here. ReconnectBanner already
+  // surfaces the same signal (its own /api/data-health query reads
+  // Account.needsReconnect, same root cause), and the rail nav shows a
+  // terracotta dot. Three places signaling the same problem was clutter.
 
   // Gmail disconnected
   if (health.gmail.status === "disconnected") {

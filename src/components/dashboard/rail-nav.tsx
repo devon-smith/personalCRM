@@ -68,17 +68,18 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
 
   return (
     <aside
-      className="hidden sm:flex flex-col shrink-0"
+      className="hidden sm:flex flex-col shrink-0 sticky top-0"
       style={{
         width: 232,
-        backgroundColor: "var(--rail-bg)",
-        color: "var(--rail-fg)",
-        minHeight: "100vh",
+        // Hex values, not CSS vars — see Surface for the same reasoning.
+        backgroundColor: "#1B1A17",
+        color: "#E8E4DC",
+        height: "100vh",
       }}
     >
       {/* Wordmark */}
       <div className="px-5 pt-6 pb-4">
-        <div className="ds-display-md" style={{ color: "var(--rail-fg-active)", fontSize: "1.125rem" }}>
+        <div className="ds-display-md" style={{ color: "#FAF8F5", fontSize: "1.125rem" }}>
           ProfessorCRM
         </div>
       </div>
@@ -90,7 +91,7 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
           className="flex w-full items-center gap-2 rounded-full px-3 py-1.5 text-left"
           style={{
             backgroundColor: "rgba(232,228,220,0.08)",
-            color: "var(--rail-fg-muted)",
+            color: "#8C8A82",
             transition: "background-color var(--duration-fast) var(--ease-default)",
           }}
           onMouseEnter={(e) => {
@@ -104,7 +105,7 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
           <span className="flex-1 text-[12.5px]">Search</span>
           <kbd
             className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-            style={{ backgroundColor: "rgba(232,228,220,0.08)", color: "var(--rail-fg-muted)" }}
+            style={{ backgroundColor: "rgba(232,228,220,0.08)", color: "#8C8A82" }}
           >
             ⌘K
           </kbd>
@@ -149,24 +150,24 @@ function RailUserChip() {
         <AvatarImage src={user.image ?? undefined} alt={user.name ?? "User"} />
         <AvatarFallback
           className="text-[11px] font-semibold"
-          style={{ backgroundColor: "rgba(232,228,220,0.14)", color: "var(--rail-fg-active)" }}
+          style={{ backgroundColor: "rgba(232,228,220,0.14)", color: "#FAF8F5" }}
         >
           {initials}
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium" style={{ color: "var(--rail-fg-active)" }}>
+        <div className="truncate text-[13px] font-medium" style={{ color: "#FAF8F5" }}>
           {user.name}
         </div>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="text-[11px] transition-colors"
-          style={{ color: "var(--rail-fg-muted)" }}
+          style={{ color: "#8C8A82" }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = "var(--rail-fg)";
+            e.currentTarget.style.color = "#E8E4DC";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = "var(--rail-fg-muted)";
+            e.currentTarget.style.color = "#8C8A82";
           }}
         >
           Sign out
@@ -192,7 +193,7 @@ function RailGroup({
     <div>
       <div
         className="px-3 pb-2 text-[10.5px] uppercase tracking-[0.1em] font-semibold"
-        style={{ color: "var(--rail-fg-muted)" }}
+        style={{ color: "#8C8A82" }}
       >
         {label}
       </div>
@@ -209,7 +210,7 @@ function RailGroup({
                 <span
                   aria-hidden
                   className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r"
-                  style={{ backgroundColor: "var(--rail-accent)" }}
+                  style={{ backgroundColor: "#FAF8F5" }}
                 />
               ) : null}
               <Link
@@ -219,15 +220,15 @@ function RailGroup({
                   "text-[13px]",
                 )}
                 style={{
-                  color: active ? "var(--rail-fg-active)" : "var(--rail-fg)",
+                  color: active ? "#FAF8F5" : "#E8E4DC",
                   fontWeight: active ? 600 : 400,
                   transitionDuration: "var(--duration-fast)",
                 }}
                 onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.color = "var(--rail-fg-active)";
+                  if (!active) e.currentTarget.style.color = "#FAF8F5";
                 }}
                 onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.color = "var(--rail-fg)";
+                  if (!active) e.currentTarget.style.color = "#E8E4DC";
                 }}
               >
                 <Icon className="h-[15px] w-[15px]" strokeWidth={1.6} />
