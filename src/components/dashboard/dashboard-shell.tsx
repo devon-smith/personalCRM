@@ -4,13 +4,14 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { NavMenu } from "@/components/dashboard/sidebar";
+import { RailNav } from "@/components/dashboard/rail-nav";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { QuickLogPicker } from "@/components/interactions/quick-log-picker";
 import { DraftComposer } from "@/components/draft-composer";
 import { ReconnectBanner } from "@/components/integrations/reconnect-banner";
 import { DraftComposerProvider, useDraftComposer } from "@/lib/draft-composer-context";
 import { useAutoSync } from "@/lib/hooks/use-auto-sync";
-import { Search, Mail, Users, BarChart3 } from "lucide-react";
+import { Search, Users, BarChart3 } from "lucide-react";
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -38,46 +39,50 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   }, [openComposer]);
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ backgroundColor: "var(--background)" }}>
-      <ReconnectBanner />
-      <header
-        className="sticky top-0 z-40 flex h-14 items-center justify-between px-4"
-        style={{ backgroundColor: "var(--background)" }}
-      >
-        <NavMenu />
+    <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
+      {/* Persistent left rail — desktop only */}
+      <RailNav onOpenSearch={() => setSearchOpen(true)} />
 
-        <button
-          className="flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-1.5 text-sm transition-colors"
-          style={{ color: "var(--text-tertiary)" }}
-          onClick={() => setSearchOpen(true)}
+      {/* Main column */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ReconnectBanner />
+
+        {/* Mobile-only header: burger menu + search pill. Hidden sm+ because
+            the rail subsumes both. */}
+        <header
+          className="sticky top-0 z-40 flex h-14 items-center justify-between px-4 sm:hidden"
+          style={{ backgroundColor: "var(--background)" }}
         >
-          <Search className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Search</span>
-          <kbd
-            className="pointer-events-none hidden rounded-[var(--radius-sm)] px-1.5 text-[10px] font-medium sm:inline"
-            style={{ backgroundColor: "var(--surface-sunken)", color: "var(--text-tertiary)" }}
+          <NavMenu />
+          <button
+            className="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition-colors"
+            style={{
+              color: "var(--text-tertiary)",
+              backgroundColor: "var(--surface-sunken)",
+            }}
+            onClick={() => setSearchOpen(true)}
           >
-            ⌘K
-          </kbd>
-        </button>
-      </header>
+            <Search className="h-3.5 w-3.5" />
+            <span>Search</span>
+          </button>
+        </header>
 
-      <main className="flex-1">
-        <div className="mx-auto max-w-[600px] px-4 sm:px-5 pb-20 sm:pb-12">{children}</div>
-      </main>
+        <main className="flex-1">
+          <div className="mx-auto w-full max-w-[1100px] px-4 sm:px-8 lg:px-10 py-6 sm:py-10 pb-20 sm:pb-12">
+            {children}
+          </div>
+        </main>
 
-      {/* Mobile bottom nav — visible below 640px */}
-      <MobileBottomNav />
+        {/* Mobile bottom nav — visible below 640px */}
+        <MobileBottomNav />
+      </div>
 
       <CommandPalette
         open={searchOpen}
         onOpenChange={setSearchOpen}
         onQuickLog={() => setQuickLogOpen(true)}
       />
-      <QuickLogPicker
-        open={quickLogOpen}
-        onOpenChange={setQuickLogOpen}
-      />
+      <QuickLogPicker open={quickLogOpen} onOpenChange={setQuickLogOpen} />
       <DraftComposer />
     </div>
   );

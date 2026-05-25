@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { EvidenceChevron } from "@/components/shared/evidence-chevron";
 import { useDraftComposer } from "@/lib/draft-composer-context";
+import { Surface, Pill, SectionLabel } from "@/components/ds";
 
 interface MomentSuggestion {
   contactId: string;
@@ -28,9 +28,10 @@ interface MomentResponse {
 }
 
 /**
- * A single, gentle "reach out to this person today" card. Hidden when
- * the calendar is packed or no qualifying contact exists — by design
- * the card disappears rather than rendering an empty / nagging state.
+ * The dashboard's editorial centerpiece — one carefully chosen
+ * contact, on days where the calendar shape genuinely supports it.
+ * Hidden when no qualifying contact exists: by design we'd rather
+ * show nothing than nag.
  */
 export function MomentToConnect() {
   const { openComposer } = useDraftComposer();
@@ -42,41 +43,39 @@ export function MomentToConnect() {
       if (!res.ok) throw new Error("Failed to load suggestion");
       return res.json();
     },
-    staleTime: 10 * 60 * 1000, // 10 min — pick is daily but cheap to refresh
+    staleTime: 10 * 60 * 1000,
   });
 
   const m = data?.suggestion;
   if (!m) return null;
 
-  const subline = [m.role, m.company].filter(Boolean).join(" at ");
+  const subline = [m.role, m.company].filter(Boolean).join(" · ");
   const occasion =
     m.occasion === "light_day" ? "Light day today" : "Open window today";
+  const quietLabel =
+    m.daysSinceLastInteraction != null
+      ? `${m.daysSinceLastInteraction} days quiet`
+      : "no recent contact";
 
   return (
-    <div
-      className="crm-card mt-6 rounded-[14px] p-5"
-      style={{
-        border: "1px solid var(--border)",
-        backgroundColor: "var(--surface)",
-      }}
-    >
-      <div className="flex items-center gap-2 mb-3">
-        <Sparkles
-          className="h-3.5 w-3.5"
-          style={{ color: "var(--accent-color)" }}
-        />
+    <Surface tone="olive" className="relative overflow-hidden p-7 sm:p-9">
+      <div className="flex items-start justify-between gap-3 mb-5">
+        <SectionLabel>A moment to connect</SectionLabel>
         <span
-          className="text-[11px] font-medium uppercase tracking-wide"
-          style={{ color: "var(--text-tertiary)" }}
+          className="text-[11px] font-medium tracking-wide"
+          style={{ color: "var(--text-secondary)" }}
         >
-          A moment to connect · {occasion}
+          {occasion}
         </span>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Avatar className="h-10 w-10">
+      <div className="flex items-start gap-4">
+        <Avatar className="h-14 w-14 shrink-0">
           {m.avatarUrl && <AvatarImage src={m.avatarUrl} alt={m.contactName} />}
-          <AvatarFallback>
+          <AvatarFallback
+            className="text-[15px] font-semibold"
+            style={{ backgroundColor: "var(--surface-olive-raised)", color: "var(--text-primary)" }}
+          >
             {m.contactName
               .split(" ")
               .map((n) => n[0])
@@ -86,36 +85,25 @@ export function MomentToConnect() {
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <p
-            className="ds-body-sm font-medium truncate"
-            style={{ color: "var(--text-primary)" }}
-          >
+          <h2 className="ds-display-lg" style={{ fontSize: "1.875rem" }}>
             {m.contactName}
-          </p>
+          </h2>
           {subline && (
-            <p
-              className="text-[12px] truncate"
-              style={{ color: "var(--text-tertiary)" }}
-            >
+            <p className="ds-body-md mt-1" style={{ color: "var(--text-secondary)" }}>
               {subline}
             </p>
           )}
-        </div>
-        <div className="shrink-0 text-right">
-          <p
-            className="text-[11px]"
-            style={{ color: "var(--text-tertiary)" }}
-          >
-            {m.daysSinceLastInteraction != null
-              ? `${m.daysSinceLastInteraction}d quiet`
-              : "no recent contact"}
+          <p className="ds-body-sm mt-2" style={{ color: "var(--text-tertiary)" }}>
+            {quietLabel} · {m.reason}
           </p>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-3">
-        <button
-          type="button"
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <Pill
+          variant="filled"
+          tone="accent"
+          size="md"
           onClick={() =>
             openComposer({
               contactId: m.contactId,
@@ -123,17 +111,12 @@ export function MomentToConnect() {
               presetContext: "catching_up",
             })
           }
-          className="rounded-[8px] px-3 py-1.5 text-[12px] font-medium"
-          style={{
-            backgroundColor: "var(--accent-color)",
-            color: "var(--text-inverse)",
-          }}
         >
           Draft a message
-        </button>
+        </Pill>
         <Link
-          href={`/people/${m.contactId}`}
-          className="text-[12px] font-medium"
+          href={`/people?contact=${m.contactId}`}
+          className="text-[13px] font-medium transition-colors"
           style={{ color: "var(--text-secondary)" }}
         >
           Open contact →
@@ -147,6 +130,6 @@ export function MomentToConnect() {
           />
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }

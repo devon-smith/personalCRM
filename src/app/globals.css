@@ -25,10 +25,11 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
 
   /* Shadows */
   --shadow-xs: 0 1px 2px rgba(26,25,23,0.04);
@@ -39,62 +40,94 @@
 }
 
 :root {
-  /* ─── Design System v1.0 — Warm Minimalism ─── */
+  /* ─── Design System v2.0 — Intelly-grade neutral palette ─── */
 
-  /* Semantic palette */
-  --background: #FAFAF8;
-  --foreground: #1A1917;
-  --card: #FFFFFF;
-  --card-foreground: #1A1917;
-  --popover: #FFFFFF;
-  --popover-foreground: #1A1917;
-  --primary: #1A1917;
-  --primary-foreground: #FAFAF8;
-  --secondary: #F5F4F0;
-  --secondary-foreground: #1A1917;
-  --muted: #F5F4F0;
-  --muted-foreground: #6B6860;
-  --accent: #F5F4F0;
-  --accent-foreground: #1A1917;
-  --destructive: #DC4A3F;
-  --border: #E8E6E1;
-  --input: #D4D1CA;
-  --ring: #1A1917;
-  --radius: 14px;
+  /* Canvas (warm off-white linen) */
+  --background: #FAF8F5;
 
-  /* Extended semantic tokens */
+  /* Card surfaces — four tone families that map to content categories */
+  --surface-sand:  #F1ECDE;   /* people / inbox */
+  --surface-mist:  #E8E4DC;   /* activity / communication */
+  --surface-olive: #DCDCC9;   /* relationships / circles */
+  --surface-stone: #DDE3E3;   /* time / calendar */
+
+  /* Slightly elevated variants for hover & focused states */
+  --surface-sand-raised:  #F5F0E4;
+  --surface-mist-raised:  #EEEAE2;
+  --surface-olive-raised: #E2E2D2;
+  --surface-stone-raised: #E4E9E9;
+
+  /* Plain neutral surfaces (used for dialogs, popovers, anywhere we
+     don't want a tone-coded background) */
   --surface: #FFFFFF;
   --surface-raised: #FFFFFF;
-  --surface-sunken: #F5F4F0;
-  --border-subtle: #F0EEE9;
-  --border-strong: #D4D1CA;
-  --text-primary: #1A1917;
-  --text-secondary: #6B6860;
-  --text-tertiary: #9C9889;
-  --text-inverse: #FAFAF8;
-  --accent-color: #1A1917;
-  --accent-hover: #2D2C28;
-  --accent-soft: #F5F4F0;
+  --surface-sunken: #F1ECDE;
+  --foreground: #1B1A17;
+  --card: #FFFFFF;
+  --card-foreground: #1B1A17;
+  --popover: #FFFFFF;
+  --popover-foreground: #1B1A17;
 
-  /* Status colors */
-  --status-urgent: #DC4A3F;
-  --status-urgent-bg: #FEF2F1;
-  --status-warning: #E5A820;
-  --status-warning-bg: #FDF8EC;
-  --status-success: #2D8A4E;
-  --status-success-bg: #F0F9F3;
-  --status-info: #3B7DD8;
-  --status-info-bg: #F0F5FD;
+  /* Ink — three steps of warm near-black so secondary text doesn't look
+     dead-grey on the warm canvas */
+  --text-primary:   #1B1A17;
+  --text-secondary: #5A574F;
+  --text-tertiary:  #8C8A82;
+  --text-inverse:   #FAF8F5;
 
-  /* Warmth colors (for circle health) */
-  --warmth-good: #2D8A4E;
-  --warmth-good-bg: #F0F9F3;
-  --warmth-mid: #E5A820;
-  --warmth-mid-bg: #FDF8EC;
-  --warmth-cold: #DC4A3F;
-  --warmth-cold-bg: #FEF2F1;
-  --warmth-none: #9C9889;
-  --warmth-none-bg: #F5F4F0;
+  /* Dark rail (warm charcoal, not pure black) */
+  --rail-bg:        #1B1A17;
+  --rail-fg:        #E8E4DC;
+  --rail-fg-muted:  #8C8A82;
+  --rail-fg-active: #FAF8F5;
+  --rail-accent:    #FAF8F5;
+
+  /* Single accent for primary CTAs — near-black warm brown */
+  --accent-color: #2E2A24;
+  --accent-hover: #1B1A17;
+  --accent-soft:  #EFEAE0;
+
+  /* Borders */
+  --border:         #E0DBCC;
+  --border-subtle:  #ECE7D9;
+  --border-strong:  #C9C3B2;
+  --input:          #C9C3B2;
+  --ring:           #1B1A17;
+  --radius:         24px;          /* card radius */
+  --radius-pill:    9999px;        /* pill radius */
+
+  /* shadcn semantic mappings — keep these working so legacy components
+     using `bg-secondary`, `bg-muted`, etc. still look intentional. */
+  --primary: #1B1A17;
+  --primary-foreground: #FAF8F5;
+  --secondary: #F1ECDE;
+  --secondary-foreground: #1B1A17;
+  --muted: #F1ECDE;
+  --muted-foreground: #5A574F;
+  --accent: #EFEAE0;
+  --accent-foreground: #1B1A17;
+  --destructive: #B86B4B;
+
+  /* Status colors — desaturated for the calm canvas. Used sparingly:
+     warnings get terracotta, confirmations get moss. No bright red. */
+  --status-urgent: #B86B4B;
+  --status-urgent-bg: #F5EAE3;
+  --status-warning: #B08B3F;
+  --status-warning-bg: #F5EFDD;
+  --status-success: #6B8A6E;
+  --status-success-bg: #E4EBE3;
+  --status-info: #6E839C;
+  --status-info-bg: #E4E9EE;
+
+  /* Warmth colors (kept for circle-health UI compatibility) */
+  --warmth-good: #6B8A6E;
+  --warmth-good-bg: #E4EBE3;
+  --warmth-mid: #B08B3F;
+  --warmth-mid-bg: #F5EFDD;
+  --warmth-cold: #B86B4B;
+  --warmth-cold-bg: #F5EAE3;
+  --warmth-none: #8C8A82;
+  --warmth-none-bg: #F1ECDE;
 
   /* Motion */
   --duration-instant: 100ms;
@@ -103,7 +136,7 @@
   --duration-slow: 400ms;
   --ease-default: cubic-bezier(0.25, 0.1, 0.25, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
 }
 
@@ -125,9 +158,9 @@
 /* ─── Typography utility classes ─── */
 .ds-display-xl {
   font-family: var(--font-instrument-serif), Georgia, serif;
-  font-size: 2.25rem;
+  font-size: 2.75rem;
   font-weight: 400;
-  line-height: 1.1;
+  line-height: 1.05;
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
@@ -204,19 +237,21 @@
 }
 
 .ds-stat-lg {
-  font-size: 2rem;
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1.0;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-stat-md {
+  font-size: 1.625rem;
   font-weight: 600;
   line-height: 1.0;
   letter-spacing: -0.02em;
   color: var(--text-primary);
-}
-
-.ds-stat-md {
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.0;
-  letter-spacing: -0.015em;
-  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─── Section label (used in cards) ─── */
@@ -232,17 +267,26 @@
 /* ─── Card base style ─── */
 .crm-card {
   background: var(--surface);
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(26,25,23,0.06);
+  border-radius: 24px;
+  box-shadow: 0 2px 8px rgba(27,26,23,0.04);
   transition: box-shadow var(--duration-fast) var(--ease-default),
-              transform var(--duration-fast) var(--ease-default);
+              transform 180ms var(--ease-out);
 }
 .crm-card:hover {
-  box-shadow: 0 4px 16px rgba(26,25,23,0.08);
+  box-shadow: 0 4px 16px rgba(27,26,23,0.06);
 }
 .crm-card-interactive:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
+
+/* ─── Surface tones (Intelly-grade primitive backing) ─── */
+.ds-surface { border-radius: 24px; box-shadow: 0 2px 8px rgba(27,26,23,0.04); transition: box-shadow 180ms var(--ease-out), transform 180ms var(--ease-out); }
+.ds-surface-sand  { background: var(--surface-sand);  }
+.ds-surface-mist  { background: var(--surface-mist);  }
+.ds-surface-olive { background: var(--surface-olive); }
+.ds-surface-stone { background: var(--surface-stone); }
+.ds-surface-plain { background: var(--surface); }
+.ds-surface-interactive:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(27,26,23,0.07); }
 
 /* ─── Animations ─── */
 @keyframes crm-enter {
