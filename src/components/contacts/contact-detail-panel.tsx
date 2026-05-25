@@ -15,8 +15,7 @@ import { useMomentum } from "@/lib/hooks/use-momentum";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import { Sparkline, SparklineBadge } from "@/components/ui/sparkline";
 import { Pill as DsPill } from "@/components/ds";
-import { InteractionTimeline } from "@/components/contacts/interaction-timeline";
-import { ConversationView } from "@/components/contacts/conversation-view";
+import { StoryFeed } from "@/components/contacts/story-feed";
 import { VoiceRecorder } from "@/components/notes/voice-recorder";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
@@ -56,6 +55,11 @@ export function ContactDetailPanel({
   const [aiLoading, setAiLoading] = useState(false);
   const [linkedinInput, setLinkedinInput] = useState("");
   const [showLinkedinInput, setShowLinkedinInput] = useState(false);
+  // Disclosure for empty optional sections (aliases / other emails /
+  // other phones / birthday / LinkedIn when missing). Hides the empty
+  // section headers behind one "Add more details" button so a typical
+  // sparsely-populated contact doesn't show eight stub headers.
+  const [showMore, setShowMore] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState("");
   const [editingHowWeMet, setEditingHowWeMet] = useState(false);
@@ -452,31 +456,104 @@ export function ContactDetailPanel({
 
       <Separator />
 
-      {/* Tabs */}
-      <Tabs defaultValue="chat" className="flex-1 overflow-hidden flex flex-col">
+      {/* Tabs — collapsed to two (Story / Details). Chat + Timeline +
+          Journal merged into the Story chronological feed; About
+          renamed to Details with empty sections collapsed. */}
+      <Tabs defaultValue="story" className="flex-1 overflow-hidden flex flex-col">
         <TabsList className="mx-6 mt-2">
-          <TabsTrigger value="chat" className="text-[13px]">Chat</TabsTrigger>
-          <TabsTrigger value="timeline" className="text-[13px]">
-            Timeline ({totalInteractions})
+          <TabsTrigger value="story" className="text-[13px]">
+            Story
+            {(totalInteractions + (journalData?.entries.length ?? 0)) > 0
+              ? ` (${totalInteractions + (journalData?.entries.length ?? 0)})`
+              : ""}
           </TabsTrigger>
-          <TabsTrigger value="about" className="text-[13px]">About</TabsTrigger>
-          <TabsTrigger value="journal" className="text-[13px]">
-            Journal{journalData?.entries.length ? ` (${journalData.entries.length})` : ""}
-          </TabsTrigger>
+          <TabsTrigger value="details" className="text-[13px]">Details</TabsTrigger>
         </TabsList>
 
-        {/* ═══ CHAT TAB ═══ */}
-        <TabsContent value="chat" className="flex-1 overflow-hidden flex flex-col px-4 pb-2">
-          <ConversationView contactId={contactId} />
+        {/* ═══ STORY TAB — chronological feed ═══ */}
+        <TabsContent value="story" className="flex-1 overflow-y-auto px-6 pb-6">
+          <StoryFeed
+            interactions={contact.interactions.map((i) => ({
+              id: i.id,
+              type: i.type,
+              direction: i.direction,
+              channel: i.channel ?? null,
+              subject: i.subject ?? null,
+              summary: i.summary ?? null,
+              occurredAt: i.occurredAt,
+            }))}
+            journal={journalData?.entries ?? []}
+            onJournalDelete={(id) => deleteJournalEntry.mutate(id)}
+            composer={
+              <div className="space-y-3">
+                <VoiceRecorder
+                  contactId={contactId}
+                  onTranscribed={() => {
+                    queryClient.invalidateQueries({ queryKey: ["journal", contactId] });
+                  }}
+                />
+                <div
+                  className="rounded-2xl p-3"
+                  style={{ backgroundColor: "#F1ECDE", border: "1px solid #ECE7D9" }}
+                >
+                  <textarea
+                    value={journalInput}
+                    onChange={(e) => setJournalInput(e.target.value)}
+                    placeholder="Add a private note about this relationship…"
+                    className="w-full text-[13px] outline-none resize-none bg-transparent placeholder:text-[#8C8A82]"
+                    rows={2}
+                  />
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex gap-1">
+                      {(["POSITIVE", "NEUTRAL", "CONCERN"] as const).map((mood) => {
+                        const m = moodLabels[mood];
+                        return (
+                          <button
+                            key={mood}
+                            onClick={() => setJournalMood(mood)}
+                            className="rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors"
+                            style={{
+                              backgroundColor: journalMood === mood ? m.bg : "transparent",
+                              color: journalMood === mood ? m.color : "#8C8A82",
+                              border: `1px solid ${journalMood === mood ? m.color + "40" : "#E0DBCC"}`,
+                            }}
+                          >
+                            {m.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <DsPill
+                      variant="outline"
+                      tone="neutral"
+                      size="sm"
+                      disabled={!journalInput.trim() || addJournalEntry.isPending}
+                      onClick={() =>
+                        addJournalEntry.mutate({
+                          contactId,
+                          content: journalInput,
+                          mood: journalMood,
+                        })
+                      }
+                      leadingIcon={
+                        addJournalEntry.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Plus className="h-3 w-3" />
+                        )
+                      }
+                    >
+                      Add note
+                    </DsPill>
+                  </div>
+                </div>
+              </div>
+            }
+          />
         </TabsContent>
 
-        {/* ═══ TIMELINE TAB ═══ */}
-        <TabsContent value="timeline" className="flex-1 overflow-y-auto px-6 pb-6">
-          <InteractionTimeline interactions={contact.interactions} />
-        </TabsContent>
-
-        {/* ═══ ABOUT TAB ═══ */}
-        <TabsContent value="about" className="flex-1 overflow-y-auto px-6 pb-6">
+        {/* ═══ DETAILS TAB — structured fields ═══ */}
+        <TabsContent value="details" className="flex-1 overflow-y-auto px-6 pb-6">
           <div className="space-y-5 pt-2">
             {/* Circles */}
             {contact.circles && contact.circles.length > 0 && (
@@ -498,6 +575,7 @@ export function ContactDetailPanel({
             )}
 
             {/* Aliases */}
+            {(((contactAny.aliases as string[])?.length ?? 0) > 0 || showMore || showAliasInput) && (
             <div>
               <SectionLabel>Also known as</SectionLabel>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -540,8 +618,10 @@ export function ContactDetailPanel({
                 )}
               </div>
             </div>
+            )}
 
             {/* Other emails */}
+            {(((contactAny.additionalEmails as string[])?.length ?? 0) > 0 || showMore || showEmailInput) && (
             <div>
               <SectionLabel>Other emails</SectionLabel>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -585,8 +665,10 @@ export function ContactDetailPanel({
                 )}
               </div>
             </div>
+            )}
 
             {/* Other phones */}
+            {(((contactAny.additionalPhones as string[])?.length ?? 0) > 0 || showMore || showPhoneInput) && (
             <div>
               <SectionLabel>Other phones</SectionLabel>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -630,8 +712,10 @@ export function ContactDetailPanel({
                 )}
               </div>
             </div>
+            )}
 
             {/* How you know them */}
+            {(howWeMet || showMore || editingHowWeMet) && (
             <div>
               <SectionLabel>How you know them</SectionLabel>
               {editingHowWeMet ? (
@@ -657,8 +741,10 @@ export function ContactDetailPanel({
                 </button>
               )}
             </div>
+            )}
 
             {/* Notes */}
+            {(contact.notes || showMore || editingNotes) && (
             <div>
               <SectionLabel>Notes</SectionLabel>
               {editingNotes ? (
@@ -684,8 +770,10 @@ export function ContactDetailPanel({
                 </button>
               )}
             </div>
+            )}
 
-            {/* Birthday */}
+            {/* Birthday — auto-hides when not set; use the Edit dialog
+                to add one rather than inline. */}
             {birthdayDisplay && (
               <div>
                 <SectionLabel>Birthday</SectionLabel>
@@ -695,8 +783,8 @@ export function ContactDetailPanel({
               </div>
             )}
 
-            {/* LinkedIn (if not in header) */}
-            {!contact.linkedinUrl && (
+            {/* LinkedIn (only when missing AND user opted into more details) */}
+            {!contact.linkedinUrl && (showMore || showLinkedinInput) && (
               <div>
                 <SectionLabel>LinkedIn</SectionLabel>
                 {showLinkedinInput ? (
@@ -778,103 +866,30 @@ export function ContactDetailPanel({
                 <p className="mt-0.5 text-[13px] text-[#5A574F]">Every {contact.followUpDays} days</p>
               </div>
             )}
-          </div>
-        </TabsContent>
 
-        {/* ═══ JOURNAL TAB ═══ */}
-        <TabsContent value="journal" className="flex-1 overflow-y-auto px-6 pb-6">
-          <div className="pt-2">
-            {/* Voice memo capture — transcribes to a journal entry on submit */}
-            <div className="mb-3">
-              <VoiceRecorder
-                contactId={contactId}
-                onTranscribed={() => {
-                  queryClient.invalidateQueries({ queryKey: ["journal", contactId] });
+            {/* Disclosure for empty optional sections. Click reveals
+                the inputs to add aliases / other emails / other phones /
+                how-we-met / notes / LinkedIn. Hides itself once any of
+                those have content (they render above without the
+                disclosure). */}
+            <div className="pt-2">
+              <button
+                onClick={() => setShowMore((v) => !v)}
+                className="text-[12px] font-medium transition-colors"
+                style={{ color: "#8C8A82" }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#5A574F";
                 }}
-              />
-            </div>
-            {/* Add entry */}
-            <div className="rounded-xl border border-[#E0DBCC] p-3">
-              <textarea
-                value={journalInput}
-                onChange={(e) => setJournalInput(e.target.value)}
-                placeholder="Add a private note about this relationship..."
-                className="w-full text-[13px] outline-none resize-none placeholder:text-[#8C8A82]"
-                rows={2}
-              />
-              <div className="flex items-center justify-between mt-2">
-                <div className="flex gap-1">
-                  {(["POSITIVE", "NEUTRAL", "CONCERN"] as const).map((mood) => {
-                    const m = moodLabels[mood];
-                    return (
-                      <button
-                        key={mood}
-                        onClick={() => setJournalMood(mood)}
-                        className="rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors"
-                        style={{
-                          backgroundColor: journalMood === mood ? m.bg : "transparent",
-                          color: journalMood === mood ? m.color : "#8C8A82",
-                          border: `1px solid ${journalMood === mood ? m.color + "40" : "#E0DBCC"}`,
-                        }}
-                      >
-                        {m.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-[11px]"
-                  disabled={!journalInput.trim() || addJournalEntry.isPending}
-                  onClick={() => addJournalEntry.mutate({ contactId, content: journalInput, mood: journalMood })}
-                >
-                  {addJournalEntry.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
-                  Add
-                </Button>
-              </div>
-            </div>
-
-            {/* Entries */}
-            <div className="mt-4 space-y-3">
-              {!journalData?.entries.length ? (
-                <p className="text-center text-[13px] text-[#8C8A82] py-6">
-                  No journal entries yet
-                </p>
-              ) : (
-                journalData.entries.map((entry) => {
-                  const m = moodLabels[entry.mood] ?? moodLabels.NEUTRAL;
-                  return (
-                    <div key={entry.id} className="group rounded-xl border border-[#ECE7D9] p-3">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="rounded-md px-1.5 py-0.5 text-[9px] font-semibold"
-                            style={{ backgroundColor: m.bg, color: m.color }}
-                          >
-                            {m.label}
-                          </span>
-                          <span className="text-[11px] text-[#8C8A82]">
-                            {formatDistanceToNow(new Date(entry.createdAt))}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => deleteJournalEntry.mutate(entry.id)}
-                          className="opacity-0 group-hover:opacity-100 text-[#8C8A82] hover:text-[#7A4F3C] transition-all"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <p className="text-[13px] text-[#1B1A17] leading-relaxed whitespace-pre-wrap">
-                        {entry.content}
-                      </p>
-                    </div>
-                  );
-                })
-              )}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "#8C8A82";
+                }}
+              >
+                {showMore ? "Hide empty fields ↑" : "Add more details ↓"}
+              </button>
             </div>
           </div>
         </TabsContent>
+
       </Tabs>
 
       {/* Bottom actions */}
