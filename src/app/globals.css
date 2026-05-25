@@ -109,9 +109,10 @@
   --destructive: #B86B4B;
 
   /* Status colors — desaturated for the calm canvas. Used sparingly:
-     warnings get terracotta, confirmations get moss. No bright red. */
-  --status-urgent: #B86B4B;
-  --status-urgent-bg: #F5EAE3;
+     warnings get earthy terracotta (deeper, less pink than the first
+     pass), confirmations get moss. No bright red. */
+  --status-urgent: #7A4F3C;
+  --status-urgent-bg: #F0E5DC;
   --status-warning: #B08B3F;
   --status-warning-bg: #F5EFDD;
   --status-success: #6B8A6E;

@@ -492,14 +492,19 @@ export function Inbox() {
       >
         <div
           className="flex items-center gap-1 rounded-full p-1"
-          style={{ backgroundColor: "var(--surface-sand-raised)" }}
+          style={{
+            // Hardcoded darker tan (sand has near-zero contrast with the
+            // sand card behind it — the track read as invisible, making
+            // only the active white tab look like a floating pill).
+            backgroundColor: "#D6CFC2",
+          }}
         >
           <button
             onClick={() => setActiveTab("inbox")}
             className="relative flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
             style={{
               backgroundColor:
-                activeTab === "inbox" ? "var(--surface, #fff)" : "transparent",
+                activeTab === "inbox" ? "#FFFFFF" : "transparent",
               color:
                 activeTab === "inbox"
                   ? "var(--text-primary)"
@@ -533,7 +538,7 @@ export function Inbox() {
             className="relative flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
             style={{
               backgroundColor:
-                activeTab === "groups" ? "var(--surface, #fff)" : "transparent",
+                activeTab === "groups" ? "#FFFFFF" : "transparent",
               color:
                 activeTab === "groups"
                   ? "var(--text-primary)"
@@ -566,7 +571,7 @@ export function Inbox() {
             style={{
               backgroundColor:
                 activeTab === "activity"
-                  ? "var(--surface, #fff)"
+                  ? "#FFFFFF"
                   : "transparent",
               color:
                 activeTab === "activity"
@@ -974,7 +979,7 @@ function GroupChatRow({
           <span
             className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
             style={{
-              backgroundColor: "var(--surface, #fff)",
+              backgroundColor: "#FFFFFF",
               color: "var(--text-tertiary)",
               border: "1.5px solid var(--border, #E8E6E1)",
             }}
@@ -1211,7 +1216,7 @@ function InboxRow({
             <span
               className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
               style={{
-                backgroundColor: "var(--surface, #fff)",
+                backgroundColor: "#FFFFFF",
                 color: "var(--text-tertiary)",
                 border: "1.5px solid var(--border, #E8E6E1)",
               }}
@@ -1257,16 +1262,18 @@ function InboxRow({
                 <span
                   className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
                   style={{
-                    // New warm palette — high gets a soft terracotta whisper,
-                    // medium gets a warm sand chip, low is the quietest.
-                    // None of them should out-shout the message content.
+                    // Earth-palette whispers. High = deepest sand-brown
+                    // (still readable as "warmer than the rest" without
+                    // tipping into pink/coral). Medium = neutral sand.
+                    // Low = ghost. The chip should never out-shout the
+                    // message content.
                     backgroundColor: item.priority === "high"
-                      ? "#F5EAE3"
+                      ? "#F0E5DC"
                       : item.priority === "medium"
                         ? "#EFEAE0"
                         : "transparent",
                     color: item.priority === "high"
-                      ? "#B86B4B"
+                      ? "#7A4F3C"
                       : item.priority === "medium"
                         ? "#5A574F"
                         : "#8C8A82",
@@ -1617,7 +1624,7 @@ function SwipeableRow({
           transition: offset === 0 ? "transform 0.2s ease-out" : "none",
           position: "relative",
           zIndex: 1,
-          backgroundColor: "var(--surface, #fff)",
+          backgroundColor: "#FFFFFF",
         }}
       >
         {children}
@@ -1991,7 +1998,7 @@ function TimelineEntry({ item }: { item: ActivityItem }) {
         className="relative z-10 mt-1.5 h-[15px] w-[15px] shrink-0 rounded-full border-[2.5px]"
         style={{
           borderColor: channelColor,
-          backgroundColor: "var(--surface, #fff)",
+          backgroundColor: "#FFFFFF",
         }}
       />
 

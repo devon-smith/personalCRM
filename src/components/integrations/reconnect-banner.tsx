@@ -36,13 +36,15 @@ export function ReconnectBanner() {
       role="alert"
       className="flex items-center gap-3 mx-4 sm:mx-8 lg:mx-10 mt-6 rounded-2xl px-5 py-3"
       style={{
-        backgroundColor: "var(--status-urgent-bg)",
+        // Hex to dodge the same cascade-stale variable resolution that
+        // bit the tone surfaces. Earth-terracotta, not pink-rust.
+        backgroundColor: "#F0E5DC",
       }}
     >
-      <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.7} style={{ color: "var(--status-urgent)" }} />
+      <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.7} style={{ color: "#7A4F3C" }} />
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium" style={{ color: "var(--status-urgent)" }}>{label}</p>
-        <p className="text-[11.5px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-[13px] font-medium" style={{ color: "#7A4F3C" }}>{label}</p>
+        <p className="text-[11.5px] mt-0.5" style={{ color: "#5A574F" }}>
           Sync paused until reconnected.
         </p>
       </div>
@@ -50,14 +52,14 @@ export function ReconnectBanner() {
         href="/integrations"
         className="shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
         style={{
-          backgroundColor: "var(--accent-color)",
-          color: "var(--text-inverse)",
+          backgroundColor: "#2E2A24",
+          color: "#FAF8F5",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--accent-hover)";
+          e.currentTarget.style.backgroundColor = "#1B1A17";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--accent-color)";
+          e.currentTarget.style.backgroundColor = "#2E2A24";
         }}
       >
         Reconnect
