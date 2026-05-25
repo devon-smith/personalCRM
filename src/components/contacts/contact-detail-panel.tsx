@@ -24,9 +24,9 @@ import { formatDistanceToNow } from "@/lib/date-utils";
 import Link from "next/link";
 
 const moodLabels: Record<string, { label: string; color: string; bg: string }> = {
-  POSITIVE: { label: "Positive", color: "#4A8C5E", bg: "#EBF5EE" },
-  NEUTRAL: { label: "Neutral", color: "#7B8189", bg: "#F3F4F6" },
-  CONCERN: { label: "Concern", color: "#BF5040", bg: "#FAEAE7" },
+  POSITIVE: { label: "Positive", color: "#6B8A6E", bg: "#E4EBE3" }, // moss
+  NEUTRAL:  { label: "Neutral",  color: "#5A574F", bg: "#EFEAE0" }, // sand
+  CONCERN:  { label: "Concern",  color: "#7A4F3C", bg: "#F0E5DC" }, // terracotta
 };
 
 interface JournalEntry {
@@ -445,7 +445,7 @@ export function ContactDetailPanel({
 
       {/* AI Summary inline */}
       {aiSummary && (
-        <div className="mx-6 mb-3 rounded-xl bg-gray-50 p-3 text-[12px] text-gray-700 leading-relaxed">
+        <div className="mx-6 mb-3 rounded-xl bg-[#EFEAE0] p-3 text-[12px] text-[#1B1A17] leading-relaxed">
           {aiSummary}
         </div>
       )}
@@ -504,12 +504,12 @@ export function ContactDetailPanel({
                 {((contactAny.aliases as string[]) ?? []).map((alias: string) => (
                   <span
                     key={alias}
-                    className="group inline-flex items-center gap-1 rounded-lg bg-[#F3F4F6] px-2 py-1 text-[12px] text-[#4A4E54]"
+                    className="group inline-flex items-center gap-1 rounded-lg bg-[#EFEAE0] px-2 py-1 text-[12px] text-[#5A574F]"
                   >
                     {alias}
                     <button
                       onClick={() => handleRemoveAlias(alias)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                      className="opacity-0 group-hover:opacity-100 text-[#8C8A82] hover:text-[#7A4F3C] transition-all"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -522,17 +522,17 @@ export function ContactDetailPanel({
                       value={aliasInput}
                       onChange={(e) => setAliasInput(e.target.value)}
                       placeholder="Nickname or alias"
-                      className="rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500 w-32"
+                      className="rounded-md border border-[#E0DBCC] px-2 py-1 text-[12px] outline-none focus:border-[#1B1A17] w-32"
                       onKeyDown={(e) => e.key === "Enter" && handleAddAlias()}
                       autoFocus
                     />
-                    <button onClick={handleAddAlias} disabled={!aliasInput.trim()} className="text-[11px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50">Save</button>
-                    <button onClick={() => { setShowAliasInput(false); setAliasInput(""); }} className="text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
+                    <button onClick={handleAddAlias} disabled={!aliasInput.trim()} className="text-[11px] font-medium text-[#5A574F] hover:text-[#1B1A17] disabled:opacity-50">Save</button>
+                    <button onClick={() => { setShowAliasInput(false); setAliasInput(""); }} className="text-[#8C8A82] hover:text-[#5A574F]"><X className="h-3 w-3" /></button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setShowAliasInput(true)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#C9C3B2] px-2 py-1 text-[11px] text-[#8C8A82] hover:text-[#5A574F] hover:border-[#C9C3B2] transition-colors"
                   >
                     <Plus className="h-3 w-3" />
                     Add alias
@@ -548,13 +548,13 @@ export function ContactDetailPanel({
                 {((contactAny.additionalEmails as string[]) ?? []).map((email: string) => (
                   <span
                     key={email}
-                    className="group inline-flex items-center gap-1 rounded-lg bg-[#F3F4F6] px-2 py-1 text-[12px] text-[#4A4E54]"
+                    className="group inline-flex items-center gap-1 rounded-lg bg-[#EFEAE0] px-2 py-1 text-[12px] text-[#5A574F]"
                   >
-                    <Mail className="h-3 w-3 text-gray-400" />
+                    <Mail className="h-3 w-3 text-[#8C8A82]" />
                     {email}
                     <button
                       onClick={() => handleRemoveEmail(email)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                      className="opacity-0 group-hover:opacity-100 text-[#8C8A82] hover:text-[#7A4F3C] transition-all"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -567,17 +567,17 @@ export function ContactDetailPanel({
                       value={emailInput}
                       onChange={(e) => setEmailInput(e.target.value)}
                       placeholder="email@example.com"
-                      className="rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500 w-44"
+                      className="rounded-md border border-[#E0DBCC] px-2 py-1 text-[12px] outline-none focus:border-[#1B1A17] w-44"
                       onKeyDown={(e) => e.key === "Enter" && handleAddEmail()}
                       autoFocus
                     />
-                    <button onClick={handleAddEmail} disabled={!emailInput.trim()} className="text-[11px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50">Save</button>
-                    <button onClick={() => { setShowEmailInput(false); setEmailInput(""); }} className="text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
+                    <button onClick={handleAddEmail} disabled={!emailInput.trim()} className="text-[11px] font-medium text-[#5A574F] hover:text-[#1B1A17] disabled:opacity-50">Save</button>
+                    <button onClick={() => { setShowEmailInput(false); setEmailInput(""); }} className="text-[#8C8A82] hover:text-[#5A574F]"><X className="h-3 w-3" /></button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setShowEmailInput(true)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#C9C3B2] px-2 py-1 text-[11px] text-[#8C8A82] hover:text-[#5A574F] hover:border-[#C9C3B2] transition-colors"
                   >
                     <Plus className="h-3 w-3" />
                     Add email
@@ -593,13 +593,13 @@ export function ContactDetailPanel({
                 {((contactAny.additionalPhones as string[]) ?? []).map((phone: string) => (
                   <span
                     key={phone}
-                    className="group inline-flex items-center gap-1 rounded-lg bg-[#F3F4F6] px-2 py-1 text-[12px] text-[#4A4E54]"
+                    className="group inline-flex items-center gap-1 rounded-lg bg-[#EFEAE0] px-2 py-1 text-[12px] text-[#5A574F]"
                   >
-                    <Phone className="h-3 w-3 text-gray-400" />
+                    <Phone className="h-3 w-3 text-[#8C8A82]" />
                     {phone}
                     <button
                       onClick={() => handleRemovePhone(phone)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                      className="opacity-0 group-hover:opacity-100 text-[#8C8A82] hover:text-[#7A4F3C] transition-all"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -612,17 +612,17 @@ export function ContactDetailPanel({
                       value={phoneInput}
                       onChange={(e) => setPhoneInput(e.target.value)}
                       placeholder="+1 (555) 123-4567"
-                      className="rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500 w-40"
+                      className="rounded-md border border-[#E0DBCC] px-2 py-1 text-[12px] outline-none focus:border-[#1B1A17] w-40"
                       onKeyDown={(e) => e.key === "Enter" && handleAddPhone()}
                       autoFocus
                     />
-                    <button onClick={handleAddPhone} disabled={!phoneInput.trim()} className="text-[11px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50">Save</button>
-                    <button onClick={() => { setShowPhoneInput(false); setPhoneInput(""); }} className="text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
+                    <button onClick={handleAddPhone} disabled={!phoneInput.trim()} className="text-[11px] font-medium text-[#5A574F] hover:text-[#1B1A17] disabled:opacity-50">Save</button>
+                    <button onClick={() => { setShowPhoneInput(false); setPhoneInput(""); }} className="text-[#8C8A82] hover:text-[#5A574F]"><X className="h-3 w-3" /></button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setShowPhoneInput(true)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#C9C3B2] px-2 py-1 text-[11px] text-[#8C8A82] hover:text-[#5A574F] hover:border-[#C9C3B2] transition-colors"
                   >
                     <Plus className="h-3 w-3" />
                     Add phone
@@ -639,7 +639,7 @@ export function ContactDetailPanel({
                   <textarea
                     value={howWeMetValue}
                     onChange={(e) => setHowWeMetValue(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-gray-400 resize-none"
+                    className="w-full rounded-lg border border-[#E0DBCC] px-3 py-2 text-[13px] outline-none focus:border-[#C9C3B2] resize-none"
                     rows={2}
                     autoFocus
                   />
@@ -651,7 +651,7 @@ export function ContactDetailPanel({
               ) : (
                 <button
                   onClick={() => { setHowWeMetValue(howWeMet ?? ""); setEditingHowWeMet(true); }}
-                  className="mt-0.5 text-[13px] text-gray-500 hover:text-gray-900 transition-colors text-left"
+                  className="mt-0.5 text-[13px] text-[#5A574F] hover:text-[#1B1A17] transition-colors text-left"
                 >
                   {howWeMet || "Click to add..."}
                 </button>
@@ -666,7 +666,7 @@ export function ContactDetailPanel({
                   <textarea
                     value={notesValue}
                     onChange={(e) => setNotesValue(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-gray-400 resize-none"
+                    className="w-full rounded-lg border border-[#E0DBCC] px-3 py-2 text-[13px] outline-none focus:border-[#C9C3B2] resize-none"
                     rows={3}
                     autoFocus
                   />
@@ -678,7 +678,7 @@ export function ContactDetailPanel({
               ) : (
                 <button
                   onClick={() => { setNotesValue(contact.notes ?? ""); setEditingNotes(true); }}
-                  className="mt-0.5 text-[13px] text-gray-500 hover:text-gray-900 transition-colors whitespace-pre-wrap text-left"
+                  className="mt-0.5 text-[13px] text-[#5A574F] hover:text-[#1B1A17] transition-colors whitespace-pre-wrap text-left"
                 >
                   {contact.notes || "Click to add..."}
                 </button>
@@ -689,7 +689,7 @@ export function ContactDetailPanel({
             {birthdayDisplay && (
               <div>
                 <SectionLabel>Birthday</SectionLabel>
-                <p className={`mt-0.5 text-[13px] ${birthdayIsToday ? "font-semibold text-amber-600" : "text-gray-700"}`}>
+                <p className={`mt-0.5 text-[13px] ${birthdayIsToday ? "font-semibold text-[#B08B3F]" : "text-[#1B1A17]"}`}>
                   {birthdayDisplay}
                 </p>
               </div>
@@ -706,7 +706,7 @@ export function ContactDetailPanel({
                       value={linkedinInput}
                       onChange={(e) => setLinkedinInput(e.target.value)}
                       placeholder="linkedin.com/in/username"
-                      className="flex-1 rounded-md border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-blue-500"
+                      className="flex-1 rounded-md border border-[#E0DBCC] px-2 py-1 text-[12px] outline-none focus:border-[#1B1A17]"
                       onKeyDown={(e) => e.key === "Enter" && handleSaveLinkedIn()}
                       autoFocus
                     />
@@ -718,7 +718,7 @@ export function ContactDetailPanel({
                 ) : (
                   <button
                     onClick={() => setShowLinkedinInput(true)}
-                    className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-gray-400 hover:text-[#0A66C2] transition-colors"
+                    className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-[#8C8A82] hover:text-[#0A66C2] transition-colors"
                   >
                     <Plus className="h-3 w-3" />
                     Add LinkedIn
@@ -735,24 +735,24 @@ export function ContactDetailPanel({
                   <Sparkline data={momentum.sparkline} trend={momentum.trend} width={96} height={28} />
                   <SparklineBadge trend={momentum.trend} />
                 </div>
-                <p className="mt-1 text-[11px] text-gray-400">12-week interaction trend</p>
+                <p className="mt-1 text-[11px] text-[#8C8A82]">12-week interaction trend</p>
               </div>
             )}
 
             {/* Stats */}
             <div>
               <SectionLabel>Stats</SectionLabel>
-              <p className="mt-0.5 text-[13px] text-gray-600">
+              <p className="mt-0.5 text-[13px] text-[#5A574F]">
                 {totalInteractions} total interactions
                 {emailCount > 0 && ` · ${emailCount} emails`}
                 {meetingCount > 0 && ` · ${meetingCount} meetings`}
               </p>
               {firstInteraction && (
-                <p className="text-[12px] text-gray-400">
+                <p className="text-[12px] text-[#8C8A82]">
                   First interaction: {new Date(firstInteraction.occurredAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
                 </p>
               )}
-              <p className="text-[12px] text-gray-400">
+              <p className="text-[12px] text-[#8C8A82]">
                 Added: {new Date(contact.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               </p>
             </div>
@@ -775,7 +775,7 @@ export function ContactDetailPanel({
             {contact.followUpDays && (
               <div>
                 <SectionLabel>Follow-up cadence</SectionLabel>
-                <p className="mt-0.5 text-[13px] text-gray-600">Every {contact.followUpDays} days</p>
+                <p className="mt-0.5 text-[13px] text-[#5A574F]">Every {contact.followUpDays} days</p>
               </div>
             )}
           </div>
@@ -794,12 +794,12 @@ export function ContactDetailPanel({
               />
             </div>
             {/* Add entry */}
-            <div className="rounded-xl border border-gray-200 p-3">
+            <div className="rounded-xl border border-[#E0DBCC] p-3">
               <textarea
                 value={journalInput}
                 onChange={(e) => setJournalInput(e.target.value)}
                 placeholder="Add a private note about this relationship..."
-                className="w-full text-[13px] outline-none resize-none placeholder:text-gray-400"
+                className="w-full text-[13px] outline-none resize-none placeholder:text-[#8C8A82]"
                 rows={2}
               />
               <div className="flex items-center justify-between mt-2">
@@ -813,8 +813,8 @@ export function ContactDetailPanel({
                         className="rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors"
                         style={{
                           backgroundColor: journalMood === mood ? m.bg : "transparent",
-                          color: journalMood === mood ? m.color : "#9BA1A8",
-                          border: `1px solid ${journalMood === mood ? m.color + "30" : "#E8EAED"}`,
+                          color: journalMood === mood ? m.color : "#8C8A82",
+                          border: `1px solid ${journalMood === mood ? m.color + "40" : "#E0DBCC"}`,
                         }}
                       >
                         {m.label}
@@ -838,14 +838,14 @@ export function ContactDetailPanel({
             {/* Entries */}
             <div className="mt-4 space-y-3">
               {!journalData?.entries.length ? (
-                <p className="text-center text-[13px] text-gray-400 py-6">
+                <p className="text-center text-[13px] text-[#8C8A82] py-6">
                   No journal entries yet
                 </p>
               ) : (
                 journalData.entries.map((entry) => {
                   const m = moodLabels[entry.mood] ?? moodLabels.NEUTRAL;
                   return (
-                    <div key={entry.id} className="group rounded-xl border border-gray-100 p-3">
+                    <div key={entry.id} className="group rounded-xl border border-[#ECE7D9] p-3">
                       <div className="flex items-center justify-between mb-1.5">
                         <div className="flex items-center gap-2">
                           <span
@@ -854,18 +854,18 @@ export function ContactDetailPanel({
                           >
                             {m.label}
                           </span>
-                          <span className="text-[11px] text-gray-400">
+                          <span className="text-[11px] text-[#8C8A82]">
                             {formatDistanceToNow(new Date(entry.createdAt))}
                           </span>
                         </div>
                         <button
                           onClick={() => deleteJournalEntry.mutate(entry.id)}
-                          className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all"
+                          className="opacity-0 group-hover:opacity-100 text-[#8C8A82] hover:text-[#7A4F3C] transition-all"
                         >
                           <X className="h-3 w-3" />
                         </button>
                       </div>
-                      <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+                      <p className="text-[13px] text-[#1B1A17] leading-relaxed whitespace-pre-wrap">
                         {entry.content}
                       </p>
                     </div>
@@ -878,13 +878,13 @@ export function ContactDetailPanel({
       </Tabs>
 
       {/* Bottom actions */}
-      <div className="border-t border-gray-100 px-6 py-3 flex items-center gap-3">
-        <Link href="/merge" className="text-[12px] text-gray-400 hover:text-gray-600 transition-colors">
+      <div className="border-t border-[#ECE7D9] px-6 py-3 flex items-center gap-3">
+        <Link href="/merge" className="text-[12px] text-[#8C8A82] hover:text-[#5A574F] transition-colors">
           Merge with...
         </Link>
         <button
           onClick={handleDelete}
-          className="text-[12px] text-gray-400 hover:text-red-600 transition-colors"
+          className="text-[12px] text-[#8C8A82] hover:text-[#7A4F3C] transition-colors"
         >
           Delete contact
         </button>
@@ -895,7 +895,7 @@ export function ContactDetailPanel({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--crm-text-tertiary)" }}>
+    <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "#8C8A82" }}>
       {children}
     </p>
   );
