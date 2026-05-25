@@ -16,6 +16,10 @@ export interface BuildMimeInput {
   subject: string;
   /** Plain-text body. */
   body: string;
+  /** Optional HTML body. When provided, the message becomes
+   *  multipart/alternative with both text and HTML parts so clients
+   *  without HTML support still get the plain version. */
+  htmlBody?: string | null;
   /** For replies: the Message-Id of the message we're replying to.
    *  Will be set as both In-Reply-To and pushed onto References. */
   inReplyToMessageId?: string | null;
@@ -34,8 +38,37 @@ export function buildRawMessage(input: BuildMimeInput): string {
   headers.push(`To: ${input.to}`);
   headers.push(`Subject: ${encodeHeaderValue(input.subject)}`);
   headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: text/plain; charset="UTF-8"`);
-  headers.push(`Content-Transfer-Encoding: 7bit`);
+
+  const hasHtml = !!input.htmlBody && input.htmlBody.trim().length > 0;
+  let bodyBlock: string;
+
+  if (hasHtml) {
+    // multipart/alternative — clients pick the richest part they handle.
+    // Boundary token must not appear in any part; the timestamp+random
+    // combination is collision-safe for our purposes.
+    const boundary = `crm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+    const parts = [
+      "",
+      `--${boundary}`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+      `Content-Transfer-Encoding: 8bit`,
+      "",
+      normalizeBody(input.body),
+      `--${boundary}`,
+      `Content-Type: text/html; charset="UTF-8"`,
+      `Content-Transfer-Encoding: 8bit`,
+      "",
+      normalizeBody(input.htmlBody!),
+      `--${boundary}--`,
+      "",
+    ];
+    bodyBlock = parts.join("\r\n");
+  } else {
+    headers.push(`Content-Type: text/plain; charset="UTF-8"`);
+    headers.push(`Content-Transfer-Encoding: 7bit`);
+    bodyBlock = "\r\n\r\n" + normalizeBody(input.body);
+  }
 
   if (input.inReplyToMessageId) {
     const id = ensureAngles(input.inReplyToMessageId);
@@ -45,8 +78,9 @@ export function buildRawMessage(input: BuildMimeInput): string {
     headers.push(`References: ${newRefs}`);
   }
 
-  // RFC 5322 uses CRLF line endings. Body separated by a blank line.
-  const message = headers.join("\r\n") + "\r\n\r\n" + normalizeBody(input.body);
+  // RFC 5322 uses CRLF line endings. For multipart, bodyBlock already
+  // begins with the leading CRLF; for plain, we prepend the blank line.
+  const message = headers.join("\r\n") + (hasHtml ? "\r\n" : "") + bodyBlock;
   return base64UrlEncode(message);
 }
 

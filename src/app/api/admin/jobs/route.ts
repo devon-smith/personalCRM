@@ -33,6 +33,7 @@ const CADENCE_HOURS: Record<string, number> = {
   "linkedin-notifications-scan": 24,   // daily
   "signal-detection": 24 * 7,          // weekly
   "watch-renew": 24 * 6,               // every 6 days
+  "morning-brief": 24,                 // weekdays — close enough to daily for staleness purposes
 };
 export async function GET() {
   const session = await auth();

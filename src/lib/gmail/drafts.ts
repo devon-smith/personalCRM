@@ -26,6 +26,9 @@ export interface CreateGmailDraftInput {
   subject: string;
   /** Plain-text body. */
   body: string;
+  /** Optional HTML body — produces a multipart/alternative draft so
+   *  Gmail renders the rich version while keeping plain-text fallback. */
+  htmlBody?: string | null;
   /** Existing Gmail threadId to attach this draft to (for replies). */
   threadId?: string | null;
   /** Message-Id of the message we're replying to (for proper threading
@@ -135,6 +138,7 @@ export async function createGmailDraft(
     to: input.to,
     subject,
     body: input.body,
+    htmlBody: input.htmlBody,
     inReplyToMessageId: input.inReplyToMessageId,
     references: input.references,
   });

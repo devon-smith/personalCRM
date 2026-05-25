@@ -133,4 +133,36 @@ describe("buildRawMessage", () => {
     const decoded = decode(raw);
     expect(decoded).toContain("line one\r\nline two\r\nline three");
   });
+
+  it("emits multipart/alternative when htmlBody is provided", () => {
+    const raw = buildRawMessage({
+      from: "me@example.com",
+      to: "you@example.com",
+      subject: "Brief",
+      body: "Plain version",
+      htmlBody: "<p>HTML <b>version</b></p>",
+    });
+    const decoded = decode(raw);
+    expect(decoded).toMatch(/Content-Type: multipart\/alternative; boundary="crm-[^"]+"/);
+    // Both parts must be present.
+    expect(decoded).toContain('Content-Type: text/plain; charset="UTF-8"');
+    expect(decoded).toContain('Content-Type: text/html; charset="UTF-8"');
+    expect(decoded).toContain("Plain version");
+    expect(decoded).toContain("<p>HTML <b>version</b></p>");
+    // Multipart must terminate with the closing boundary.
+    expect(decoded).toMatch(/--crm-[^\r\n]+--\r\n$/);
+  });
+
+  it("falls back to plain text when htmlBody is empty or whitespace", () => {
+    const raw = buildRawMessage({
+      from: "me@example.com",
+      to: "you@example.com",
+      subject: "x",
+      body: "plain only",
+      htmlBody: "   ",
+    });
+    const decoded = decode(raw);
+    expect(decoded).toContain('Content-Type: text/plain; charset="UTF-8"');
+    expect(decoded).not.toContain("multipart/alternative");
+  });
 });

@@ -14,7 +14,14 @@
  * triggers from the Next.js side, add a job programmatically via
  * `addJob` from worker/queue-client.ts.
  */
-import "dotenv/config";
+// Load .env.local first (Next.js convention, overrides .env), then .env.
+// Default `import "dotenv/config"` only loads .env, which silently drops vars
+// the user only set in .env.local — caused signal-detection to no-op when
+// BRAVE_API_KEY lived only in .env.local.
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local", override: true });
+dotenv.config({ path: ".env" });
+
 import { run } from "graphile-worker";
 import embeddingRefresh from "./tasks/embedding-refresh.js";
 import watchRenew from "./tasks/watch-renew.js";
@@ -24,10 +31,15 @@ import gmailSync from "./tasks/gmail-sync.js";
 import calendarSync from "./tasks/calendar-sync.js";
 import linkedinNotificationsScan from "./tasks/linkedin-notifications-scan.js";
 import signalDetection from "./tasks/signal-detection.js";
+import morningBrief from "./tasks/morning-brief.js";
 
-const connectionString = process.env.DATABASE_URL;
+// WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
+// connection (port 5432) when the pooler (6543) hits its session limit. The
+// Next.js side still uses DATABASE_URL.
+const connectionString =
+  process.env.WORKER_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error("[worker] DATABASE_URL is required");
+  console.error("[worker] DATABASE_URL (or WORKER_DATABASE_URL) is required");
   process.exit(1);
 }
 
@@ -44,6 +56,7 @@ const taskList = {
   "calendar-sync": calendarSync,
   "linkedin-notifications-scan": linkedinNotificationsScan,
   "signal-detection": signalDetection,
+  "morning-brief": morningBrief,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -72,6 +85,10 @@ const crontab = `
 # Weekly Mon 05:11 UTC: Brave Search for recent news mentions of
 # INNER_CIRCLE contacts → NEWS_MENTION ContactChangelog rows.
 11 5 * * 1 signal-detection
+# Weekdays at 13:30 UTC (6:30am Pacific): assemble today's morning brief
+# (priorities + meetings + moment-to-connect + overnight signals) and
+# save as a Gmail draft for the user to skim & send.
+30 13 * * 1-5 morning-brief
 `.trim();
 
 async function main() {
