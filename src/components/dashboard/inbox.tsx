@@ -1375,29 +1375,32 @@ function InboxRow({
         </div>
       )}
 
-      {/* "Already replied?" — prominent green button */}
+      {/* "Already replied?" — quiet moss-tinted inline chip; same action,
+          much less visual weight than the prior full-width button. */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onResolve();
         }}
-        className="w-full flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 sm:py-2 mt-2.5 text-[12px] font-medium transition-colors"
+        title="Mark as already replied"
+        className="mt-2 inline-flex items-center gap-1.5 rounded-full pl-2 pr-3 py-1 text-[11.5px] font-medium transition-colors"
         style={{
-          backgroundColor: "rgba(5,150,105,0.06)",
-          border: "1px solid rgba(5,150,105,0.15)",
-          color: "#059669",
-          letterSpacing: "-0.01em",
-          minHeight: 44,
+          backgroundColor: "var(--status-success-bg)",
+          color: "var(--status-success)",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.12)";
+          e.currentTarget.style.backgroundColor = "var(--surface-olive-raised)";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.06)";
+          e.currentTarget.style.backgroundColor = "var(--status-success-bg)";
         }}
       >
-        <Check className="h-3.5 w-3.5" />
-        Already replied? Tap to clear
+        <span
+          aria-hidden
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ backgroundColor: "var(--status-success)" }}
+        />
+        Already replied
       </button>
 
       {/* Meta + Actions — actions appear on hover (or focus) on desktop;

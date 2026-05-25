@@ -2,9 +2,15 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import type { DataHealthResponse } from "@/app/api/data-health/route";
 
+/**
+ * A calm "needs reconnect" row. Terracotta on warm-paper, not a red
+ * full-bleed klaxon. Sync paused until reconnected; the rail nav also
+ * shows a small terracotta dot on the Integrations item so the status
+ * is visible from anywhere even when the banner isn't on screen.
+ */
 export function ReconnectBanner() {
   const { data } = useQuery<DataHealthResponse>({
     queryKey: ["data-health"],
@@ -13,7 +19,6 @@ export function ReconnectBanner() {
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
-    // Refetch periodically so we surface failures detected by background syncs.
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
   });
@@ -29,27 +34,30 @@ export function ReconnectBanner() {
   return (
     <div
       role="alert"
-      className="flex items-center gap-3 px-4 py-2.5"
+      className="flex items-center gap-3 mx-4 sm:mx-8 lg:mx-10 mt-6 rounded-2xl px-5 py-3"
       style={{
-        backgroundColor: "var(--status-error-bg, #FEF2F2)",
-        borderBottom: "1px solid var(--status-error, #DC2626)",
-        color: "var(--status-error, #991B1B)",
+        backgroundColor: "var(--status-urgent-bg)",
       }}
     >
-      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.7} style={{ color: "var(--status-urgent)" }} />
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium">{label}</p>
-        <p className="text-[11px] opacity-80">
-          Sync paused until reconnected. Tokens expire after extended inactivity
-          or when Google revokes them.
+        <p className="text-[13px] font-medium" style={{ color: "var(--status-urgent)" }}>{label}</p>
+        <p className="text-[11.5px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
+          Sync paused until reconnected.
         </p>
       </div>
       <Link
         href="/integrations"
-        className="shrink-0 rounded-[8px] px-3 py-1.5 text-[12px] font-medium"
+        className="shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
         style={{
-          backgroundColor: "var(--status-error, #DC2626)",
-          color: "white",
+          backgroundColor: "var(--accent-color)",
+          color: "var(--text-inverse)",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "var(--accent-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "var(--accent-color)";
         }}
       >
         Reconnect

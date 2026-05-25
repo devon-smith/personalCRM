@@ -15,8 +15,10 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
+import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import type { DataHealthResponse } from "@/app/api/data-health/route";
 
 interface RailItem {
   href: string;
@@ -47,6 +49,22 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const pathname = usePathname();
   const general = ITEMS.filter((i) => i.group === "general");
   const tools = ITEMS.filter((i) => i.group === "tools");
+
+  // Surface a terracotta status dot on the Integrations item when any
+  // Google account needs reconnect. Same query the banner uses; React
+  // Query dedups the network hit.
+  const { data: dataHealth } = useQuery<DataHealthResponse>({
+    queryKey: ["data-health"],
+    queryFn: async () => {
+      const res = await fetch("/api/data-health");
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    refetchInterval: 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+  const integrationsHasIssue =
+    (dataHealth?.googleAccounts.filter((a) => a.needsReconnect).length ?? 0) > 0;
 
   return (
     <aside
@@ -97,7 +115,12 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
       <nav className="flex-1 overflow-y-auto px-3">
         <RailGroup label="General" items={general} pathname={pathname} />
         <div className="h-4" />
-        <RailGroup label="Tools" items={tools} pathname={pathname} />
+        <RailGroup
+          label="Tools"
+          items={tools}
+          pathname={pathname}
+          statusDots={integrationsHasIssue ? { "/integrations": "urgent" } : undefined}
+        />
       </nav>
 
       {/* User chip pinned bottom */}
@@ -157,10 +180,13 @@ function RailGroup({
   label,
   items,
   pathname,
+  statusDots,
 }: {
   label: string;
   items: RailItem[];
   pathname: string;
+  /** Per-href dot color. "urgent" → terracotta. */
+  statusDots?: Record<string, "urgent">;
 }) {
   return (
     <div>
@@ -176,6 +202,7 @@ function RailGroup({
             ? pathname === item.href
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
+          const dot = statusDots?.[item.href];
           return (
             <li key={item.href} className="relative">
               {active ? (
@@ -205,6 +232,13 @@ function RailGroup({
               >
                 <Icon className="h-[15px] w-[15px]" strokeWidth={1.6} />
                 <span className="flex-1">{item.label}</span>
+                {dot === "urgent" ? (
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: "var(--status-urgent)" }}
+                  />
+                ) : null}
                 {active ? (
                   <ChevronRight className="h-3 w-3 shrink-0 opacity-60" strokeWidth={1.6} />
                 ) : null}
