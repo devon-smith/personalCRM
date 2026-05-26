@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials, getAvatarColor } from "@/lib/avatar";
@@ -105,6 +106,21 @@ export function NetworkQueryBox() {
   // result so refine + save can reference it. Hydrated above alongside
   // result so the pair stays in sync across re-mounts.
   const [savedFlash, setSavedFlash] = useState(false);
+
+  // M0.9: surface a "View saved questions (N)" link below the input
+  // — /queries already exists but Jennifer wasn't finding it.
+  const { data: savedQueriesData } = useQuery<{
+    queries: { id: string }[];
+  }>({
+    queryKey: ["saved-queries"],
+    queryFn: async () => {
+      const res = await fetch("/api/saved-queries");
+      if (!res.ok) return { queries: [] };
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  const savedCount = savedQueriesData?.queries.length ?? 0;
 
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -302,6 +318,27 @@ export function NetworkQueryBox() {
           </button>
         </div>
       </form>
+
+      {/* Subtle discoverability link to /queries (saved). Only shows
+          when there's at least one saved query — empty state would
+          add UI weight without reason. */}
+      {savedCount > 0 && (
+        <div className="flex justify-end -mt-1">
+          <Link
+            href="/queries"
+            className="text-[11px] transition-colors"
+            style={{ color: "#8C8A82" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "#5A574F";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "#8C8A82";
+            }}
+          >
+            View saved question{savedCount === 1 ? "" : "s"} ({savedCount}) →
+          </Link>
+        </div>
+      )}
 
       {/* Live trace while streaming — collapses into the final
           result panel once `complete` arrives. */}
