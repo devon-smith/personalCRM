@@ -38,6 +38,7 @@ model User {
   threads              Thread[]
   voiceProfile         VoiceProfile?
   voiceExamples        VoiceExample[]
+  savedQueries         SavedQuery[]
 }
 
 model Account {
@@ -904,6 +905,30 @@ enum InboxItemStatus {
   RESOLVED
   DISMISSED
   SNOOZED
+}
+
+// Saved natural-language network queries (M7.4). Jennifer can star a
+// query she's likely to ask again ("Who's in NYC this week?") and
+// re-run it from the /queries page. Each row stores just the query
+// string — re-running re-fires the orchestrator against current
+// state, so the answer freshens automatically.
+//
+// Title is auto-set from the answer's title on first run, but
+// user-editable.
+model SavedQuery {
+  id        String   @id @default(uuid())
+  userId    String
+  query     String   @db.Text
+  title     String?
+  createdAt DateTime @default(now())
+  // Bumped each time the user re-runs from the /queries page.
+  // Powers default sort ("recently used" first).
+  lastRunAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastRunAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model InboxItem {

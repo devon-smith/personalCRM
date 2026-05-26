@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Sparkles, Search, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import {
+  Sparkles,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Bookmark,
+  Wand2,
+  Check,
+} from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials, getAvatarColor } from "@/lib/avatar";
 
@@ -79,6 +89,10 @@ export function NetworkQueryBox() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTrace, setShowTrace] = useState(false);
+  // M7.4: track which query produced the current result so refine
+  // + save can reference it. Set on every submit.
+  const [submittedQuery, setSubmittedQuery] = useState<string | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +117,8 @@ export function NetworkQueryBox() {
     setLiveSteps([]);
     setStreamingText("");
     setShowTrace(false);
+    setSavedFlash(false);
+    setSubmittedQuery(q.trim());
     setIsStreaming(true);
 
     const controller = new AbortController();
@@ -273,11 +289,40 @@ export function NetworkQueryBox() {
         </div>
       )}
 
-      {result && (
+      {result && submittedQuery && (
         <QueryResultPanel
           result={result}
           showTrace={showTrace}
           onToggleTrace={() => setShowTrace((v) => !v)}
+          onRefine={(refinement) =>
+            // Refining re-runs the orchestrator with the original
+            // question + the new constraint stacked on top. We don't
+            // pass the prior answer back — Claude re-derives so the
+            // refined result is self-consistent rather than a delta
+            // off a possibly-misleading first pass.
+            submit(`${submittedQuery}\n\nAdditional constraint: ${refinement}`)
+          }
+          onSave={async () => {
+            try {
+              const res = await fetch("/api/saved-queries", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  query: submittedQuery,
+                  title: result.title ?? null,
+                }),
+              });
+              if (!res.ok) throw new Error("Save failed");
+              setSavedFlash(true);
+              toast.success("Saved — find it on /queries");
+              setTimeout(() => setSavedFlash(false), 2000);
+            } catch (err) {
+              toast.error(
+                err instanceof Error ? err.message : "Save failed",
+              );
+            }
+          }}
+          savedFlash={savedFlash}
         />
       )}
     </section>
@@ -356,11 +401,19 @@ function QueryResultPanel({
   result,
   showTrace,
   onToggleTrace,
+  onRefine,
+  onSave,
+  savedFlash,
 }: {
   result: QueryResult;
   showTrace: boolean;
   onToggleTrace: () => void;
+  onRefine: (refinement: string) => void;
+  onSave: () => void;
+  savedFlash: boolean;
 }) {
+  const [refinement, setRefinement] = useState("");
+  const [refineOpen, setRefineOpen] = useState(false);
   return (
     <article
       className="rounded-2xl p-5 space-y-4"
@@ -421,6 +474,74 @@ function QueryResultPanel({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* M7.4: refine + save row. Subtle by default — Jennifer needs
+          to know they're there but they shouldn't dominate the panel. */}
+      <div
+        className="flex items-center gap-3 pt-1 border-t"
+        style={{ borderColor: "#ECE7D9" }}
+      >
+        <button
+          onClick={() => setRefineOpen((v) => !v)}
+          className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider transition-colors"
+          style={{ color: refineOpen ? "#1B1A17" : "#8C8A82" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "#1B1A17";
+          }}
+          onMouseLeave={(e) => {
+            if (!refineOpen) e.currentTarget.style.color = "#8C8A82";
+          }}
+        >
+          <Wand2 className="h-3 w-3" />
+          Refine
+        </button>
+        <button
+          onClick={onSave}
+          disabled={savedFlash}
+          className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider transition-colors disabled:opacity-60"
+          style={{ color: savedFlash ? "#7A4F3C" : "#8C8A82" }}
+        >
+          {savedFlash ? (
+            <Check className="h-3 w-3" />
+          ) : (
+            <Bookmark className="h-3 w-3" />
+          )}
+          {savedFlash ? "Saved" : "Save query"}
+        </button>
+      </div>
+
+      {refineOpen && (
+        <form
+          className="flex items-center gap-2 -mt-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!refinement.trim()) return;
+            onRefine(refinement.trim());
+            setRefinement("");
+            setRefineOpen(false);
+          }}
+        >
+          <input
+            value={refinement}
+            onChange={(e) => setRefinement(e.target.value)}
+            placeholder="Not Marcus, someone more senior…"
+            autoFocus
+            className="flex-1 bg-transparent border-0 outline-none text-[13px] py-1.5 placeholder:text-[#8C8A82]"
+            style={{
+              color: "#1B1A17",
+              borderBottom: "1px solid #C8B89A",
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!refinement.trim()}
+            className="text-[11px] uppercase tracking-wider px-2 py-1 rounded-md disabled:opacity-40"
+            style={{ backgroundColor: "#7A4F3C", color: "white" }}
+          >
+            Refine
+          </button>
+        </form>
       )}
 
       {result.reasoningTrace.length > 0 && (
