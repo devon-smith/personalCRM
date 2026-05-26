@@ -17,6 +17,7 @@ import { Sparkline, SparklineBadge } from "@/components/ui/sparkline";
 import { Pill as DsPill } from "@/components/ds";
 import { StoryFeed } from "@/components/contacts/story-feed";
 import { VoiceRecorder } from "@/components/notes/voice-recorder";
+import { IntelligenceSection } from "@/components/contacts/intelligence-section";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
@@ -471,7 +472,11 @@ export function ContactDetailPanel({
         </TabsList>
 
         {/* ═══ STORY TAB — chronological feed ═══ */}
-        <TabsContent value="story" className="flex-1 overflow-y-auto px-6 pb-6">
+        <TabsContent value="story" className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
+          {/* M7.1 + M7.2 surfaces: "About them" + "People who know them".
+              Self-hide when worker hasn't populated yet, so the existing
+              story feed sits at the top until there's data. */}
+          <IntelligenceSection contactId={contactId} />
           <StoryFeed
             interactions={contact.interactions.map((i) => ({
               id: i.id,
