@@ -87,11 +87,17 @@ async function prepopulateForUser(
   // constraint on Draft.inboxItemId means we can simply check
   // `draft: null` in the where clause — no race between SELECT and
   // INSERT (the INSERT will fail if a parallel writer beat us).
+  //
+  // M0.x.2: skip items the classifier explicitly marked as not
+  // needing a reply. Unclassified (needsResponse=null) still qualifies
+  // — fail-open avoids missing a real reply because the worker
+  // hadn't run yet.
   const candidates = await prisma.inboxItem.findMany({
     where: {
       userId,
       status: "OPEN",
       draft: null,
+      OR: [{ needsResponse: null }, { needsResponse: true }],
     },
     orderBy: { triggerAt: "desc" },
     take: limit,

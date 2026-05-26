@@ -101,45 +101,92 @@ async function findUnansweredInbound(
   userId: string,
   cutoff: Date,
 ): Promise<Signal[]> {
-  // INBOUND email older than 3 days that the user genuinely hasn't
-  // responded to. `needsReply=true` is the entry filter, but that
-  // flag is set at email-arrival time and doesn't update when the
-  // user replies — so we additionally drop any candidate that has a
-  // later OUTBOUND in the same threadId. Without this, observations
-  // pile up about emails Jennifer answered weeks ago. (M0.5.)
-  const candidates = await prisma.interaction.findMany({
+  // OPEN inbox items (email channel) older than 3 days that the
+  // classifier hasn't ruled out. needsResponse=null is "not yet
+  // classified, fail-open" so we still surface those; we exclude
+  // explicit needsResponse=false.
+  //
+  // Belt-and-suspenders: the auto-resolve hook (onOutboundInteraction)
+  // should already mark items RESOLVED once Jennifer replies, but
+  // races and missing channels can let an OPEN item linger. We
+  // re-check EmailMessage for a later outbound and drop those too.
+  // (M0.x.2 — migrated off Interaction.needsReply which no longer
+  // exists in the schema.)
+  const candidates = await prisma.inboxItem.findMany({
     where: {
       userId,
-      direction: "INBOUND",
-      type: "EMAIL",
-      occurredAt: { lt: cutoff },
-      needsReply: true,
-      dismissedAt: null,
+      status: "OPEN",
+      channel: "email",
+      triggerAt: { lt: cutoff },
+      OR: [{ needsResponse: null }, { needsResponse: true }],
     },
-    orderBy: { occurredAt: "desc" },
-    // Over-fetch — the threadId post-filter will drop a chunk.
+    orderBy: { triggerAt: "desc" },
     take: 50,
     select: {
       id: true,
       contactId: true,
-      threadId: true,
-      subject: true,
-      needsReplyReason: true,
-      occurredAt: true,
-      contact: { select: { name: true } },
+      threadKey: true,
+      triggerInteractionId: true,
+      triggerAt: true,
+      responseReason: true,
+      messagePreview: true,
+      contactName: true,
     },
   });
 
-  const live = await dropAnsweredByThread(prisma, userId, candidates);
+  if (candidates.length === 0) return [];
 
-  return live.slice(0, 20).map((c) => ({
-    source: "unanswered_inbound",
-    contactId: c.contactId,
-    contactName: c.contact.name,
-    detail: c.subject ?? c.needsReplyReason ?? "their last message",
-    refs: [`interaction:${c.id}`],
-    observedAt: c.occurredAt,
-  }));
+  // Drop items whose underlying Gmail thread already has an outbound
+  // newer than triggerAt — the auto-resolve hook would have caught
+  // these; this is a safety net.
+  const threadKeys = candidates
+    .map((c) => c.threadKey)
+    .filter((t): t is string => typeof t === "string" && t.length > 0);
+
+  const outbounds =
+    threadKeys.length > 0
+      ? await prisma.emailMessage.findMany({
+          where: {
+            userId,
+            threadId: { in: threadKeys },
+            direction: "OUTBOUND",
+          },
+          select: { threadId: true, occurredAt: true },
+        })
+      : [];
+
+  const latestOutbound = new Map<string, Date>();
+  for (const o of outbounds) {
+    if (!o.threadId) continue;
+    const prev = latestOutbound.get(o.threadId);
+    if (!prev || o.occurredAt > prev) {
+      latestOutbound.set(o.threadId, o.occurredAt);
+    }
+  }
+
+  const live = candidates.filter((c) => {
+    if (!c.threadKey) return true;
+    const out = latestOutbound.get(c.threadKey);
+    return !out || out <= c.triggerAt;
+  });
+
+  return live.slice(0, 20).map((c) => {
+    const previews = Array.isArray(c.messagePreview)
+      ? (c.messagePreview as Array<{ summary?: string }>)
+      : [];
+    const subjectFromPreview = previews[0]?.summary ?? null;
+    return {
+      source: "unanswered_inbound",
+      contactId: c.contactId,
+      contactName: c.contactName,
+      detail:
+        subjectFromPreview ??
+        c.responseReason ??
+        "their last message",
+      refs: [`inboxItem:${c.id}`, `interaction:${c.triggerInteractionId}`],
+      observedAt: c.triggerAt,
+    };
+  });
 }
 
 interface ThreadCandidate {

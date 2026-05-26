@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { computePriority } from "@/lib/inbox-priority";
+import { enqueue } from "../../worker/queue-client";
 
 // ─── Channel normalization ──────────────────────────────────
 
@@ -329,6 +330,9 @@ export async function onInboundInteraction(
         priorityScore: p.score,
       },
     });
+    // The latest inbound changed → reclassify. Fire-and-forget; the
+    // classifier worker is idempotent and fail-open on errors.
+    enqueueClassify(existing.id, true);
     return;
   }
 
@@ -400,7 +404,7 @@ export async function onInboundInteraction(
   });
 
   // Upsert: create new or reopen resolved/dismissed item
-  await prisma.inboxItem.upsert({
+  const upserted = await prisma.inboxItem.upsert({
     where: {
       userId_contactId_channel_threadKey: {
         userId,
@@ -449,7 +453,26 @@ export async function onInboundInteraction(
       sourceSystem,
       sourceRecordIds: sourceRecordIds as unknown as Prisma.InputJsonValue,
       surfacedReason: p.reason,
+      // Reopening clears the previous classification — force a re-run.
+      needsResponse: null,
+      responseConfidence: null,
+      responseReason: null,
+      responseCategory: null,
+      classifiedAt: null,
     },
+  });
+  // Fire-and-forget classify enqueue. force=true so reopens reclassify
+  // even if the same item was previously seen.
+  enqueueClassify(upserted.id, true);
+}
+
+/** Fire-and-forget classify enqueue — never throws into the caller. */
+function enqueueClassify(inboxItemId: string, force: boolean): void {
+  enqueue("inbox-classify", { inboxItemId, force }).catch((err) => {
+    console.warn(
+      `[inbox] failed to enqueue inbox-classify for ${inboxItemId}:`,
+      err instanceof Error ? err.message : err,
+    );
   });
 }
 

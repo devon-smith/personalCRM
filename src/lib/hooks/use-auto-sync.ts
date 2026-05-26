@@ -17,14 +17,6 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 const BROWSER_SYNC_DISABLED =
   process.env.NEXT_PUBLIC_DISABLE_BROWSER_SYNC === "true";
 
-async function runClassify() {
-  try {
-    await fetch("/api/inbox-items/classify", { method: "POST" });
-  } catch {
-    // classification is non-blocking — ignore failures
-  }
-}
-
 /**
  * Automatically syncs data sources.
  *
@@ -69,11 +61,11 @@ export function useAutoSync() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-
-      // Classify any new unclassified inbox items, then refresh
-      runClassify().then(() => {
-        queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-      });
+      // Classification is now driven by the inbox-classify worker
+      // task (enqueued from onInboundInteraction in src/lib/inbox.ts),
+      // not a client-side POST. The query above will repick up new
+      // InboxItem rows; their needsResponse fields populate within a
+      // worker poll interval.
     } catch {
       failureCountRef.current += 1;
     } finally {
@@ -112,11 +104,6 @@ export function useAutoSync() {
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
     queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-
-    // Classify after all syncs complete
-    runClassify().then(() => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-    });
   }, [queryClient]);
 
   useEffect(() => {

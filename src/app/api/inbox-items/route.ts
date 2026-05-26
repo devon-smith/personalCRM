@@ -7,6 +7,7 @@ import { computePriority } from "@/lib/inbox-priority";
 // ─── In-memory cache (short TTL to avoid redundant queries) ──
 
 interface CachedResponse {
+  readonly key: string;
   readonly data: string;
   readonly expiresAt: number;
 }
@@ -24,16 +25,29 @@ export function invalidateInboxCache() {
  * Reads directly from the InboxItem table (single source of truth).
  * Returns OPEN items and SNOOZED items whose snooze has expired.
  *
- * Response: { items, totalOpen, groupChats, totalGroupChats }
+ * Query params:
+ *   ?view=needs-reply (default) — needsResponse IS NULL OR needsResponse=true
+ *   ?view=all                   — every OPEN item, including ones the
+ *                                 classifier marked "doesn't need a reply"
+ *
+ * Response: { items, totalOpen, groupChats, totalGroupChats, filteredOut }
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (inboxCache && Date.now() < inboxCache.expiresAt) {
+    const url = new URL(req.url);
+    const view = url.searchParams.get("view") === "all" ? "all" : "needs-reply";
+    const cacheKey = `view:${view}`;
+
+    if (
+      inboxCache &&
+      inboxCache.key === cacheKey &&
+      Date.now() < inboxCache.expiresAt
+    ) {
       return new NextResponse(inboxCache.data, {
         headers: { "content-type": "application/json" },
       });
@@ -55,13 +69,30 @@ export async function GET() {
       },
     });
 
-    // Fetch all OPEN items + draft threadIds in parallel
+    // Count items the classifier hid so the UI can show "N more filtered"
+    // without a separate request.
+    const filteredOut =
+      view === "needs-reply"
+        ? await prisma.inboxItem.count({
+            where: { userId, status: "OPEN", needsResponse: false },
+          })
+        : 0;
+
+    // Fetch OPEN items (filtered by view) + draft threadIds in parallel.
+    // Fail-open: when needsResponse IS NULL the classifier hasn't run
+    // yet, so we show the item to avoid hiding real replies.
+    const baseWhere = { userId, status: "OPEN" } as const;
+    const where =
+      view === "all"
+        ? baseWhere
+        : {
+            ...baseWhere,
+            OR: [{ needsResponse: null }, { needsResponse: true }],
+          };
+
     const [openItems, draftThreadIds] = await Promise.all([
       prisma.inboxItem.findMany({
-        where: {
-          userId,
-          status: "OPEN",
-        },
+        where,
         orderBy: { triggerAt: "desc" },
       }),
       getThreadsWithDrafts(userId),
@@ -110,7 +141,6 @@ export async function GET() {
         messagePreview: Array.isArray(item.messagePreview) ? item.messagePreview : [],
         messageCount: item.messageCount,
         status: item.status,
-        needsReplyReason: null,
         hasDraft,
         priority: p.priority,
         priorityScore: p.score,
@@ -119,6 +149,12 @@ export async function GET() {
         sourceSystem: item.sourceSystem ?? null,
         sourceRecordIds: persistedSourceRecordIds,
         triggerInteractionId: item.triggerInteractionId,
+        // M0.x.2 classifier output
+        needsResponse: item.needsResponse,
+        responseConfidence: item.responseConfidence,
+        responseReason: item.responseReason,
+        responseCategory: item.responseCategory,
+        classifiedAt: item.classifiedAt ? item.classifiedAt.toISOString() : null,
       };
     };
 
@@ -140,9 +176,15 @@ export async function GET() {
       totalOpen: items.length,
       groupChats: groupChats.slice(0, 50),
       totalGroupChats: groupChats.length,
+      filteredOut,
+      view,
     });
 
-    inboxCache = { data: responseBody, expiresAt: Date.now() + CACHE_TTL_MS };
+    inboxCache = {
+      key: cacheKey,
+      data: responseBody,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    };
 
     return new NextResponse(responseBody, {
       headers: { "content-type": "application/json" },

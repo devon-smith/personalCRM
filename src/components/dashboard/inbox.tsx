@@ -129,7 +129,6 @@ interface InboxItemData {
   messagePreview: MessagePreview[] | null;
   messageCount: number;
   status: string;
-  needsReplyReason?: string | null;
   hasDraft?: boolean;
   priority?: "high" | "medium" | "low";
   priorityScore?: number;
@@ -137,20 +136,21 @@ interface InboxItemData {
   sourceSystem?: string | null;
   sourceRecordIds?: string[];
   triggerInteractionId?: string;
+  // M0.x.2 classifier output
+  needsResponse?: boolean | null;
+  responseConfidence?: number | null;
+  responseReason?: string | null;
+  responseCategory?: string | null;
+  classifiedAt?: string | null;
 }
-
-const REASON_LABELS: Record<string, string> = {
-  question: "Asked you something",
-  request: "Needs something from you",
-  emotional: "Shared something personal",
-  open_thread: "Conversation open",
-};
 
 interface InboxItemsData {
   items: InboxItemData[];
   totalOpen: number;
   groupChats: InboxItemData[];
   totalGroupChats: number;
+  filteredOut?: number;
+  view?: "needs-reply" | "all";
 }
 
 interface ActivityItem {
@@ -280,6 +280,12 @@ const urgencyColors: Record<string, { bg: string; text: string }> = {
 export function Inbox() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"inbox" | "groups" | "activity">("inbox");
+  // M0.x.2 — "Needs reply" (default) vs "All inbound". Local state
+  // is fine; the server query keys off this and React Query caches
+  // per-key, so flipping the toggle returns instantly the second
+  // time. Reload starts on "Needs reply" by design.
+  const [inboxView, setInboxView] =
+    useState<"needs-reply" | "all">("needs-reply");
   // Session-scoped (preserves across SPA route changes within the
   // tab; full reload starts collapsed per the "dashboard starts
   // calm" rule).
@@ -291,9 +297,10 @@ export function Inbox() {
 
   const { data: inboxData, isLoading: loadingNR } =
     useQuery<InboxItemsData>({
-      queryKey: ["inbox-items"],
+      queryKey: ["inbox-items", inboxView],
       queryFn: async () => {
-        const res = await fetch("/api/inbox-items");
+        const params = inboxView === "all" ? "?view=all" : "";
+        const res = await fetch(`/api/inbox-items${params}`);
         if (!res.ok) return { items: [], totalOpen: 0, groupChats: [], totalGroupChats: 0 };
         return res.json();
       },
@@ -475,6 +482,62 @@ export function Inbox() {
     },
   });
 
+  // Classifier override — "Doesn't need a reply". Flips InboxItem.needsResponse=false
+  // and writes a ClassifierFeedback row. In the default Needs-reply view
+  // the item disappears optimistically; in the All-inbound view it
+  // stays but its row de-emphasizes (handled in InboxRow).
+  const overrideMutation = useMutation({
+    mutationFn: async (args: { itemId: string; needsResponse: boolean }) => {
+      const res = await fetch(
+        `/api/inbox-items/${encodeURIComponent(args.itemId)}/override`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ needsResponse: args.needsResponse }),
+        },
+      );
+      if (!res.ok) throw new Error("Failed");
+    },
+    onMutate: async ({ itemId, needsResponse }) => {
+      await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
+      const prev = queryClient.getQueryData<InboxItemsData>([
+        "inbox-items",
+        inboxView,
+      ]);
+      if (prev) {
+        const shouldHide = inboxView === "needs-reply" && !needsResponse;
+        queryClient.setQueryData<InboxItemsData>(
+          ["inbox-items", inboxView],
+          {
+            ...prev,
+            items: shouldHide
+              ? prev.items.filter((i) => i.id !== itemId)
+              : prev.items.map((i) =>
+                  i.id === itemId ? { ...i, needsResponse } : i,
+                ),
+            groupChats: shouldHide
+              ? (prev.groupChats ?? []).filter((i) => i.id !== itemId)
+              : (prev.groupChats ?? []).map((i) =>
+                  i.id === itemId ? { ...i, needsResponse } : i,
+                ),
+            filteredOut:
+              (prev.filteredOut ?? 0) + (shouldHide ? 1 : 0),
+          },
+        );
+      }
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) {
+        queryClient.setQueryData(["inbox-items", inboxView], context.prev);
+      }
+      toast.error("Couldn't save your override");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+    },
+  });
+
   // ─── Derived data ───────────────────────────────────────────
 
   // Items arrive pre-sorted by priorityScore DESC from the API (drafts deprioritized)
@@ -643,10 +706,16 @@ export function Inbox() {
             waitingItems={waitingItems}
             showAll={showAll}
             onToggleShowAll={toggleShowAll}
+            view={inboxView}
+            onSetView={setInboxView}
+            filteredOut={inboxData?.filteredOut ?? 0}
             onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
             onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
             onSnooze={(itemId, hours, channel) =>
               snoozeMutation.mutate({ itemId, hours, channel })
+            }
+            onOverride={(itemId, needsResponse) =>
+              overrideMutation.mutate({ itemId, needsResponse })
             }
             onBulkResolve={() => bulkResolveMutation.mutate()}
           />
@@ -671,6 +740,79 @@ export function Inbox() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Needs-reply / All-inbound toggle (M0.x.2)
+// ═══════════════════════════════════════════════════════════════
+
+function NeedsReplyToggle({
+  view,
+  onSetView,
+  filteredOut,
+}: {
+  view: "needs-reply" | "all";
+  onSetView: (v: "needs-reply" | "all") => void;
+  filteredOut: number;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <ToggleSegment
+        active={view === "needs-reply"}
+        onClick={() => onSetView("needs-reply")}
+      >
+        Needs reply
+      </ToggleSegment>
+      <ToggleSegment
+        active={view === "all"}
+        onClick={() => onSetView("all")}
+      >
+        All inbound
+        {view === "needs-reply" && filteredOut > 0 ? (
+          <span
+            className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums"
+            style={{ backgroundColor: "#EFEAE0", color: "#7A4F3C" }}
+          >
+            +{filteredOut}
+          </span>
+        ) : null}
+      </ToggleSegment>
+    </div>
+  );
+}
+
+function ToggleSegment({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center rounded-full px-3 py-1 text-[11.5px] font-medium transition-colors"
+      style={{
+        backgroundColor: active ? "var(--surface)" : "transparent",
+        color: active ? "var(--text-primary)" : "var(--text-tertiary)",
+        border: active
+          ? "1px solid var(--border)"
+          : "1px solid transparent",
+        letterSpacing: "-0.01em",
+        transitionDuration: "var(--duration-fast)",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.color = "var(--text-secondary)";
+      }}
+      onMouseLeave={(e) => {
+        if (!active) e.currentTarget.style.color = "var(--text-tertiary)";
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // INBOX TAB
 // ═══════════════════════════════════════════════════════════════
 
@@ -678,43 +820,68 @@ function InboxTab({
   waitingItems,
   showAll,
   onToggleShowAll,
+  view,
+  onSetView,
+  filteredOut,
   onResolve,
   onDismiss,
   onSnooze,
+  onOverride,
   onBulkResolve,
 }: {
   waitingItems: InboxItemData[];
   showAll: boolean;
   onToggleShowAll: () => void;
+  view: "needs-reply" | "all";
+  onSetView: (v: "needs-reply" | "all") => void;
+  filteredOut: number;
   onResolve: (itemId: string, channel: string) => void;
   onDismiss: (itemId: string, channel: string) => void;
   onSnooze: (itemId: string, hours: number, channel: string) => void;
+  onOverride: (itemId: string, needsResponse: boolean) => void;
   onBulkResolve: () => void;
 }) {
+  // Always show the view toggle if there are items either showing or
+  // hidden behind the filter. Hiding the toggle when count=0 makes the
+  // surface feel broken when the user flipped to "All" expecting more.
+  const showToggle = waitingItems.length > 0 || filteredOut > 0;
+  const toggle = showToggle ? (
+    <NeedsReplyToggle
+      view={view}
+      onSetView={onSetView}
+      filteredOut={filteredOut}
+    />
+  ) : null;
+
   if (waitingItems.length === 0) {
     return (
-      <div className="flex flex-col items-center py-12 text-center">
-        <div
-          className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
-          style={{ backgroundColor: "var(--surface-sunken)" }}
-        >
-          <Check
-            className="h-4 w-4"
+      <div className="space-y-4">
+        {toggle}
+        <div className="flex flex-col items-center py-12 text-center">
+          <div
+            className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
+            style={{ backgroundColor: "var(--surface-sunken)" }}
+          >
+            <Check
+              className="h-4 w-4"
+              style={{ color: "var(--text-tertiary)" }}
+            />
+          </div>
+          <p
+            className="text-[14px] font-medium"
+            style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
+          >
+            Your inbox is clear
+          </p>
+          <p
+            className="text-[12px] mt-1"
             style={{ color: "var(--text-tertiary)" }}
-          />
+          >
+            {view === "needs-reply"
+              ? "Nothing here needs your reply"
+              : "No messages need your attention"}
+          </p>
         </div>
-        <p
-          className="text-[14px] font-medium"
-          style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
-        >
-          Your inbox is clear
-        </p>
-        <p
-          className="text-[12px] mt-1"
-          style={{ color: "var(--text-tertiary)" }}
-        >
-          No messages need your attention
-        </p>
       </div>
     );
   }
@@ -730,6 +897,7 @@ function InboxTab({
 
   return (
     <div className="space-y-4">
+      {toggle}
       {/* Bulk "Clear all replied" — quiet moss chip, top-right of the
           waiting list. Bulk dismiss should not shout louder than the
           things being dismissed. */}
@@ -774,9 +942,13 @@ function InboxTab({
                 >
                   <InboxRow
                     item={item}
+                    view={view}
                     onResolve={() => onResolve(item.id, item.channel)}
                     onDismiss={() => onDismiss(item.id, item.channel)}
                     onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
+                    onOverride={(needsResponse) =>
+                      onOverride(item.id, needsResponse)
+                    }
                   />
                 </SwipeableRow>
               ))}
@@ -1151,17 +1323,21 @@ function truncateMessage(text: string, maxLen = 80): string {
 
 function InboxRow({
   item,
+  view,
   // M0.9 restored: onResolve is the manual "Mark replied" escape
   // hatch. Auto-resolve handles most cases, but legitimately stale
   // items (cross-channel replies, sync lag) still need a way out.
   onResolve,
   onDismiss,
   onSnooze,
+  onOverride,
 }: {
   item: InboxItemData;
+  view: "needs-reply" | "all";
   onResolve: () => void;
   onDismiss: () => void;
   onSnooze: (hours: number) => void;
+  onOverride: (needsResponse: boolean) => void;
 }) {
   const [showSnooze, setShowSnooze] = useState(false);
   const { openComposer } = useDraftComposer();
@@ -1349,6 +1525,28 @@ function InboxRow({
         </div>
       </div>
 
+      {/* Classifier subtitle — quiet single line beneath the header.
+          M0.x.2: the reason is the model's short framing
+          ("Asks a direct question"); when the user toggled into "All"
+          and the model said this item doesn't need a reply we show
+          that explicitly so the de-prioritization is legible.        */}
+      {item.responseReason && (
+        <p
+          className="text-[11.5px] mt-0.5 ml-12"
+          style={{
+            color:
+              item.needsResponse === false
+                ? "#A6968B"
+                : "var(--text-tertiary)",
+            letterSpacing: "-0.01em",
+          }}
+        >
+          {item.needsResponse === false
+            ? `Marked as no reply needed · ${item.responseReason}`
+            : item.responseReason}
+        </p>
+      )}
+
       {/* Message previews */}
       {previewMessages.length > 0 && (
         <div
@@ -1526,6 +1724,53 @@ function InboxRow({
             Draft reply
           </button>
         )}
+
+        {/* Classifier override (M0.x.2). In Needs-reply view this
+            says "Doesn't need a reply" and removes the row; in All
+            view (where the row is visible regardless), if the
+            classifier already marked it false, this becomes "Move
+            back to Needs reply" to flip the decision back. */}
+        {item.needsResponse !== false ? (
+          <button
+            onClick={() => onOverride(false)}
+            title="Mark this as something you don't need to reply to"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
+            style={{
+              border: "1px solid var(--border)",
+              color: "var(--text-tertiary)",
+              backgroundColor: "transparent",
+              letterSpacing: "-0.01em",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            Doesn&rsquo;t need a reply
+          </button>
+        ) : view === "all" ? (
+          <button
+            onClick={() => onOverride(true)}
+            title="Restore to the Needs-reply view"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
+            style={{
+              border: "1px solid var(--border)",
+              color: "var(--text-tertiary)",
+              backgroundColor: "transparent",
+              letterSpacing: "-0.01em",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            Move back to Needs reply
+          </button>
+        ) : null}
 
         {/* Dismiss for group chats */}
         {item.isGroupChat && (

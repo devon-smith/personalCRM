@@ -40,6 +40,7 @@ model User {
   voiceExamples        VoiceExample[]
   savedQueries         SavedQuery[]
   observations         AssistantObservation[]
+  classifierFeedback   ClassifierFeedback[]
   apiUsageLog          ApiUsageLog[]
   importLog            ImportLog[]
   mergeLog             MergeLog[]
@@ -431,11 +432,8 @@ model Interaction {
   threadId String?
   thread   Thread? @relation(fields: [threadId], references: [id])
 
-  // Layer 3: AI classification (null = unclassified, fail-open)
-  needsReply           Boolean?
-  needsReplyReason     String? // "question", "request", "emotional", "open_thread", "acknowledged", "winding_down", "fyi", "not_addressed"
-  needsReplyConfidence Float? // 0.0 - 1.0
-  classifiedAt         DateTime?
+  // Legacy classifier fields (Interaction.needsReply*) were removed in
+  // M0.x.2 — classification now lives on InboxItem.needsResponse.
 
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1045,17 +1043,58 @@ model InboxItem {
   sourceRecordIds Json? // string[] like ["interaction:abc", "email:xyz"]
   surfacedReason  String? // persisted score breakdown ("Inner circle · Sent today")
 
+  // M0.x.2: Haiku-driven "does this actually need a reply?" classifier.
+  // needsResponse=null means not yet classified (fail-open: render it).
+  // Categories: question | request | fyi | thanks | acknowledgment |
+  // social | newsletter | autoresponder. Default inbox view filters
+  // out items where needsResponse=false; an "All inbound" tab restores
+  // the full list. Manual overrides write to ClassifierFeedback for
+  // future training.
+  needsResponse      Boolean?
+  responseConfidence Float?
+  responseReason     String?
+  responseCategory   String?
+  classifiedAt       DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  draft   Draft?
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact            Contact              @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  draft              Draft?
+  classifierFeedback ClassifierFeedback[]
 
   @@unique([userId, contactId, channel, threadKey])
   @@index([userId, status])
   @@index([userId, status, triggerAt])
+  @@index([userId, status, needsResponse])
   @@index([contactId])
+}
+
+// ─── Classifier feedback (M0.x.2) ─────────────────────────────
+// Records every manual override of the needs-response classifier so
+// we can audit accuracy and tune the system prompt later. modelDecision
+// is what the classifier said; userDecision is what Jennifer overrode
+// to. Free text bodyExcerpt lets us reread the message during review
+// without joining back to EmailMessage.
+
+model ClassifierFeedback {
+  id            String   @id @default(cuid())
+  userId        String
+  inboxItemId   String
+  bodyExcerpt   String   @db.Text
+  modelDecision Boolean
+  userDecision  Boolean
+  reason        String?
+  category      String?
+  confidence    Float?
+  overriddenAt  DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inboxItem InboxItem @relation(fields: [inboxItemId], references: [id], onDelete: Cascade)
+
+  @@index([userId, overriddenAt])
+  @@index([inboxItemId])
 }
 
 // ─── Historical orphan models (M0.3 backfill) ───────────────────────────

@@ -46,6 +46,7 @@ import memorySynthesis from "./tasks/memory-synthesis.js";
 import mentionExtraction from "./tasks/mention-extraction.js";
 import observationsGeneration from "./tasks/observations-generation.js";
 import inboxDraftPrepopulate from "./tasks/inbox-draft-prepopulate.js";
+import inboxClassify from "./tasks/inbox-classify.js";
 
 // ─── WORKER_DATABASE_URL — direct connection only ──────────────────────
 // graphile-worker uses named prepared statements internally. Postgres
@@ -86,6 +87,7 @@ const taskList = {
   "mention-extraction": mentionExtraction,
   "observations-generation": observationsGeneration,
   "inbox-draft-prepopulate": inboxDraftPrepopulate,
+  "inbox-classify": inboxClassify,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
