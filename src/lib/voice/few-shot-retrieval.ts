@@ -36,6 +36,10 @@ export interface GetVoiceExamplesParams {
   draftIntent: string;
   /** Target number of examples. Defaults to 4 per the plan. */
   k?: number;
+  /** Manual override for the recipient's relationship type — set when
+   *  the user explicitly picks a different bucket in the draft modal
+   *  pill (M6.4). Bypasses the classifier cascade entirely. */
+  relationshipTypeOverride?: RelationshipType;
 }
 
 export interface VoiceExampleResult {
@@ -80,13 +84,17 @@ export async function getVoiceExamples(
   const { prisma, userId, recipientEmail, draftIntent } = params;
   const k = params.k ?? DEFAULT_K;
 
-  // Stage 1: classify the recipient. Reuses the cascade from M6.1
-  // (circle name → ContactTier → Claude Haiku fallback).
-  const relationshipType = await classifyRecipient({
-    prisma,
-    userId,
-    recipientEmail,
-  });
+  // Stage 1: determine the recipient's relationship type. Manual
+  // override (from the M6.4 draft-modal pill) wins over the
+  // classifier cascade — Jennifer knowing the relationship is more
+  // reliable than our inference.
+  const relationshipType =
+    params.relationshipTypeOverride ??
+    (await classifyRecipient({
+      prisma,
+      userId,
+      recipientEmail,
+    }));
 
   // Stage 2: embed the draft intent. "query" input type per Voyage's
   // documented asymmetric retrieval pattern — stored examples are

@@ -25,6 +25,10 @@ export interface GenerateDraftParams {
   readonly contextDetail?: string;
   readonly threadSubject?: string;
   readonly threadSnippet?: string;
+  /** Optional manual override of the inferred relationship type
+   *  (M6.4). When set, the few-shot retrieval skips the classifier
+   *  and pulls examples from this bucket directly. */
+  readonly relationshipTypeOverride?: RelationshipType;
 }
 
 export interface DraftResult {
@@ -141,6 +145,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
           threadSubject: params.threadSubject,
           threadSnippet: params.threadSnippet,
         }),
+        relationshipTypeOverride: params.relationshipTypeOverride,
       });
       return await generateWithAI({
         ...params,
@@ -346,16 +351,19 @@ async function tryFetchVoiceContext(args: {
   userId: string;
   recipientEmail: string | null;
   draftIntent: string;
+  relationshipTypeOverride?: RelationshipType;
 }): Promise<VoiceContext | null> {
   if (!args.recipientEmail) return null;
   if (!process.env.VOYAGE_API_KEY) return null;
 
   try {
-    const relationshipType = await classifyRecipient({
-      prisma,
-      userId: args.userId,
-      recipientEmail: args.recipientEmail,
-    });
+    const relationshipType =
+      args.relationshipTypeOverride ??
+      (await classifyRecipient({
+        prisma,
+        userId: args.userId,
+        recipientEmail: args.recipientEmail,
+      }));
     const [examples, profile] = await Promise.all([
       getVoiceExamples({
         prisma,
@@ -363,6 +371,7 @@ async function tryFetchVoiceContext(args: {
         recipientEmail: args.recipientEmail,
         draftIntent: args.draftIntent,
         k: VOICE_EXAMPLE_COUNT,
+        relationshipTypeOverride: args.relationshipTypeOverride,
       }),
       prisma.voiceProfile.findUnique({
         where: { userId: args.userId },

@@ -4,6 +4,10 @@ import { generateDraft } from "@/lib/draft-generator";
 import { prisma } from "@/lib/prisma";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
 import type { DraftType } from "@/generated/prisma/client";
+import {
+  RELATIONSHIP_TYPES,
+  type RelationshipType,
+} from "@/lib/voice/relationship-classifier";
 
 const VALID_TONES: readonly string[] = ["casual", "warm", "professional", "congratulatory", "checking_in"];
 const VALID_CONTEXTS: readonly string[] = ["reply_email", "catching_up", "congratulate", "ask", "follow_up"];
@@ -24,7 +28,16 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { contactId, tone, context, contextDetail, threadSubject, threadSnippet, variant } = body as {
+    const {
+      contactId,
+      tone,
+      context,
+      contextDetail,
+      threadSubject,
+      threadSnippet,
+      variant,
+      relationshipTypeOverride,
+    } = body as {
       contactId: string;
       tone: string;
       context: string;
@@ -32,6 +45,7 @@ export async function POST(req: NextRequest) {
       threadSubject?: string;
       threadSnippet?: string;
       variant?: "quick" | "detailed";
+      relationshipTypeOverride?: string;
     };
 
     if (!contactId || typeof contactId !== "string") {
@@ -43,6 +57,15 @@ export async function POST(req: NextRequest) {
     if (!context || !VALID_CONTEXTS.includes(context)) {
       return NextResponse.json({ error: `context must be one of: ${VALID_CONTEXTS.join(", ")}` }, { status: 400 });
     }
+    if (
+      relationshipTypeOverride !== undefined &&
+      !RELATIONSHIP_TYPES.includes(relationshipTypeOverride as RelationshipType)
+    ) {
+      return NextResponse.json(
+        { error: `relationshipTypeOverride must be one of: ${RELATIONSHIP_TYPES.join(", ")}` },
+        { status: 400 },
+      );
+    }
 
     const result = await generateDraft({
       contactId,
@@ -52,6 +75,7 @@ export async function POST(req: NextRequest) {
       contextDetail,
       threadSubject,
       threadSnippet,
+      relationshipTypeOverride: relationshipTypeOverride as RelationshipType | undefined,
     });
 
     // Persist the selected variant (default to detailed) as a Draft record

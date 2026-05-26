@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
+import { RelationshipTypePill } from "@/components/draft/relationship-type-pill";
+import type { RelationshipType } from "@/lib/voice/relationship-classifier";
 import { useContacts, useContact, type ContactWithCount } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import {
@@ -75,6 +77,8 @@ export function DraftComposer() {
   const [tone, setTone] = useState<DraftTone>("warm");
   const [context, setContext] = useState<DraftContext>("catching_up");
   const [contextDetail, setContextDetail] = useState("");
+  const [relationshipTypeOverride, setRelationshipTypeOverride] =
+    useState<RelationshipType | null>(null);
 
   const [drafts, setDrafts] = useState<DraftResult | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -142,6 +146,7 @@ export function DraftComposer() {
     setSelectedContact(contact);
     setStep("configure");
     setSearch("");
+    setRelationshipTypeOverride(null); // re-infer for the new contact
   }, []);
 
   const generateDraft = useCallback(async () => {
@@ -160,6 +165,7 @@ export function DraftComposer() {
           contextDetail: contextDetail || undefined,
           threadSubject: threadSubject || undefined,
           threadSnippet: threadSnippet || undefined,
+          relationshipTypeOverride: relationshipTypeOverride ?? undefined,
         }),
       });
 
@@ -178,7 +184,7 @@ export function DraftComposer() {
     } finally {
       setIsGenerating(false);
     }
-  }, [effectiveContact, tone, context, contextDetail, threadSubject, threadSnippet]);
+  }, [effectiveContact, tone, context, contextDetail, threadSubject, threadSnippet, relationshipTypeOverride]);
 
   const saveToGmail = useCallback(async () => {
     if (!draftId || !effectiveContact) return;
@@ -356,6 +362,15 @@ export function DraftComposer() {
                 </button>
               )}
             </div>
+
+            {/* Relationship-type pill (M6.4) — shows inferred type with
+                override dropdown. Hidden by the component itself when
+                the contact has no email. */}
+            <RelationshipTypePill
+              contactId={effectiveContact.id}
+              value={relationshipTypeOverride}
+              onChange={setRelationshipTypeOverride}
+            />
 
             {/* Tone selector */}
             <div>
