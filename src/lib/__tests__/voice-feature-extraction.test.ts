@@ -245,4 +245,64 @@ On Mon, May 12, 2026 at 11:00 AM Marc <marc@example.com> wrote:
     );
     expect(features.opening).toBe("none");
   });
+
+  it("strips per-user sig when it sits ABOVE a long quoted reply chain (M6.1.1 fix)", () => {
+    // Regression: the original ordering ran stripDetectedSignatures on
+    // the raw body first. Its back-half heuristic would then look at
+    // halfway through the FULL body (including the quoted chain) — so
+    // a sig sitting just above the quote got missed. Result: 116 of
+    // 174 real emails had untouched sigs leaking into the fingerprint.
+    // The fix is to quote-strip first; sig should land in the actual
+    // tail of Jennifer's writing.
+    const sigLine = "Jennifer Aaker | General Atlantic Professor | Stanford GSB";
+    const body = `Marc,
+
+Thanks for sending — quick reply, will dig in this weekend.
+
+${sigLine}
+
+On Tue, May 13, 2026 at 9:14 AM, Marc <marc@example.com> wrote:
+> Here's the deck we discussed. Lots of detail in section 3.
+> Specifically the bit about the new framework — that's where I'd
+> love your reaction. Take your time, no rush.
+> Also: are you in town next week? Coffee?
+> Talk soon,
+> Marc
+
+On Mon, May 12, 2026 at 4:00 PM Jennifer wrote:
+> Sure, send it over and I'll take a look.
+
+On Mon, May 12, 2026 at 3:50 PM Marc wrote:
+> Quick note — got a draft of the deck ready, want eyes on it.`;
+
+    const features = extractFeatures(body, [sigLine]);
+    expect(features.cleanedBody).not.toContain("Jennifer Aaker");
+    expect(features.cleanedBody).not.toContain("Stanford GSB");
+    expect(features.cleanedBody).not.toContain("Here's the deck");
+    expect(features.cleanedBody).toContain("Thanks for sending");
+  });
+
+  it("does not strip a sig line that accidentally appears in the body's first half", () => {
+    // Conservative back-half guard: if a detected sig string happens
+    // to match content in Jennifer's actual writing (rare, but
+    // possible), don't truncate her email mid-thought.
+    const sigLine = "Jennifer Aaker | General Atlantic Professor | Stanford GSB";
+    const body = `Marc,
+
+Quoting from my old footer ("${sigLine}"): I used to put that on every email but stopped because it felt corporate.
+
+Anyway — wanted to check in about the deck. What did you think of section 3?
+
+I had a few specific reactions but want to hear yours first.
+
+Talk soon,
+J`;
+
+    const features = extractFeatures(body, [sigLine]);
+    // The sig line appears early as content, not as a real sig.
+    // Should NOT be cut from there — Jennifer's actual content
+    // ("Anyway — wanted to check in") must survive.
+    expect(features.cleanedBody).toContain("wanted to check in");
+    expect(features.cleanedBody).toContain("Talk soon");
+  });
 });

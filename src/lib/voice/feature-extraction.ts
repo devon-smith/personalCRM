@@ -308,21 +308,23 @@ export function stripDetectedSignatures(
  *
  * @param body Raw email body as fetched from Gmail.
  * @param signatureLines Per-user signature lines from
- *   VoiceProfile.signatureLines (M6.1.1). Applied BEFORE the
- *   built-in RFC 3676 / quoted-reply stripping. Pass `[]` for the
- *   first-ever run when no signatures have been detected yet.
+ *   VoiceProfile.signatureLines (M6.1.1). Pass `[]` for the first-
+ *   ever run when no signatures have been detected yet.
+ *
+ * Order matters: quote-stripping FIRST, then sig-stripping. The
+ * detector in signature-detector.ts defines sig lines relative to the
+ * post-quote-stripped tail of each email, so the stripper must operate
+ * on the same view. Doing sig-strip first on the raw body had the back-
+ * half heuristic look at the quoted-reply chain instead of Jennifer's
+ * actual writing — sigs sat in the top half, the strip missed them,
+ * and the fingerprint stayed dominated by footer fragments (M6.1.1 fix).
  */
 export function extractFeatures(
   body: string,
   signatureLines: ReadonlyArray<string> = [],
 ): ExtractedFeatures {
-  // Per-user statistical signatures land here first — they catch
-  // footer blocks (e.g., "Jennifer Aaker | Stanford GSB") that have
-  // no RFC 3676 delimiter and would otherwise dominate the n-gram
-  // ranking. Then the existing strip handles -- delimiters, quoted
-  // replies, mobile trailers.
-  const sigStripped = stripDetectedSignatures(body, signatureLines);
-  const cleanedBody = stripQuotedAndSignature(sigStripped);
+  const quoteStripped = stripQuotedAndSignature(body);
+  const cleanedBody = stripDetectedSignatures(quoteStripped, signatureLines);
   return {
     opening: detectOpening(cleanedBody),
     closing: detectClosing(cleanedBody),
