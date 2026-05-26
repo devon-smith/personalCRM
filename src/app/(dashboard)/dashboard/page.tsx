@@ -31,6 +31,7 @@ import { Surface, StatTile, Sparkline } from "@/components/ds";
 import { MiniCalendar } from "@/components/dashboard/mini-calendar";
 import { TodayTimeline, AddEventPill } from "@/components/dashboard/today-timeline";
 import { NetworkQueryBox } from "@/components/network-query/network-query-box";
+import { AssistantObservations } from "@/components/dashboard/assistant-observations";
 
 // Tone hex map mirrors the one in Surface. Inline styles win over the
 // shadcn Card's `bg-card` utility by specificity, so this is the only
@@ -254,6 +255,12 @@ export default function DashboardPage() {
           Sits at the top because it's the most-used surface; rotating
           placeholder shows what's possible without taking up real estate. */}
       <NetworkQueryBox />
+
+      {/* M9.2: unprompted observations from the assistant. Self-hides
+          when empty; daily worker generates 1-3 per user from recent
+          signals (unanswered inbound, stale threads, life events,
+          dormant inner-circle). */}
+      <AssistantObservations />
 
       {/* Stat tiles (Sand for people-shaped data) */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

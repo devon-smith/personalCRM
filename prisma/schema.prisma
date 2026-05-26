@@ -39,6 +39,7 @@ model User {
   voiceProfile         VoiceProfile?
   voiceExamples        VoiceExample[]
   savedQueries         SavedQuery[]
+  observations         AssistantObservation[]
 }
 
 model Account {
@@ -940,6 +941,37 @@ model SavedQuery {
 
   @@index([userId, lastRunAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
+}
+
+// Unprompted observations the assistant surfaces on the dashboard
+// (M9.2). One row per noticing — "you haven't replied to David", "Marc
+// asked something specific 5 days ago", "Sarah moved cities last week."
+//
+// Generated daily by the observations-generation worker. UI caps the
+// surfaced count at 1-2 at a time so the dashboard stays calm. User
+// can dismiss; dismissed rows stay in the table for history but never
+// re-surface.
+model AssistantObservation {
+  id        String  @id @default(uuid())
+  userId    String
+  content   String  @db.Text
+  // Optional anchor to a specific contact — UI links to their panel.
+  contactId String?
+  // Tag for what produced this observation: "unanswered_inbound",
+  // "stale_open_thread", "recent_life_event", "dormant_inner_circle",
+  // etc. Used for analytics + future personalization.
+  source     String
+  // Source-record refs for provenance (email IDs, changelog IDs).
+  sourceRefs Json    @default("[]")
+
+  shownAt     DateTime?
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Dashboard query: undismissed observations, newest first.
+  @@index([userId, dismissedAt, createdAt(sort: Desc)])
 }
 
 model InboxItem {

@@ -37,6 +37,7 @@ import contactAttributeExtraction from "./tasks/contact-attribute-extraction.js"
 import graphEdgeExtraction from "./tasks/graph-edge-extraction.js";
 import memorySynthesis from "./tasks/memory-synthesis.js";
 import mentionExtraction from "./tasks/mention-extraction.js";
+import observationsGeneration from "./tasks/observations-generation.js";
 
 // WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
 // connection (port 5432) when the pooler (6543) hits its session limit. The
@@ -67,6 +68,7 @@ const taskList = {
   "graph-edge-extraction": graphEdgeExtraction,
   "memory-synthesis": memorySynthesis,
   "mention-extraction": mentionExtraction,
+  "observations-generation": observationsGeneration,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -119,6 +121,10 @@ const crontab = `
 # via Claude Haiku. 50 emails per run, accumulates "mentioned" edges
 # in ContactEdge. Chews through backlog over weeks.
 30 3 * * * mention-extraction
+# Daily at 06:00 UTC: generate 1-3 assistant observations per user
+# from recent signals (unanswered inbound, stale open threads,
+# life events, dormant inner-circle). Surfaces on the dashboard.
+0 6 * * * observations-generation
 `.trim();
 
 async function main() {
