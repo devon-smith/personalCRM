@@ -174,22 +174,42 @@ export default function VoiceSettingsPage() {
             )}
           </div>
         </div>
-        <Pill
-          variant="outline"
-          tone="accent"
-          size="md"
-          disabled={reindex.isPending}
-          onClick={() => reindex.mutate()}
-          leadingIcon={
-            reindex.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Sparkles className="h-3 w-3" />
-            )
-          }
-        >
-          {reindex.isPending ? "Queuing…" : "Re-index now"}
-        </Pill>
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+          <Pill
+            variant="outline"
+            tone="accent"
+            size="md"
+            disabled={reindex.isPending}
+            onClick={() => reindex.mutate()}
+            leadingIcon={
+              reindex.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3" />
+              )
+            }
+          >
+            {reindex.isPending ? "Queuing…" : "Re-index now"}
+          </Pill>
+          {/* M0.x.5: link to the reference uploads page. Refs
+              dominate over learned email patterns at draft time. */}
+          <Link
+            href="/settings/voice/references"
+            className="inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
+            style={{
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            Reference materials →
+          </Link>
+        </div>
       </Surface>
 
       {/* Per-relationship cards */}

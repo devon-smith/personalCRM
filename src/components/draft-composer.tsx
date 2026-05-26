@@ -29,13 +29,21 @@ import {
   Loader2,
   ChevronDown,
   Send,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+
+interface VoiceContextSummary {
+  references: Array<{ id: string; filename: string; sourceType: string }>;
+  examples: Array<{ toEmail: string; sentAt: string }>;
+  relationshipType: string;
+}
 
 interface DraftResult {
   readonly quick: string;
   readonly detailed: string;
   readonly subjectLine: string | null;
+  readonly voiceContextUsed?: VoiceContextSummary;
 }
 
 interface ReplyPreviewMessage {
@@ -525,6 +533,12 @@ export function DraftComposer() {
         {/* Step 3: Draft results */}
         {step === "drafts" && drafts && effectiveContact && (
           <div className="px-5 pb-5 space-y-4">
+            {/* M0.x.5: What fed this draft. Audit trail so Jennifer
+                can see which references + examples shaped the output. */}
+            {drafts.voiceContextUsed && (
+              <WhatImUsingDisclosure summary={drafts.voiceContextUsed} />
+            )}
+
             {/* Subject line */}
             {drafts.subjectLine && (
               <div>
@@ -689,6 +703,102 @@ export function DraftComposer() {
  * note if the fetch returned null (deleted message / token issue);
  * the draft still generates with snippet-only context in that case.
  */
+/**
+ * M0.x.5: surfaces what fed the draft — voice references + sent-mail
+ * examples + relationship classification. Collapsed by default; the
+ * goal is calm provenance, not noise.
+ */
+function WhatImUsingDisclosure({
+  summary,
+}: {
+  summary: VoiceContextSummary;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const refCount = summary.references.length;
+  const exCount = summary.examples.length;
+  if (refCount === 0 && exCount === 0) return null;
+
+  return (
+    <div
+      className="rounded-[var(--radius-md)] px-3 py-2"
+      style={{
+        backgroundColor: "var(--surface-sunken)",
+        border: "1px solid var(--border-subtle, var(--border))",
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <div className="flex items-center gap-1.5">
+          <Sparkles
+            className="h-3 w-3 shrink-0"
+            style={{ color: "var(--text-tertiary)" }}
+          />
+          <span className="ds-caption" style={{ color: "var(--text-secondary)" }}>
+            What I&rsquo;m using
+          </span>
+        </div>
+        <span className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
+          {refCount > 0 && (
+            <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+              {refCount} reference{refCount === 1 ? "" : "s"}
+              {exCount > 0 ? " · " : ""}
+            </span>
+          )}
+          {exCount > 0 && (
+            <span>
+              {exCount} past email{exCount === 1 ? "" : "s"}
+            </span>
+          )}
+          <span className="ml-1.5">{expanded ? "↑" : "↓"}</span>
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-2 text-[12px]">
+          {refCount > 0 && (
+            <div>
+              <p
+                className="ds-caption font-medium mb-1"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                Voice references (primary)
+              </p>
+              <ul className="space-y-0.5" style={{ color: "var(--text-secondary)" }}>
+                {summary.references.map((r) => (
+                  <li key={r.id}>· {r.filename}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {exCount > 0 && (
+            <div>
+              <p
+                className="ds-caption font-medium mb-1"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                Past emails to similar contacts ({summary.relationshipType.replace(/_/g, " ")})
+              </p>
+              <ul className="space-y-0.5" style={{ color: "var(--text-secondary)" }}>
+                {summary.examples.map((e, i) => (
+                  <li key={i}>
+                    · to {e.toEmail} ·{" "}
+                    {new Date(e.sentAt).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReplyingToPanel({
   preview,
   loading,

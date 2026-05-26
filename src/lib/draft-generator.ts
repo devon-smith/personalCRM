@@ -8,9 +8,12 @@ import {
   buildVoiceBlock,
   buildClosingGuidance,
   hasVoiceContext,
+  type VoiceReferenceForPrompt,
 } from "@/lib/voice/draft-prompt";
 import type { LearnedProfile } from "@/lib/voice/profile";
 import { classifyRecipient, type RelationshipType } from "@/lib/voice/relationship-classifier";
+import { getVoiceReferences } from "@/lib/voice/references/retrieval";
+import { embedBatch, formatVectorLiteral } from "@/lib/search/embeddings";
 import {
   loadReplyContext,
   buildReplyPromptBlock,
@@ -48,6 +51,13 @@ export interface DraftResult {
   readonly quick: string;
   readonly detailed: string;
   readonly subjectLine: string | null;
+  /** M0.x.5: what fed the prompt. Used by the draft modal's
+   *  "What I'm using" disclosure so Jennifer can audit provenance. */
+  readonly voiceContextUsed?: {
+    references: Array<{ id: string; filename: string; sourceType: string }>;
+    examples: Array<{ toEmail: string; sentAt: string }>;
+    relationshipType: string;
+  };
 }
 
 const TONE_LABELS: Record<DraftTone, string> = {
@@ -215,6 +225,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
           ? [
               ...inputRefs,
               ...voiceContext.examples.map((e) => `voiceExample:${e.emailMessageId}`),
+              ...voiceContext.references.map((r) => `voiceReference:${r.id}`),
             ]
           : inputRefs,
         voiceContext,
@@ -244,6 +255,9 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
 
 interface VoiceContext {
   examples: VoiceExampleResult[];
+  /** M0.x.5 — primary voice references (KB / style guide / book excerpts).
+   *  Dominate over examples in the prompt. */
+  references: VoiceReferenceForPrompt[];
   learnedProfile: LearnedProfile | null;
   relationshipType: RelationshipType;
 }
@@ -295,6 +309,7 @@ Return ONLY valid JSON with no markdown:
     ? buildVoiceBlock({
         learnedProfile: params.voiceContext.learnedProfile,
         examples: params.voiceContext.examples,
+        references: params.voiceContext.references,
         relationshipType: params.voiceContext.relationshipType,
       })
     : null;
@@ -302,6 +317,7 @@ Return ONLY valid JSON with no markdown:
     ? buildClosingGuidance({
         learnedProfile: params.voiceContext.learnedProfile,
         examples: params.voiceContext.examples,
+        references: params.voiceContext.references,
         relationshipType: params.voiceContext.relationshipType,
       })
     : "";
@@ -381,6 +397,23 @@ Return ONLY valid JSON with no markdown:
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
 
+  // M0.x.5: surface what fed the prompt so the draft modal can show
+  // an audit trail ("Voice references: 3 files · Past emails: 2").
+  const voiceContextUsed = params.voiceContext
+    ? {
+        references: params.voiceContext.references.map((r) => ({
+          id: r.id,
+          filename: r.filename,
+          sourceType: r.sourceType,
+        })),
+        examples: params.voiceContext.examples.map((e) => ({
+          toEmail: e.toEmail,
+          sentAt: e.sentAt.toISOString(),
+        })),
+        relationshipType: params.voiceContext.relationshipType,
+      }
+    : undefined;
+
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -389,13 +422,14 @@ Return ONLY valid JSON with no markdown:
         quick: parsed.quick ?? "",
         detailed: parsed.detailed ?? "",
         subjectLine: parsed.subjectLine ?? null,
+        voiceContextUsed,
       };
     }
   } catch {
     // Parse failure — fall through to template
   }
 
-  return { quick: text, detailed: text, subjectLine: null };
+  return { quick: text, detailed: text, subjectLine: null, voiceContextUsed };
 }
 
 /**
@@ -445,40 +479,87 @@ async function tryFetchVoiceContext(args: {
   draftIntent: string;
   relationshipTypeOverride?: RelationshipType;
 }): Promise<VoiceContext | null> {
-  if (!args.recipientEmail) return null;
-  if (!process.env.VOYAGE_API_KEY) return null;
+  // M0.x.5: voice references can power the prompt even without
+  // Voyage (we filter by applicableRelationships + recency in that
+  // case). So the early-return changed: only bail when we have no
+  // recipient AND no references possible.
+  const hasVoyage = !!process.env.VOYAGE_API_KEY;
+  if (!args.recipientEmail && !hasVoyage) return null;
 
   try {
     const relationshipType =
       args.relationshipTypeOverride ??
-      (await classifyRecipient({
-        prisma,
-        userId: args.userId,
-        recipientEmail: args.recipientEmail,
-      }));
-    const [examples, profile] = await Promise.all([
-      getVoiceExamples({
-        prisma,
-        userId: args.userId,
-        recipientEmail: args.recipientEmail,
-        draftIntent: args.draftIntent,
-        k: VOICE_EXAMPLE_COUNT,
-        relationshipTypeOverride: args.relationshipTypeOverride,
-      }),
+      (args.recipientEmail
+        ? await classifyRecipient({
+            prisma,
+            userId: args.userId,
+            recipientEmail: args.recipientEmail,
+          })
+        : "unknown");
+
+    // Embed the draft intent ONCE — both the example retriever and
+    // the reference retriever can use it for semantic ranking.
+    let queryEmbeddingLiteral: string | null = null;
+    if (hasVoyage) {
+      try {
+        const { embeddings } = await embedBatch(
+          [args.draftIntent.slice(0, 4000)],
+          "query",
+        );
+        if (embeddings.length > 0) {
+          queryEmbeddingLiteral = formatVectorLiteral(embeddings[0]);
+        }
+      } catch {
+        // Continue without semantic ranking — references fall back
+        // to recency, examples retrieval errors are handled below.
+      }
+    }
+
+    const [examples, profile, references] = await Promise.all([
+      // Examples need Voyage + a recipient email. Skip if either
+      // missing — we still surface references on their own.
+      hasVoyage && args.recipientEmail
+        ? getVoiceExamples({
+            prisma,
+            userId: args.userId,
+            recipientEmail: args.recipientEmail,
+            draftIntent: args.draftIntent,
+            k: VOICE_EXAMPLE_COUNT,
+            relationshipTypeOverride: args.relationshipTypeOverride,
+          }).catch((err) => {
+            console.warn("[draft-generator] examples retrieval failed:", err);
+            return [] as VoiceExampleResult[];
+          })
+        : Promise.resolve([] as VoiceExampleResult[]),
       prisma.voiceProfile.findUnique({
         where: { userId: args.userId },
         select: { learned: true },
       }),
+      getVoiceReferences({
+        prisma,
+        userId: args.userId,
+        queryEmbeddingLiteral,
+        relationshipType,
+      }).catch((err) => {
+        console.warn("[draft-generator] references retrieval failed:", err);
+        return [] as VoiceReferenceForPrompt[];
+      }),
     ]);
     const learnedProfile =
       (profile?.learned as unknown as LearnedProfile | null) ?? null;
-    const ctx: VoiceContext = { examples, learnedProfile, relationshipType };
+    const ctx: VoiceContext = {
+      examples,
+      references,
+      learnedProfile,
+      relationshipType,
+    };
     // If there's truly nothing to inject, return null so the caller
     // takes the cheaper non-voice path.
     if (
       !hasVoiceContext({
         learnedProfile,
         examples,
+        references,
         relationshipType,
       })
     ) {

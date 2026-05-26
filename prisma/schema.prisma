@@ -42,6 +42,7 @@ model User {
   threads              Thread[]
   voiceProfile         VoiceProfile?
   voiceExamples        VoiceExample[]
+  voiceReferences      VoiceReference[]
   savedQueries         SavedQuery[]
   observations         AssistantObservation[]
   classifierFeedback   ClassifierFeedback[]
@@ -808,6 +809,57 @@ model VoiceExample {
 
   @@index([userId, relationshipType])
   @@index([userId, sentAt(sort: Desc)])
+}
+
+// ─── Voice References (M0.x.5) ───────────────────────────────
+// Jennifer's intentional voice — knowledge-base files exported
+// from her custom GPTs ("Writer's Room — Humor Helper", style
+// guides, etc.). These DOMINATE the voice corpus during draft
+// generation because they represent how she WANTS to write,
+// not just how she has written historically.
+//
+// Each uploaded file becomes one row. At upload we:
+//   1. Extract plain text (txt/md direct, pdf via pdf-parse,
+//      docx via mammoth)
+//   2. SHA-256 hash for dedup per user
+//   3. Voyage-embed for semantic retrieval
+//   4. Haiku-extract structured guidance into `guidance` JSON
+//      (greetings, closings, signature phrases, avoid phrases,
+//      tone notes) — that block is what gets merged into the
+//      voice prompt at draft time.
+
+model VoiceReference {
+  id          String   @id @default(cuid())
+  userId      String
+  filename    String
+  /// "gpt_knowledge_base" | "manual_upload" | "book_excerpt" | "style_guide"
+  sourceType  String   @default("gpt_knowledge_base")
+  /// Extracted plain text (capped at MAX_REFERENCE_TEXT_BYTES at upload time)
+  content     String   @db.Text
+  /// SHA-256 of the extracted content — dedup per user
+  contentHash String
+  /// Tier weight used by the prompt builder. Defaults match the
+  /// spec: 1.0 for gpt_knowledge_base, 0.3 for other reference
+  /// types. Higher = stronger prompt prominence.
+  weight      Float    @default(1.0)
+  /// Original byte size of the uploaded file (pre-extraction)
+  byteSize    Int      @default(0)
+  /// Structured Haiku-extracted style guidance. Shape:
+  /// { applicableRelationships: string[] | "all", greetings: [],
+  ///   closings: [], signaturePhrases: [], avoidPhrases: [],
+  ///   toneNotes: string }
+  guidance    Json?
+  /// Voyage 512-dim embedding for semantic retrieval at draft time.
+  /// NULL if Voyage was unavailable at upload — those rows still
+  /// contribute as wholesale prompt context, just not via retrieval.
+  embedding   Unsupported("vector(512)")?
+  addedAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Per-user dedup. Re-uploading the same file is a no-op.
+  @@unique([userId, contentHash])
+  @@index([userId, addedAt(sort: Desc)])
 }
 
 // ─── Drafts (persistent AI-generated messages) ──────────────
