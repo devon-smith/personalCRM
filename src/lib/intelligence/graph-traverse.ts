@@ -93,8 +93,11 @@ export async function findNeighbors(
       ),
     ),
   );
+  // M0.4 — drop system-artifact neighbors. The edge exists in the
+  // graph (we keep the row for analytics) but it shouldn't surface in
+  // "people who know X" lists or network-query tool calls.
   const contacts = await prisma.contact.findMany({
-    where: { id: { in: neighborIds } },
+    where: { id: { in: neighborIds }, isNoise: false },
     select: {
       id: true,
       name: true,

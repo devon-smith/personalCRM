@@ -220,6 +220,12 @@ model Contact {
   // than emails.
   peopleApiResourceName String?
 
+  // Soft-quarantine flag (M0.4). True when this contact looks like a
+  // system artifact ("Settings", "noreply@…", LinkedIn bots, etc).
+  // Default-filtered out of search, neighbors, and /people; a UI
+  // toggle can still reveal them so false positives are recoverable.
+  isNoise Boolean @default(false)
+
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   interactions        Interaction[]
   relationshipInsight RelationshipInsight?
@@ -240,6 +246,7 @@ model Contact {
   @@index([userId])
   @@index([email])
   @@index([userId, lastInteraction])
+  @@index([userId, isNoise])
 }
 
 // Structured per-contact attributes extracted by Claude Sonnet from

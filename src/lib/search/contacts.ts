@@ -97,6 +97,7 @@ export async function searchContacts(
              'exact_email' AS reason
       FROM "Contact"
       WHERE "userId" = ${userId}
+        AND "isNoise" = FALSE
         AND LENGTH(${q}) >= 4
         AND (
           LOWER(email) = LOWER(${q})
@@ -127,6 +128,7 @@ export async function searchContacts(
       FROM "Contact" c
       CROSS JOIN UNNEST(${nameVariants}::text[]) AS v
       WHERE c."userId" = ${userId}
+        AND c."isNoise" = FALSE
       GROUP BY c.id, c.name, c.email, c.company, c.role, c.tier,
                c."avatarUrl", c."lastInteraction"
       HAVING MAX(GREATEST(
@@ -151,6 +153,7 @@ export async function searchContacts(
       FROM "Contact" c
       CROSS JOIN UNNEST(${nameVariants}::text[]) AS v
       WHERE c."userId" = ${userId}
+        AND c."isNoise" = FALSE
         AND c.company IS NOT NULL
       GROUP BY c.id, c.name, c.email, c.company, c.role, c.tier,
                c."avatarUrl", c."lastInteraction"
@@ -178,6 +181,7 @@ export async function searchContacts(
                  'name' AS reason
           FROM "Contact"
           WHERE "userId" = ${userId}
+            AND "isNoise" = FALSE
             AND GREATEST(
               similarity(name, ${nameProbe}),
               word_similarity(${nameProbe}, name)
@@ -315,6 +319,7 @@ async function semanticSearch(
            'semantic' AS reason
     FROM "Contact"
     WHERE "userId" = ${userId}
+      AND "isNoise" = FALSE
       AND "embedding" IS NOT NULL
       AND (1 - ("embedding" <=> ${literal}::vector)) >= ${SEMANTIC_MIN_SIMILARITY}
     ORDER BY "embedding" <=> ${literal}::vector ASC

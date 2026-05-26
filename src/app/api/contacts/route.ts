@@ -24,6 +24,9 @@ export async function GET(req: NextRequest) {
     const circle = searchParams.get("circle");
     const tag = searchParams.get("tag");
     const sort = searchParams.get("sort") ?? "name";
+    // M0.4 — system-artifact contacts ("Settings", "noreply@…") are
+    // hidden by default. Pass ?includeNoise=1 to surface them.
+    const includeNoise = searchParams.get("includeNoise") === "1";
 
     if (tier && !VALID_TIERS.has(tier)) {
       return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
@@ -34,6 +37,7 @@ export async function GET(req: NextRequest) {
 
     const where: Prisma.ContactWhereInput = {
       userId: session.user.id,
+      ...(includeNoise ? {} : { isNoise: false }),
       ...(search && {
         OR: [
           { name: { contains: search, mode: "insensitive" } },
