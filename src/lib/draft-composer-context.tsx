@@ -12,6 +12,10 @@ export interface DraftComposerState {
   readonly presetContext?: DraftContext;
   readonly threadSubject?: string;
   readonly threadSnippet?: string;
+  /** InboxItem.threadKey — when present alongside presetContext='reply_email'
+   *  the draft generator fetches the actual inbound message body +
+   *  thread history instead of relying on the snippet. (M0.x.4) */
+  readonly threadKey?: string;
 }
 
 interface DraftComposerActions {

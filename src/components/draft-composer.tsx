@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,27 @@ interface DraftResult {
   readonly subjectLine: string | null;
 }
 
+interface ReplyPreviewMessage {
+  direction: string;
+  fromEmail: string;
+  fromName: string | null;
+  subject: string | null;
+  snippet: string | null;
+  occurredAt: string;
+}
+
+interface ReplyPreviewData {
+  latestInbound: {
+    fromEmail: string;
+    fromName: string | null;
+    subject: string | null;
+    body: string;
+    bodyIsFull: boolean;
+    occurredAt: string;
+  };
+  threadHistory: ReplyPreviewMessage[];
+}
+
 type ComposerStep = "pick_contact" | "configure" | "drafts";
 
 const TONE_OPTIONS: readonly { readonly value: DraftTone; readonly label: string; readonly emoji: string }[] = [
@@ -65,7 +87,7 @@ function getInitials(name: string): string {
 }
 
 export function DraftComposer() {
-  const { isOpen, contactId: presetContactId, presetTone, presetContext, threadSubject, threadSnippet, closeComposer } =
+  const { isOpen, contactId: presetContactId, presetTone, presetContext, threadSubject, threadSnippet, threadKey, closeComposer } =
     useDraftComposer();
 
   const [step, setStep] = useState<ComposerStep>("pick_contact");
@@ -88,6 +110,12 @@ export function DraftComposer() {
   const [savingToGmail, setSavingToGmail] = useState(false);
   const [gmailDeepLink, setGmailDeepLink] = useState<string | null>(null);
 
+  // M0.x.4: "message being replied to" UI. Only the thread expander
+  // is local state; the fetched preview comes from React Query so the
+  // loading state stays out of useEffect (avoids the cascading-render
+  // lint rule and gets dedup for free).
+  const [showFullThread, setShowFullThread] = useState(false);
+
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Reset state when opening
@@ -102,6 +130,7 @@ export function DraftComposer() {
       setGmailDeepLink(null);
       setContextDetail("");
       setSearch("");
+      setShowFullThread(false);
 
       if (presetTone) setTone(presetTone);
       else setTone("warm");
@@ -142,6 +171,29 @@ export function DraftComposer() {
     }
   }, [step, isOpen]);
 
+  // M0.x.4: load the inbound message Jennifer is replying to via
+  // React Query — only fires when the dialog is open, in reply mode,
+  // and a threadKey is present. React Query handles loading state,
+  // dedup, and unmount cancellation so we don't need useEffect.
+  const replyQueryEnabled =
+    isOpen && context === "reply_email" && !!threadKey;
+  const replyQuery = useQuery<{ replyContext: ReplyPreviewData | null }>({
+    queryKey: ["reply-context", threadKey],
+    enabled: replyQueryEnabled,
+    queryFn: async () => {
+      const res = await fetch("/api/drafts/reply-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadKey }),
+      });
+      if (!res.ok) return { replyContext: null };
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+  });
+  const replyPreview = replyQuery.data?.replyContext ?? null;
+  const loadingReplyPreview = replyQueryEnabled && replyQuery.isLoading;
+
   const selectContact = useCallback((contact: ContactWithCount) => {
     setSelectedContact(contact);
     setStep("configure");
@@ -165,6 +217,7 @@ export function DraftComposer() {
           contextDetail: contextDetail || undefined,
           threadSubject: threadSubject || undefined,
           threadSnippet: threadSnippet || undefined,
+          threadKey: threadKey || undefined,
           relationshipTypeOverride: relationshipTypeOverride ?? undefined,
         }),
       });
@@ -184,7 +237,7 @@ export function DraftComposer() {
     } finally {
       setIsGenerating(false);
     }
-  }, [effectiveContact, tone, context, contextDetail, threadSubject, threadSnippet, relationshipTypeOverride]);
+  }, [effectiveContact, tone, context, contextDetail, threadSubject, threadSnippet, threadKey, relationshipTypeOverride]);
 
   const saveToGmail = useCallback(async () => {
     if (!draftId || !effectiveContact) return;
@@ -362,6 +415,21 @@ export function DraftComposer() {
                 </button>
               )}
             </div>
+
+            {/* M0.x.4: "Replying to this message" panel. Shows the actual
+                inbound body so Jennifer can see what the draft will respond
+                to BEFORE generating. Only renders in reply mode with a
+                loaded thread. The threadKey guard means stale data left
+                over from a prior reply-mode session doesn't accidentally
+                appear in non-reply mode. */}
+            {context === "reply_email" && !!threadKey && (loadingReplyPreview || replyPreview) && (
+              <ReplyingToPanel
+                preview={replyPreview}
+                loading={loadingReplyPreview}
+                showFullThread={showFullThread}
+                onToggleThread={() => setShowFullThread((v) => !v)}
+              />
+            )}
 
             {/* Relationship-type pill (M6.4) — shows inferred type with
                 override dropdown. Hidden by the component itself when
@@ -612,5 +680,181 @@ export function DraftComposer() {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * M0.x.4: shows the inbound message the draft will respond to.
+ * Loading shimmer → loaded body. Falls back to a "couldn't load"
+ * note if the fetch returned null (deleted message / token issue);
+ * the draft still generates with snippet-only context in that case.
+ */
+function ReplyingToPanel({
+  preview,
+  loading,
+  showFullThread,
+  onToggleThread,
+}: {
+  preview: ReplyPreviewData | null;
+  loading: boolean;
+  showFullThread: boolean;
+  onToggleThread: () => void;
+}) {
+  if (loading) {
+    return (
+      <div
+        className="rounded-[var(--radius-md)] px-3.5 py-3 space-y-1.5"
+        style={{
+          backgroundColor: "var(--surface-sunken)",
+          border: "1px solid var(--border-subtle, var(--border))",
+        }}
+      >
+        <div className="flex items-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--text-tertiary)" }} />
+          <span className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
+            Loading the message you&rsquo;re replying to&hellip;
+          </span>
+        </div>
+      </div>
+    );
+  }
+  if (!preview) {
+    return (
+      <div
+        className="rounded-[var(--radius-md)] px-3.5 py-3"
+        style={{
+          backgroundColor: "var(--surface-sunken)",
+          border: "1px solid var(--border-subtle, var(--border))",
+        }}
+      >
+        <p className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
+          Couldn&rsquo;t load the original message — the draft will fall back to the inbox snippet.
+        </p>
+      </div>
+    );
+  }
+
+  const inbound = preview.latestInbound;
+  const sender = inbound.fromName ?? inbound.fromEmail;
+  const occurred = new Date(inbound.occurredAt);
+  // Older messages in the thread, oldest first; the latest inbound
+  // (last entry) is shown in full above so we exclude it here.
+  const olderHistory = preview.threadHistory.slice(0, -1);
+
+  return (
+    <div
+      className="rounded-[var(--radius-md)] px-3.5 py-3 space-y-2"
+      style={{
+        backgroundColor: "var(--surface-sunken)",
+        border: "1px solid var(--border-subtle, var(--border))",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className="ds-caption font-semibold uppercase tracking-wider"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          Replying to
+        </span>
+        <span className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
+          {occurred.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+        </span>
+      </div>
+      <div>
+        <p className="ds-body-sm font-medium" style={{ color: "var(--text-primary)" }}>
+          {sender}
+        </p>
+        {inbound.subject && (
+          <p
+            className="ds-caption mt-0.5"
+            style={{ color: "var(--text-secondary)", letterSpacing: "-0.01em" }}
+          >
+            {inbound.subject}
+          </p>
+        )}
+      </div>
+      <p
+        className="ds-body-sm whitespace-pre-wrap"
+        style={{
+          color: "var(--text-secondary)",
+          lineHeight: 1.55,
+          maxHeight: showFullThread ? "none" : "260px",
+          overflowY: showFullThread ? "visible" : "auto",
+        }}
+      >
+        {inbound.body || "(empty body)"}
+      </p>
+      {!inbound.bodyIsFull && (
+        <p className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
+          Snippet only — full message couldn&rsquo;t be fetched from Gmail.
+        </p>
+      )}
+      {olderHistory.length > 0 && (
+        <>
+          <button
+            onClick={onToggleThread}
+            className="ds-caption inline-flex items-center gap-1 transition-colors"
+            style={{ color: "var(--text-tertiary)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--text-tertiary)";
+            }}
+          >
+            <ChevronDown
+              className="h-3 w-3"
+              style={{
+                transform: showFullThread ? "rotate(180deg)" : "none",
+                transition: "transform var(--duration-fast)",
+              }}
+            />
+            {showFullThread
+              ? "Hide thread history"
+              : `Show ${olderHistory.length} earlier ${olderHistory.length === 1 ? "message" : "messages"}`}
+          </button>
+          {showFullThread && (
+            <div className="space-y-2 pt-1">
+              {olderHistory.map((m, i) => (
+                <div
+                  key={i}
+                  className="rounded-[var(--radius-sm)] px-2.5 py-2"
+                  style={{
+                    backgroundColor: "var(--surface)",
+                    border: "1px solid var(--border-subtle, var(--border))",
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className="ds-caption font-medium"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {m.direction === "OUTBOUND" ? "You" : m.fromName ?? m.fromEmail}
+                    </span>
+                    <span className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
+                      {new Date(m.occurredAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </div>
+                  {m.snippet && (
+                    <p
+                      className="ds-caption mt-1"
+                      style={{
+                        color: "var(--text-tertiary)",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {m.snippet}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }

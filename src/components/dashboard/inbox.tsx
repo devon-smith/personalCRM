@@ -1361,6 +1361,9 @@ function InboxRow({
       presetContext: "reply_email",
       threadSubject: previews[0]?.summary?.slice(0, 140) ?? undefined,
       threadSnippet: previews[0]?.summary ?? undefined,
+      // M0.x.4: pass threadKey so the generator can load the actual
+      // inbound message body + thread history, not just the snippet.
+      threadKey: item.threadKey,
     });
   }
 

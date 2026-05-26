@@ -11,6 +11,11 @@ import {
 } from "@/lib/voice/draft-prompt";
 import type { LearnedProfile } from "@/lib/voice/profile";
 import { classifyRecipient, type RelationshipType } from "@/lib/voice/relationship-classifier";
+import {
+  loadReplyContext,
+  buildReplyPromptBlock,
+  type ReplyContext,
+} from "@/lib/draft-reply-context";
 
 const DRAFT_MODEL = "claude-sonnet-4-20250514";
 
@@ -25,6 +30,14 @@ export interface GenerateDraftParams {
   readonly contextDetail?: string;
   readonly threadSubject?: string;
   readonly threadSnippet?: string;
+  /** InboxItem.threadKey ("gmail:<id>" for Gmail). When present
+   *  alongside context="reply_email", we fetch the actual inbound
+   *  message + thread history and inject them into the prompt
+   *  instead of relying on the snippet alone. (M0.x.4) */
+  readonly threadKey?: string;
+  /** Pre-loaded reply context — callers that already have it can
+   *  pass it in to skip the DB + Gmail fetch. (M0.x.4) */
+  readonly replyContext?: ReplyContext;
   /** Optional manual override of the inferred relationship type
    *  (M6.4). When set, the few-shot retrieval skips the classifier
    *  and pulls examples from this bucket directly. */
@@ -148,6 +161,27 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
   // doesn't pad with empty headers.
   const memorySummary = memory ? buildMemorySummary(memory) : "";
 
+  // M0.x.4: reply mode must read the actual inbound message, not just
+  // its 140-char snippet. Fetch when (a) caller asked for reply_email,
+  // (b) didn't pre-load it, (c) has a threadKey. Fail-open: a Gmail
+  // hiccup falls back to the snippet path silently.
+  let replyContext: ReplyContext | null = params.replyContext ?? null;
+  if (
+    !replyContext &&
+    params.context === "reply_email" &&
+    params.threadKey
+  ) {
+    try {
+      replyContext = await loadReplyContext({
+        prisma,
+        userId: params.userId,
+        threadKey: params.threadKey,
+      });
+    } catch (err) {
+      console.warn("[draft-generator] loadReplyContext failed:", err);
+    }
+  }
+
   // Try AI generation first, fall back to templates
   if (process.env.ANTHROPIC_API_KEY) {
     try {
@@ -163,6 +197,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
           contextDetail: params.contextDetail,
           threadSubject: params.threadSubject,
           threadSnippet: params.threadSnippet,
+          replyContext,
         }),
         relationshipTypeOverride: params.relationshipTypeOverride,
       });
@@ -175,6 +210,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
         journalSummary,
         lifeUpdatesSummary,
         memorySummary,
+        replyContext,
         inputRefs: voiceContext
           ? [
               ...inputRefs,
@@ -212,7 +248,7 @@ interface VoiceContext {
   relationshipType: RelationshipType;
 }
 
-async function generateWithAI(params: GenerateDraftParams & {
+async function generateWithAI(params: Omit<GenerateDraftParams, "replyContext"> & {
   contact: { name: string; company: string | null; role: string | null; tier: string; notes: string | null };
   firstName: string;
   circleNames: string[];
@@ -222,6 +258,7 @@ async function generateWithAI(params: GenerateDraftParams & {
   memorySummary: string;
   inputRefs: string[];
   voiceContext: VoiceContext | null;
+  replyContext: ReplyContext | null;
 }): Promise<DraftResult> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const startedAt = Date.now();
@@ -236,6 +273,7 @@ Generate two variants:
 Also generate a subject line if this is an email (not for texts).
 
 IMPORTANT:
+- If a "YOU ARE REPLYING TO THIS MESSAGE" block is present, the draft MUST be a direct reply to that message — answer questions asked, acknowledge specific points, match its tone. Do NOT write a generic catch-up email. Pull subject + recipient from the inbound, not invented context.
 - If replying to an email, acknowledge the delay if it's been more than 3 days. Don't be overly apologetic, just briefly.
 - Reference specific things from past interactions when possible.
 - If the contact is at a specific company, you can reference it naturally.
@@ -284,7 +322,21 @@ Return ONLY valid JSON with no markdown:
     });
   }
 
-  const userContent = JSON.stringify({
+  // M0.x.4: when we have the actual inbound message, prepend a
+  // "you are replying to this" block to the user content. It goes
+  // OUTSIDE the JSON envelope so Claude sees the message first and
+  // structurally — not buried as a string field. The JSON metadata
+  // follows for additional context (tone, memory, voice).
+  const replyPromptBlock = params.replyContext
+    ? buildReplyPromptBlock(params.replyContext) + "\n\n"
+    : "";
+
+  // When in reply mode with a loaded body, we suppress the legacy
+  // threadSubject/threadSnippet keys in the JSON envelope — they'd
+  // duplicate (and truncate) what the reply block already has.
+  const isLoadedReply = !!params.replyContext;
+
+  const jsonPayload = JSON.stringify({
     contact: {
       name: params.contact.name,
       company: params.contact.company,
@@ -295,8 +347,8 @@ Return ONLY valid JSON with no markdown:
     tone: TONE_LABELS[params.tone],
     context: CONTEXT_LABELS[params.context],
     contextDetail: params.contextDetail || undefined,
-    threadSubject: params.threadSubject || undefined,
-    threadSnippet: params.threadSnippet || undefined,
+    threadSubject: isLoadedReply ? undefined : params.threadSubject || undefined,
+    threadSnippet: isLoadedReply ? undefined : params.threadSnippet || undefined,
     recentInteractions: params.interactionsSummary || "None",
     journalNotes: params.journalSummary || "None",
     lifeUpdates: params.lifeUpdatesSummary || "None",
@@ -305,6 +357,8 @@ Return ONLY valid JSON with no markdown:
     // contact yet — model just gets less context, no schema impact.
     whatIKnowAboutThem: params.memorySummary || "None",
   }, null, 2);
+
+  const userContent = `${replyPromptBlock}DRAFT METADATA (use to tune tone + reference context):\n${jsonPayload}`;
 
   const message = await anthropic.messages.create({
     model: DRAFT_MODEL,
@@ -356,14 +410,26 @@ function buildDraftIntent(params: {
   contextDetail?: string;
   threadSubject?: string;
   threadSnippet?: string;
+  replyContext?: ReplyContext | null;
 }): string {
   const parts: string[] = [
     `Tone: ${TONE_LABELS[params.tone]}`,
     `Context: ${CONTEXT_LABELS[params.context]}`,
   ];
   if (params.contextDetail) parts.push(`Detail: ${params.contextDetail}`);
-  if (params.threadSubject) parts.push(`Subject: ${params.threadSubject}`);
-  if (params.threadSnippet) parts.push(`Their message: ${params.threadSnippet}`);
+  // Prefer the loaded reply context over the legacy snippet — gives
+  // the voice retriever a better embedding target.
+  if (params.replyContext) {
+    const inb = params.replyContext.latestInbound;
+    if (inb.subject) parts.push(`Subject: ${inb.subject}`);
+    // Cap to ~600 chars so the embedding doesn't drift toward
+    // signature noise.
+    parts.push(`Their message: ${inb.body.slice(0, 600)}`);
+  } else {
+    if (params.threadSubject) parts.push(`Subject: ${params.threadSubject}`);
+    if (params.threadSnippet)
+      parts.push(`Their message: ${params.threadSnippet}`);
+  }
   return parts.join(". ");
 }
 

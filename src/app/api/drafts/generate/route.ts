@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       contextDetail,
       threadSubject,
       threadSnippet,
+      threadKey,
       variant,
       relationshipTypeOverride,
     } = body as {
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
       contextDetail?: string;
       threadSubject?: string;
       threadSnippet?: string;
+      threadKey?: string;
       variant?: "quick" | "detailed";
       relationshipTypeOverride?: string;
     };
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest) {
       contextDetail,
       threadSubject,
       threadSnippet,
+      threadKey,
       relationshipTypeOverride: relationshipTypeOverride as RelationshipType | undefined,
     });
 

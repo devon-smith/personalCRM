@@ -20,6 +20,9 @@ export interface InboxItemForDraft {
   readonly contactId: string;
   readonly channel: string;
   readonly messagePreview: unknown;
+  /** Gmail thread key ("gmail:<id>"). Passed through to the draft
+   *  generator so it can load the actual inbound body. (M0.x.4) */
+  readonly threadKey?: string | null;
 }
 
 interface MessagePreviewEntry {
@@ -79,5 +82,9 @@ export function buildDraftInputFromInboxItem(
     threadSubject: summary ? summary.slice(0, 140) : undefined,
     threadSnippet: summary ?? undefined,
     contextDetail: summary ?? undefined,
+    // M0.x.4: hand the thread key over so generateDraft can load
+    // the actual inbound body via loadReplyContext. The snippet
+    // fields above remain as a fallback when the body fetch fails.
+    threadKey: item.threadKey ?? undefined,
   };
 }

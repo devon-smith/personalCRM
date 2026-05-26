@@ -108,6 +108,7 @@ async function prepopulateForUser(
       contactName: true,
       channel: true,
       messagePreview: true,
+      threadKey: true,
     },
   });
 
@@ -130,6 +131,7 @@ async function prepopulateForUser(
       contactId: item.contactId,
       channel: item.channel,
       messagePreview: item.messagePreview,
+      threadKey: item.threadKey,
     });
     if (!draftInput) {
       summary.skipped++;
