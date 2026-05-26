@@ -3,8 +3,19 @@ import { prisma } from "@/lib/prisma";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
 import { getUserProfile } from "@/lib/user-profile";
 import { logAIGeneration } from "@/lib/ai-generation-log";
+import { getVoiceExamples, type VoiceExampleResult } from "@/lib/voice/few-shot-retrieval";
+import {
+  buildVoiceBlock,
+  buildClosingGuidance,
+  hasVoiceContext,
+} from "@/lib/voice/draft-prompt";
+import type { LearnedProfile } from "@/lib/voice/profile";
+import { classifyRecipient, type RelationshipType } from "@/lib/voice/relationship-classifier";
 
 const DRAFT_MODEL = "claude-sonnet-4-20250514";
+
+/** Cap retrieved examples — more than 4 dilutes the signal + bloats tokens. */
+const VOICE_EXAMPLE_COUNT = 4;
 
 export interface GenerateDraftParams {
   readonly contactId: string;
@@ -44,6 +55,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     where: { id: params.contactId },
     select: {
       name: true,
+      email: true,
       company: true,
       role: true,
       tier: true,
@@ -116,6 +128,20 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
   // Try AI generation first, fall back to templates
   if (process.env.ANTHROPIC_API_KEY) {
     try {
+      // Best-effort voice context — fails gracefully if VOYAGE_API_KEY
+      // isn't set, no VoiceProfile exists, or retrieval errors out.
+      // The non-voice prompt path still runs in that case.
+      const voiceContext = await tryFetchVoiceContext({
+        userId: params.userId,
+        recipientEmail: contact.email,
+        draftIntent: buildDraftIntent({
+          tone: params.tone,
+          context: params.context,
+          contextDetail: params.contextDetail,
+          threadSubject: params.threadSubject,
+          threadSnippet: params.threadSnippet,
+        }),
+      });
       return await generateWithAI({
         ...params,
         contact,
@@ -124,7 +150,13 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
         interactionsSummary,
         journalSummary,
         lifeUpdatesSummary,
-        inputRefs,
+        inputRefs: voiceContext
+          ? [
+              ...inputRefs,
+              ...voiceContext.examples.map((e) => `voiceExample:${e.emailMessageId}`),
+            ]
+          : inputRefs,
+        voiceContext,
       });
     } catch (err) {
       console.error("[draft-generator] AI generation failed, using templates:", err);
@@ -149,6 +181,12 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
   });
 }
 
+interface VoiceContext {
+  examples: VoiceExampleResult[];
+  learnedProfile: LearnedProfile | null;
+  relationshipType: RelationshipType;
+}
+
 async function generateWithAI(params: GenerateDraftParams & {
   contact: { name: string; company: string | null; role: string | null; tier: string; notes: string | null };
   firstName: string;
@@ -157,12 +195,13 @@ async function generateWithAI(params: GenerateDraftParams & {
   journalSummary: string;
   lifeUpdatesSummary: string;
   inputRefs: string[];
+  voiceContext: VoiceContext | null;
 }): Promise<DraftResult> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const startedAt = Date.now();
 
   const profile = getUserProfile();
-  const systemPrompt = `You are drafting a message for ${profile.fullName}, ${profile.bio}. ${profile.fullName}'s style: ${profile.style}. Draft should sound like a real person texting a friend or emailing a colleague — not a CRM.
+  const baseInstructions = `You are drafting a message for ${profile.fullName}, ${profile.bio}. ${profile.fullName}'s style: ${profile.style}. Draft should sound like a real person texting a friend or emailing a colleague — not a CRM.
 
 Generate two variants:
 1. Quick: 2-3 sentences, gets the point across fast
@@ -181,6 +220,42 @@ IMPORTANT:
 
 Return ONLY valid JSON with no markdown:
 {"quick": "...", "detailed": "...", "subjectLine": "..." or null}`;
+
+  // Voice-aware path: when we have a profile + retrieved examples for
+  // this recipient's relationship type, inject them as a cached
+  // system-prompt segment. The voice block is stable per (user ×
+  // relationship type), so drafting multiple emails to the same kind
+  // of recipient re-uses the cached prefix on subsequent calls.
+  const voiceBlock = params.voiceContext
+    ? buildVoiceBlock({
+        learnedProfile: params.voiceContext.learnedProfile,
+        examples: params.voiceContext.examples,
+        relationshipType: params.voiceContext.relationshipType,
+      })
+    : null;
+  const closingGuidance = params.voiceContext
+    ? buildClosingGuidance({
+        learnedProfile: params.voiceContext.learnedProfile,
+        examples: params.voiceContext.examples,
+        relationshipType: params.voiceContext.relationshipType,
+      })
+    : "";
+
+  // Anthropic SDK accepts `system` as either a string or an array of
+  // text blocks. We use the array form to attach cache_control to the
+  // voice block — the base instructions are short enough that caching
+  // them isn't worth the write markup cost.
+  const systemBlocks: Anthropic.Messages.TextBlockParam[] = [
+    { type: "text", text: baseInstructions },
+  ];
+  if (voiceBlock) {
+    systemBlocks.push({
+      type: "text",
+      text:
+        voiceBlock + (closingGuidance ? `\n\n${closingGuidance}` : ""),
+      cache_control: { type: "ephemeral" },
+    });
+  }
 
   const userContent = JSON.stringify({
     contact: {
@@ -203,7 +278,7 @@ Return ONLY valid JSON with no markdown:
   const message = await anthropic.messages.create({
     model: DRAFT_MODEL,
     max_tokens: 800,
-    system: systemPrompt,
+    system: systemBlocks,
     messages: [{ role: "user", content: userContent }],
   });
 
@@ -236,6 +311,83 @@ Return ONLY valid JSON with no markdown:
   }
 
   return { quick: text, detailed: text, subjectLine: null };
+}
+
+/**
+ * Build a short free-text description of the draft intent for Voyage
+ * to embed and use as the retrieval query. We blend tone + context +
+ * any caller-supplied detail / thread context so the query matches
+ * past emails of similar shape.
+ */
+function buildDraftIntent(params: {
+  tone: DraftTone;
+  context: DraftContext;
+  contextDetail?: string;
+  threadSubject?: string;
+  threadSnippet?: string;
+}): string {
+  const parts: string[] = [
+    `Tone: ${TONE_LABELS[params.tone]}`,
+    `Context: ${CONTEXT_LABELS[params.context]}`,
+  ];
+  if (params.contextDetail) parts.push(`Detail: ${params.contextDetail}`);
+  if (params.threadSubject) parts.push(`Subject: ${params.threadSubject}`);
+  if (params.threadSnippet) parts.push(`Their message: ${params.threadSnippet}`);
+  return parts.join(". ");
+}
+
+/**
+ * Pull the user's learned voice profile + a handful of similar past
+ * outbound emails. Returns null if any prerequisite is missing — the
+ * draft generator falls back to the non-voice prompt path in that case
+ * rather than failing the whole generation.
+ */
+async function tryFetchVoiceContext(args: {
+  userId: string;
+  recipientEmail: string | null;
+  draftIntent: string;
+}): Promise<VoiceContext | null> {
+  if (!args.recipientEmail) return null;
+  if (!process.env.VOYAGE_API_KEY) return null;
+
+  try {
+    const relationshipType = await classifyRecipient({
+      prisma,
+      userId: args.userId,
+      recipientEmail: args.recipientEmail,
+    });
+    const [examples, profile] = await Promise.all([
+      getVoiceExamples({
+        prisma,
+        userId: args.userId,
+        recipientEmail: args.recipientEmail,
+        draftIntent: args.draftIntent,
+        k: VOICE_EXAMPLE_COUNT,
+      }),
+      prisma.voiceProfile.findUnique({
+        where: { userId: args.userId },
+        select: { learned: true },
+      }),
+    ]);
+    const learnedProfile =
+      (profile?.learned as unknown as LearnedProfile | null) ?? null;
+    const ctx: VoiceContext = { examples, learnedProfile, relationshipType };
+    // If there's truly nothing to inject, return null so the caller
+    // takes the cheaper non-voice path.
+    if (
+      !hasVoiceContext({
+        learnedProfile,
+        examples,
+        relationshipType,
+      })
+    ) {
+      return null;
+    }
+    return ctx;
+  } catch (err) {
+    console.warn("[draft-generator] voice context unavailable:", err);
+    return null;
+  }
 }
 
 function generateFromTemplate(params: {
