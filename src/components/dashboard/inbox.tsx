@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { EvidenceChevron } from "@/components/shared/evidence-chevron";
+import { useSessionExpanded } from "@/components/ds";
 
 // ─── Swipe gesture hook ─────────────────────────────────────
 
@@ -278,7 +279,12 @@ const urgencyColors: Record<string, { bg: string; text: string }> = {
 export function Inbox() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"inbox" | "groups" | "activity">("inbox");
-  const [showAll, setShowAll] = useState(false);
+  // Session-scoped (preserves across SPA route changes within the
+  // tab; full reload starts collapsed per the "dashboard starts
+  // calm" rule).
+  const [showAll, toggleShowAll] = useSessionExpanded(
+    "dashboard-inbox-expanded",
+  );
 
   // ─── Data fetching ──────────────────────────────────────────
 
@@ -635,7 +641,7 @@ export function Inbox() {
           <InboxTab
             waitingItems={waitingItems}
             showAll={showAll}
-            onToggleShowAll={() => setShowAll(!showAll)}
+            onToggleShowAll={toggleShowAll}
             onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
             onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
             onSnooze={(itemId, hours, channel) =>
@@ -647,7 +653,7 @@ export function Inbox() {
           <GroupsTab
             groupItems={groupChatItems}
             showAll={showAll}
-            onToggleShowAll={() => setShowAll(!showAll)}
+            onToggleShowAll={toggleShowAll}
             onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
             onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
             onSnooze={(itemId, hours, channel) =>

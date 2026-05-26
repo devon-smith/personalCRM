@@ -8,5 +8,6 @@ export { Sparkline, type SparklineProps } from "./sparkline";
 export { FilterPill, type FilterPillProps, type FilterPillOption } from "./filter-pill";
 export {
   CollapsibleSection,
+  useSessionExpanded,
   type CollapsibleSectionProps,
 } from "./collapsible-section";

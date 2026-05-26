@@ -10,6 +10,32 @@ import {
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 /**
+ * Companion hook for sections that can't use <CollapsibleSection>
+ * because their data shape is non-flat (e.g. Inbox renders items
+ * grouped by time, with section dividers between groups). Shares
+ * the same session-scoped Map so toggle state survives SPA route
+ * changes within a tab, but full reload starts collapsed.
+ *
+ * Returns [expanded, toggle]; the caller renders its own disclosure.
+ */
+export function useSessionExpanded(
+  storageKey: string,
+): [boolean, () => void] {
+  const [expanded, setExpanded] = useState<boolean>(() =>
+    readSessionExpanded(storageKey),
+  );
+  const toggle = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev;
+      sessionExpandState.set(storageKey, next);
+      persistExpanded(storageKey, next);
+      return next;
+    });
+  }, [storageKey]);
+  return [expanded, toggle];
+}
+
+/**
  * CollapsibleSection — reusable disclosure primitive for dashboard
  * sections. Renders the first N items by default; a "Show N more"
  * disclosure expands to the full list. Animation is a CSS height
@@ -70,21 +96,10 @@ export function CollapsibleSection<T>(
     className,
   } = props;
 
-  // Read once from the session-scoped Map. SSR-safe: the Map is
-  // empty on first render, so the initial state is always false
-  // unless the user has already toggled this section in-session.
-  const [expanded, setExpanded] = useState<boolean>(() =>
-    readSessionExpanded(storageKey),
-  );
-
-  const handleToggle = useCallback(() => {
-    setExpanded((prev) => {
-      const next = !prev;
-      sessionExpandState.set(storageKey, next);
-      persistExpanded(storageKey, next);
-      return next;
-    });
-  }, [storageKey]);
+  // Read once from the session-scoped Map via the shared hook. SSR-safe:
+  // the Map is empty on first render, so the initial state is always
+  // false unless the user has already toggled this section in-session.
+  const [expanded, handleToggle] = useSessionExpanded(storageKey);
 
   const visibleItems = useMemo(
     () => getVisibleItems(items, previewCount, expanded),
