@@ -229,6 +229,8 @@ model Contact {
   emailMessages       EmailMessage[]
   drafts              Draft[]
   profile             ContactProfile?
+  edgesOut            ContactEdge[]    @relation("ContactEdge_from")
+  edgesIn             ContactEdge[]    @relation("ContactEdge_to")
 
   inboxItems InboxItem[]
 
@@ -281,6 +283,44 @@ model ContactProfile {
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId])
+}
+
+// Emergent relationships between contacts (M7.2). Edges are derived
+// from observed signals (shared threads, same org, named mentions,
+// introductions) rather than user-asserted. Updated incrementally by
+// the graph-edge-extraction worker.
+//
+// Undirected at the type level, but stored with stable (from, to)
+// ordering enforced at insert time (fromContactId < toContactId
+// lexicographically) so we don't double-count A→B and B→A.
+//
+// edgeType values:
+//   - mutual_thread: both appeared in the same Thread (covers
+//     co-meetings via calendar threads + mutual email/chat threads)
+//   - same_org: same Contact.company OR same email domain (non-personal)
+//   - mentioned: one appears by name in an email body the other
+//     received (Claude Haiku — future commit)
+//   - introduced_by_user: user initiated a thread including both, and
+//     neither was in a prior thread with the other (future commit)
+model ContactEdge {
+  id               String   @id @default(uuid())
+  userId           String
+  fromContactId    String
+  toContactId      String
+  edgeType         String
+  strength         Float    @default(0.5)
+  observationCount Int      @default(1)
+  evidence         Json     @default("{}")
+  firstObservedAt  DateTime @default(now())
+  lastReinforcedAt DateTime @default(now())
+
+  fromContact Contact @relation("ContactEdge_from", fields: [fromContactId], references: [id], onDelete: Cascade)
+  toContact   Contact @relation("ContactEdge_to",   fields: [toContactId],   references: [id], onDelete: Cascade)
+
+  @@unique([fromContactId, toContactId, edgeType])
+  @@index([userId, edgeType])
+  @@index([fromContactId])
+  @@index([toContactId])
 }
 
 enum InteractionType {

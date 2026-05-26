@@ -34,6 +34,7 @@ import signalDetection from "./tasks/signal-detection.js";
 import morningBrief from "./tasks/morning-brief.js";
 import voiceCorpusIndex from "./tasks/voice-corpus-index.js";
 import contactAttributeExtraction from "./tasks/contact-attribute-extraction.js";
+import graphEdgeExtraction from "./tasks/graph-edge-extraction.js";
 
 // WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
 // connection (port 5432) when the pooler (6543) hits its session limit. The
@@ -61,6 +62,7 @@ const taskList = {
   "morning-brief": morningBrief,
   "voice-corpus-index": voiceCorpusIndex,
   "contact-attribute-extraction": contactAttributeExtraction,
+  "graph-edge-extraction": graphEdgeExtraction,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -101,6 +103,10 @@ const crontab = `
 # accumulated ≥10 new interactions since last extraction (or have
 # never been profiled). 50 contacts per run, prioritized by recency.
 0 2 * * * contact-attribute-extraction
+# Daily at 02:30 UTC: recompute ContactEdge graph (mutual-thread,
+# same-org). Runs after contact-attribute-extraction so contact data
+# is freshest.
+30 2 * * * graph-edge-extraction
 `.trim();
 
 async function main() {
