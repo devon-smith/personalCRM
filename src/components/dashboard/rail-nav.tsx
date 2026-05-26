@@ -10,6 +10,7 @@ import {
   Settings,
   Merge,
   Search,
+  Sparkles,
   Wrench,
   ChevronRight,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const ITEMS: RailItem[] = [
   { href: "/dashboard",   label: "Home",         icon: Home,     group: "general", matchExact: true },
   { href: "/activity",    label: "Activity",     icon: Activity, group: "general" },
   { href: "/people",      label: "People",       icon: Users,    group: "general" },
+  { href: "/feed",        label: "Feed",         icon: Sparkles, group: "general" },
   { href: "/circles",     label: "Circles",      icon: CircleDot, group: "general" },
   { href: "/merge",       label: "Merge",        icon: Merge,    group: "tools" },
   { href: "/admin/jobs",  label: "Admin",        icon: Wrench,   group: "tools" },
@@ -63,6 +65,21 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   });
   const settingsHasIssue =
     (dataHealth?.googleAccounts.filter((a) => a.needsReconnect).length ?? 0) > 0;
+
+  // M0.x.3: tiny dot on /feed when new FeedItem rows exist since the
+  // last /feed visit. Calm — no count badge, no red. The dot clears
+  // on visit via POST /api/feed/visit.
+  const { data: feedUnseen } = useQuery<{ hasUnseen: boolean }>({
+    queryKey: ["feed-unseen"],
+    queryFn: async () => {
+      const res = await fetch("/api/feed/visit");
+      if (!res.ok) return { hasUnseen: false };
+      return res.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+  const feedHasUnseen = feedUnseen?.hasUnseen ?? false;
 
   return (
     <aside
@@ -112,7 +129,12 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
 
       {/* Nav groups */}
       <nav className="flex-1 overflow-y-auto px-3">
-        <RailGroup label="General" items={general} pathname={pathname} />
+        <RailGroup
+          label="General"
+          items={general}
+          pathname={pathname}
+          statusDots={feedHasUnseen ? { "/feed": "subtle" } : undefined}
+        />
         <div className="h-4" />
         <RailGroup
           label="Tools"
@@ -184,8 +206,8 @@ function RailGroup({
   label: string;
   items: RailItem[];
   pathname: string;
-  /** Per-href dot color. "urgent" → terracotta. */
-  statusDots?: Record<string, "urgent">;
+  /** Per-href dot color. "urgent" → terracotta. "subtle" → quiet warm dot. */
+  statusDots?: Record<string, "urgent" | "subtle">;
 }) {
   return (
     <div>
@@ -236,6 +258,12 @@ function RailGroup({
                     aria-hidden
                     className="h-1.5 w-1.5 rounded-full shrink-0"
                     style={{ backgroundColor: "var(--status-urgent)" }}
+                  />
+                ) : dot === "subtle" ? (
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: "#E8E4DC", opacity: 0.7 }}
                   />
                 ) : null}
                 {active ? (

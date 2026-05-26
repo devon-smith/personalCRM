@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   Merge,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserNav } from "@/components/auth/user-nav";
@@ -19,8 +20,9 @@ import { UserNav } from "@/components/auth/user-nav";
 const navItems = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/activity", label: "Activity", icon: Activity },
-  { href: "/circles", label: "Circles", icon: CircleDot },
   { href: "/people", label: "People", icon: Users },
+  { href: "/feed", label: "Feed", icon: Sparkles },
+  { href: "/circles", label: "Circles", icon: CircleDot },
   { href: "/merge", label: "Merge", icon: Merge },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;

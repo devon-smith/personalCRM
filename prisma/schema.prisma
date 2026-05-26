@@ -16,6 +16,10 @@ model User {
   emailVerified         DateTime?
   image                 String?
   onboardingCompletedAt DateTime?
+  // M0.x.3: rail-nav dot indicator and "what's new since I last
+  // looked" affordances on the /feed page reference this. POST
+  // /api/feed/visit updates it on each visit.
+  lastFeedVisitAt       DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -41,6 +45,8 @@ model User {
   savedQueries         SavedQuery[]
   observations         AssistantObservation[]
   classifierFeedback   ClassifierFeedback[]
+  lifeEventSignals     LifeEventSignal[]
+  feedItems            FeedItem[]
   apiUsageLog          ApiUsageLog[]
   importLog            ImportLog[]
   mergeLog             MergeLog[]
@@ -253,6 +259,8 @@ model Contact {
   memory              ContactMemory?
   edgesOut            ContactEdge[]        @relation("ContactEdge_from")
   edgesIn             ContactEdge[]        @relation("ContactEdge_to")
+  lifeEventSignals    LifeEventSignal[]
+  feedItems           FeedItem[]
 
   inboxItems InboxItem[]
 
@@ -724,6 +732,12 @@ model EmailMessage {
   mentionedContactIds String[]  @default([])
   mentionsProcessedAt DateTime?
 
+  // M0.x.3: Life event extraction (Haiku) tracking. Mirrors the
+  // mention-extraction pattern. NULL → not processed; non-NULL →
+  // processed (a LifeEventSignal row may or may not have been
+  // created depending on whether the model detected a signal).
+  lifeEventProcessedAt DateTime?
+
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
   voiceExample VoiceExample?
@@ -733,6 +747,7 @@ model EmailMessage {
   @@index([contactId])
   // Lets the mention-extraction worker quickly find unprocessed rows.
   @@index([userId, mentionsProcessedAt])
+  @@index([userId, lifeEventProcessedAt])
 }
 
 // ─── Voice Model (Phase 6) ──────────────────────────────────
@@ -1256,4 +1271,72 @@ model MeetingPersonSummaryCache {
 
   @@unique([name, contactId])
   @@index([fetchedAt])
+}
+
+// ─── Feed (M0.x.3) ─────────────────────────────────────────────
+// Two-layer model for ambient network awareness:
+// 1. LifeEventSignal — raw extractions from inbound messages (one
+//    row per detected event per message). Source of truth.
+// 2. FeedItem — aggregated + deduplicated for display. Pulled from
+//    LifeEventSignal + ContactChangelog by the feed-aggregate worker.
+//
+// Separation lets the aggregator dedupe across sources (same job
+// change detected from a LinkedIn delta + a "starting at X" email
+// becomes one FeedItem, not two) while keeping the raw extraction
+// audit trail intact.
+
+model LifeEventSignal {
+  id             String   @id @default(cuid())
+  userId         String
+  contactId      String
+  /// life_event | announcement | milestone
+  signalType     String
+  /// 1-line summary written by the extractor
+  summary        String
+  /// email | message — which channel the signal came from
+  sourceType     String
+  /// EmailMessage.id (or future Interaction.id for message channels)
+  sourceRecordId String
+  /// Excerpt of the message that triggered detection (for audit)
+  body           String   @db.Text
+  detectedAt     DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([userId, detectedAt])
+  @@index([contactId])
+}
+
+model FeedItem {
+  id             String   @id @default(cuid())
+  userId         String
+  contactId      String
+  /// job_change | publication | news_mention | life_event | award | announcement
+  itemType       String
+  /// Single-line headline ("Marcus Chen became CEO at OpenEvidence")
+  headline       String
+  /// Optional longer body / context
+  body           String?
+  /// changelog | email | message | web — which upstream source
+  sourceType     String
+  /// Upstream row ID (ContactChangelog.id, LifeEventSignal.id, etc.)
+  sourceRecordId String
+  /// External URL (news article, LinkedIn post) when applicable
+  linkUrl        String?
+  /// When the underlying event happened (used for time grouping)
+  detectedAt     DateTime
+  isHighlighted  Boolean  @default(false)
+  isHidden       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Dedup constraint — one row per (contact, event type, source).
+  // The aggregator UPDATEs an existing row instead of creating a
+  // duplicate when the same event surfaces from multiple paths.
+  @@unique([userId, contactId, itemType, sourceRecordId])
+  @@index([userId, isHidden, detectedAt(sort: Desc)])
+  @@index([contactId, detectedAt])
 }

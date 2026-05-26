@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { googleFetch, googleFetchWithToken, getAllGoogleAccessTokens } from "./client";
 import { autoResolveOnOutbound } from "@/lib/auto-resolve";
 import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
+import { enqueue } from "../../../worker/queue-client";
 
 interface GmailMessage {
   id: string;
@@ -466,7 +467,7 @@ async function processMessage(
 
   // Store in EmailMessage for the inbox (dedup by gmailId)
   const fromName = extractDisplayName(fromHeader);
-  await prisma.emailMessage.upsert({
+  const emailRow = await prisma.emailMessage.upsert({
     where: { userId_gmailId: { userId, gmailId: detail.id } },
     create: {
       userId,
@@ -484,6 +485,7 @@ async function processMessage(
       isAutomated,
     },
     update: {},
+    select: { id: true, lifeEventProcessedAt: true },
   });
 
   if (!contactId) {
@@ -568,6 +570,23 @@ async function processMessage(
       threadKey,
       fromEmail,
     });
+
+    // M0.x.3: extract life events from the inbound body so the /feed
+    // page surfaces them. Fire-and-forget — the worker is idempotent
+    // (lifeEventProcessedAt IS NULL filter) so re-enqueuing is safe;
+    // gating on the upsert's lifeEventProcessedAt avoids the bulk of
+    // duplicates. If the row was just inserted, lifeEventProcessedAt
+    // is null and the worker will pick it up.
+    if (emailRow.lifeEventProcessedAt === null) {
+      enqueue("extract-life-events", { emailMessageId: emailRow.id }).catch(
+        (err) => {
+          console.warn(
+            `[gmail-sync] failed to enqueue extract-life-events for ${emailRow.id}:`,
+            err instanceof Error ? err.message : err,
+          );
+        },
+      );
+    }
   }
 
   return { matched: true };

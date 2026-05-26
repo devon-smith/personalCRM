@@ -47,6 +47,8 @@ import mentionExtraction from "./tasks/mention-extraction.js";
 import observationsGeneration from "./tasks/observations-generation.js";
 import inboxDraftPrepopulate from "./tasks/inbox-draft-prepopulate.js";
 import inboxClassify from "./tasks/inbox-classify.js";
+import extractLifeEvents from "./tasks/extract-life-events.js";
+import feedAggregate from "./tasks/feed-aggregate.js";
 
 // ─── WORKER_DATABASE_URL — direct connection only ──────────────────────
 // graphile-worker uses named prepared statements internally. Postgres
@@ -88,6 +90,8 @@ const taskList = {
   "observations-generation": observationsGeneration,
   "inbox-draft-prepopulate": inboxDraftPrepopulate,
   "inbox-classify": inboxClassify,
+  "extract-life-events": extractLifeEvents,
+  "feed-aggregate": feedAggregate,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -149,6 +153,14 @@ const crontab = `
 # memory-synthesis (03:00) and observations-generation (06:00) so
 # the queue is fresh by the morning brief.
 0 4 * * * inbox-draft-prepopulate
+# Every 4 hours: extract life events from the inbound EmailMessage
+# backlog (Haiku, batch of 25). Lightweight enough to run often;
+# new emails ingested via gmail-sync also enqueue per-message jobs.
+17 */4 * * * extract-life-events
+# Daily at 04:30 UTC: aggregate FeedItem rows from ContactChangelog +
+# LifeEventSignal. Runs right after the life-event extractor so the
+# /feed page reflects the latest signals by the morning brief.
+30 4 * * * feed-aggregate
 `.trim();
 
 async function main() {
