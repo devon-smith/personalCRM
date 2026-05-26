@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { useDraftComposer } from "@/lib/draft-composer-context";
+import { CollapsibleSection } from "@/components/ds";
 
 interface DraftContact {
   readonly id: string;
@@ -156,8 +157,12 @@ export function DraftQueue() {
           </button>
         </div>
       ) : (
-        <div className="mt-3 space-y-1">
-          {drafts.map((draft) => {
+        <CollapsibleSection
+          storageKey="dashboard-drafts-expanded"
+          previewCount={3}
+          items={drafts}
+          className="mt-3 space-y-1"
+          renderItem={(draft) => {
             const isExpanded = expandedId === draft.id;
             const isEditing = editingId === draft.id;
             const color = getAvatarColor(draft.contact.name);
@@ -311,8 +316,8 @@ export function DraftQueue() {
                 )}
               </div>
             );
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   );

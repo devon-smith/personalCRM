@@ -26,7 +26,7 @@ import { Inbox, ActionItemsCard } from "@/components/dashboard/inbox";
 import { SyncAlerts } from "@/components/dashboard/sync-alerts";
 import { MomentToConnect } from "@/components/dashboard/moment-to-connect";
 import { TravelCard } from "@/components/dashboard/travel-card";
-import { Surface, StatTile, Sparkline } from "@/components/ds";
+import { Surface, StatTile, Sparkline, CollapsibleSection } from "@/components/ds";
 import { MiniCalendar } from "@/components/dashboard/mini-calendar";
 import { TodayTimeline, AddEventPill } from "@/components/dashboard/today-timeline";
 import { NetworkQueryBox } from "@/components/network-query/network-query-box";
@@ -326,61 +326,15 @@ export default function DashboardPage() {
               <CardTitle className="crm-section-label">Recent interactions</CardTitle>
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-4">
-              <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
-                {stats.recentInteractions.map((interaction) => {
-                  const Icon = typeIcons[interaction.type] ?? StickyNote;
-                  const color = getAvatarColor(interaction.contact.name);
-                  return (
-                    <Link
-                      key={interaction.id}
-                      href={`/people?contact=${interaction.contact.id}`}
-                      className="group flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
-                      style={{ transitionDuration: "var(--duration-fast)" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
-                    >
-                      <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback
-                          className="text-[10px] font-semibold"
-                          style={{ backgroundColor: color.bg, color: color.text }}
-                        >
-                          {getInitials(interaction.contact.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                            {interaction.contact.name}
-                          </span>
-                          {interaction.contact.circles?.slice(0, 2).map((cc) => (
-                            <span
-                              key={cc.circle.id}
-                              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
-                              style={{ backgroundColor: `${cc.circle.color}15`, color: cc.circle.color }}
-                            >
-                              {cc.circle.name}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
-                          <p className="ds-caption truncate">
-                            {interaction.subject ?? interaction.summary ?? interaction.type.toLowerCase()}
-                          </p>
-                        </div>
-                        {interaction.contact.company && (
-                          <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                            {interaction.contact.company}
-                          </p>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                        {formatDistanceToNow(new Date(interaction.occurredAt))}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
+              <CollapsibleSection
+                storageKey="dashboard-recent-expanded"
+                previewCount={3}
+                items={stats.recentInteractions}
+                className="divide-y"
+                renderItem={(interaction) => (
+                  <RecentInteractionRow key={interaction.id} interaction={interaction} />
+                )}
+              />
             </CardContent>
           </Card>
         )}
@@ -404,104 +358,15 @@ export default function DashboardPage() {
               <span className="ds-caption">Last 30 days</span>
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-4">
-              <div
+              <CollapsibleSection
+                storageKey="dashboard-strongest-expanded"
+                previewCount={3}
+                items={stats.recentlyActive}
                 className="divide-y"
-                style={{ borderColor: "var(--border-subtle)" }}
-              >
-                {stats.recentlyActive.map((contact) => {
-                  const color = getAvatarColor(contact.name);
-                  const Icon = contact.lastInteractionType
-                    ? (typeIcons[contact.lastInteractionType] ?? StickyNote)
-                    : MessageSquare;
-                  return (
-                    <Link
-                      key={contact.id}
-                      href={`/people?contact=${contact.id}`}
-                      className="group flex items-center gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
-                      style={{
-                        transitionDuration: "var(--duration-fast)",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor =
-                          "var(--surface-sunken)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = "";
-                      }}
-                    >
-                      <Avatar className="h-9 w-9">
-                        <AvatarFallback
-                          className="text-[11px] font-semibold"
-                          style={{
-                            backgroundColor: color.bg,
-                            color: color.text,
-                          }}
-                        >
-                          {getInitials(contact.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="ds-body-md font-medium truncate"
-                            style={{ color: "var(--text-primary)" }}
-                          >
-                            {contact.name}
-                          </span>
-                          {contact.circles?.slice(0, 2).map((c) => (
-                            <span
-                              key={c.id}
-                              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
-                              style={{
-                                backgroundColor: `${c.color}15`,
-                                color: c.color,
-                              }}
-                            >
-                              {c.name}
-                            </span>
-                          ))}
-                        </div>
-                        {contact.company && (
-                          <p className="ds-caption truncate">
-                            {contact.company}
-                          </p>
-                        )}
-                        {contact.lastInteractionSummary && (
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <Icon
-                              className="h-3 w-3 shrink-0"
-                              style={{ color: "var(--text-tertiary)" }}
-                            />
-                            <p
-                              className="text-[11px] truncate"
-                              style={{ color: "var(--text-tertiary)" }}
-                            >
-                              {contact.lastInteractionSummary}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p
-                          className="ds-heading-sm"
-                          style={{ color: "var(--text-secondary)" }}
-                        >
-                          {contact.interactionCount}
-                        </p>
-                        <p className="ds-caption">
-                          {contact.interactionCount === 1
-                            ? "interaction"
-                            : "interactions"}
-                        </p>
-                      </div>
-                      <ChevronRight
-                        className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                        style={{ color: "var(--text-tertiary)" }}
-                      />
-                    </Link>
-                  );
-                })}
-              </div>
+                renderItem={(contact) => (
+                  <StrongestRelationshipRow key={contact.id} contact={contact} />
+                )}
+              />
             </CardContent>
           </Card>
         )}
@@ -632,6 +497,163 @@ export default function DashboardPage() {
 }
 
 // ─── Supporting cards ────────────────────────────────────────
+
+function RecentInteractionRow({
+  interaction,
+}: {
+  interaction: RecentInteraction;
+}) {
+  const Icon = typeIcons[interaction.type] ?? StickyNote;
+  const color = getAvatarColor(interaction.contact.name);
+  return (
+    <Link
+      href={`/people?contact=${interaction.contact.id}`}
+      className="group flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
+      style={{ transitionDuration: "var(--duration-fast)" }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "";
+      }}
+    >
+      <Avatar className="h-8 w-8 shrink-0">
+        <AvatarFallback
+          className="text-[10px] font-semibold"
+          style={{ backgroundColor: color.bg, color: color.text }}
+        >
+          {getInitials(interaction.contact.name)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span
+            className="ds-body-md font-medium truncate"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {interaction.contact.name}
+          </span>
+          {interaction.contact.circles?.slice(0, 2).map((cc) => (
+            <span
+              key={cc.circle.id}
+              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
+              style={{
+                backgroundColor: `${cc.circle.color}15`,
+                color: cc.circle.color,
+              }}
+            >
+              {cc.circle.name}
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+          <p className="ds-caption truncate">
+            {interaction.subject ?? interaction.summary ?? interaction.type.toLowerCase()}
+          </p>
+        </div>
+        {interaction.contact.company && (
+          <p
+            className="text-[11px] truncate mt-0.5"
+            style={{ color: "var(--text-tertiary)" }}
+          >
+            {interaction.contact.company}
+          </p>
+        )}
+      </div>
+      <span
+        className="shrink-0 text-[11px] mt-0.5"
+        style={{ color: "var(--text-tertiary)" }}
+      >
+        {formatDistanceToNow(new Date(interaction.occurredAt))}
+      </span>
+    </Link>
+  );
+}
+
+function StrongestRelationshipRow({
+  contact,
+}: {
+  contact: RecentlyActiveContact;
+}) {
+  const color = getAvatarColor(contact.name);
+  const Icon = contact.lastInteractionType
+    ? (typeIcons[contact.lastInteractionType] ?? StickyNote)
+    : MessageSquare;
+  return (
+    <Link
+      href={`/people?contact=${contact.id}`}
+      className="group flex items-center gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
+      style={{ transitionDuration: "var(--duration-fast)" }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "";
+      }}
+    >
+      <Avatar className="h-9 w-9">
+        <AvatarFallback
+          className="text-[11px] font-semibold"
+          style={{ backgroundColor: color.bg, color: color.text }}
+        >
+          {getInitials(contact.name)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span
+            className="ds-body-md font-medium truncate"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {contact.name}
+          </span>
+          {contact.circles?.slice(0, 2).map((c) => (
+            <span
+              key={c.id}
+              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
+              style={{ backgroundColor: `${c.color}15`, color: c.color }}
+            >
+              {c.name}
+            </span>
+          ))}
+        </div>
+        {contact.company && (
+          <p className="ds-caption truncate">{contact.company}</p>
+        )}
+        {contact.lastInteractionSummary && (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <Icon
+              className="h-3 w-3 shrink-0"
+              style={{ color: "var(--text-tertiary)" }}
+            />
+            <p
+              className="text-[11px] truncate"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              {contact.lastInteractionSummary}
+            </p>
+          </div>
+        )}
+      </div>
+      <div className="shrink-0 text-right">
+        <p
+          className="ds-heading-sm"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          {contact.interactionCount}
+        </p>
+        <p className="ds-caption">
+          {contact.interactionCount === 1 ? "interaction" : "interactions"}
+        </p>
+      </div>
+      <ChevronRight
+        className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        style={{ color: "var(--text-tertiary)" }}
+      />
+    </Link>
+  );
+}
 
 function SmartSchedulingCard() {
   const { data } = useQuery<{ suggestions: { contactId: string }[] }>({

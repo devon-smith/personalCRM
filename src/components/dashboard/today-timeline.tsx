@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Calendar, FileEdit, Mail } from "lucide-react";
 import type { UpcomingEvent } from "@/lib/calendar";
+import { CollapsibleSection } from "@/components/ds";
 
 /**
  * Today's timeline — vertical strip on the dashboard right rail
@@ -21,7 +22,7 @@ interface DraftLite {
   updatedAt: string;
 }
 
-interface TimelineEntry {
+interface TimelineEntryItem {
   id: string;
   kind: "meeting" | "draft";
   time: Date | null; // null = no specific time (e.g. drafts)
@@ -50,9 +51,9 @@ export function TodayTimeline() {
     },
   });
 
-  const entries = React.useMemo<TimelineEntry[]>(() => {
+  const entries = React.useMemo<TimelineEntryItem[]>(() => {
     const todayIso = new Date().toISOString().slice(0, 10);
-    const items: TimelineEntry[] = [];
+    const items: TimelineEntryItem[] = [];
 
     for (const e of calendarData?.events ?? []) {
       const start = new Date(e.startTime);
@@ -103,70 +104,78 @@ export function TodayTimeline() {
       >
         Today
       </div>
-      <ul className="space-y-2">
-        {entries.map((entry) => (
-          <li key={entry.id}>
-            <Link
-              href={entry.href}
-              className="block rounded-2xl p-3 transition-colors"
-              style={{ backgroundColor: "#FFFFFF" }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#FBF8F2";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#FFFFFF";
-              }}
-            >
-              <div className="flex items-start gap-2.5">
-                <div
-                  className="h-7 w-7 shrink-0 rounded-full inline-flex items-center justify-center"
-                  style={{
-                    backgroundColor: entry.kind === "meeting" ? "#DDE3E3" : "#E8E4DC",
-                    color: "#5A574F",
-                  }}
-                >
-                  {entry.kind === "meeting" ? (
-                    <Calendar className="h-3 w-3" strokeWidth={1.7} />
-                  ) : (
-                    <FileEdit className="h-3 w-3" strokeWidth={1.7} />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p
-                      className="text-[12.5px] font-medium truncate"
-                      style={{ color: "#1B1A17" }}
-                    >
-                      {entry.title}
-                    </p>
-                    {entry.time ? (
-                      <span
-                        className="text-[10.5px] tabular-nums shrink-0"
-                        style={{ color: "#8C8A82" }}
-                      >
-                        {entry.time.toLocaleTimeString("en-US", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                          hour12: true,
-                        })}
-                      </span>
-                    ) : null}
-                  </div>
-                  {entry.subtitle ? (
-                    <p
-                      className="text-[11px] truncate mt-0.5"
-                      style={{ color: "#8C8A82" }}
-                    >
-                      {entry.subtitle}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <CollapsibleSection
+        storageKey="dashboard-today-expanded"
+        previewCount={5}
+        items={entries}
+        showMoreLabel={() => "Show full day"}
+        showLessLabel="Show fewer"
+        className="space-y-2"
+        renderItem={(entry) => <TimelineEntry key={entry.id} entry={entry} />}
+      />
     </div>
+  );
+}
+
+function TimelineEntry({ entry }: { entry: TimelineEntryItem }) {
+  return (
+    <Link
+      href={entry.href}
+      className="block rounded-2xl p-3 transition-colors"
+      style={{ backgroundColor: "#FFFFFF" }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "#FBF8F2";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "#FFFFFF";
+      }}
+    >
+      <div className="flex items-start gap-2.5">
+        <div
+          className="h-7 w-7 shrink-0 rounded-full inline-flex items-center justify-center"
+          style={{
+            backgroundColor: entry.kind === "meeting" ? "#DDE3E3" : "#E8E4DC",
+            color: "#5A574F",
+          }}
+        >
+          {entry.kind === "meeting" ? (
+            <Calendar className="h-3 w-3" strokeWidth={1.7} />
+          ) : (
+            <FileEdit className="h-3 w-3" strokeWidth={1.7} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <p
+              className="text-[12.5px] font-medium truncate"
+              style={{ color: "#1B1A17" }}
+            >
+              {entry.title}
+            </p>
+            {entry.time ? (
+              <span
+                className="text-[10.5px] tabular-nums shrink-0"
+                style={{ color: "#8C8A82" }}
+              >
+                {entry.time.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                })}
+              </span>
+            ) : null}
+          </div>
+          {entry.subtitle ? (
+            <p
+              className="text-[11px] truncate mt-0.5"
+              style={{ color: "#8C8A82" }}
+            >
+              {entry.subtitle}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </Link>
   );
 }
 

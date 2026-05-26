@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { UpcomingEvent } from "@/lib/calendar";
+import { CollapsibleSection } from "@/components/ds";
 
 function formatEventTime(iso: string): string {
   const d = new Date(iso);
@@ -96,112 +97,157 @@ export function UpcomingMeetings() {
   return (
     <div className="space-y-3">
       <p className="crm-section-label">Upcoming meetings</p>
-      <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
-        {events.slice(0, 8).map((event) => {
-          const knownAttendees = event.attendees.filter((a) => a.contactId);
-          const unknownCount = event.attendees.length - knownAttendees.length;
+      <CollapsibleSection
+        storageKey="dashboard-meetings-expanded"
+        previewCount={4}
+        items={events}
+        showMoreLabel={(hidden) => `Show ${hidden} more meetings`}
+        className="divide-y"
+        renderItem={(event) => <MeetingRow key={event.id} event={event} />}
+      />
+    </div>
+  );
+}
 
-          return (
-            <div
-              key={event.id}
-              className="flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
-              style={{ transitionDuration: "var(--duration-fast)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+function MeetingRow({ event }: { event: UpcomingEvent }) {
+  const knownAttendees = event.attendees.filter((a) => a.contactId);
+  const unknownCount = event.attendees.length - knownAttendees.length;
+
+  return (
+    <div
+      className="flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
+      style={{ transitionDuration: "var(--duration-fast)" }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "";
+      }}
+    >
+      <div
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: "var(--surface-sunken)" }}
+      >
+        <Calendar className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p
+            className="ds-body-md font-medium truncate"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {event.title}
+          </p>
+          <Link
+            href={`/meetings/${event.id}/prep`}
+            className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+            style={{
+              backgroundColor: "var(--surface-sunken)",
+              color: "var(--text-secondary)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--accent-color)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+          >
+            Prep
+          </Link>
+          {event.htmlLink && (
+            <a
+              href={event.htmlLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 transition-colors"
+              style={{
+                color: "var(--text-tertiary)",
+                transitionDuration: "var(--duration-fast)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text-secondary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-tertiary)";
+              }}
             >
-              <div
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-                style={{ backgroundColor: "var(--surface-sunken)" }}
-              >
-                <Calendar className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
-              </div>
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
 
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="ds-body-md font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                    {event.title}
-                  </p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="ds-caption">
+            {formatEventTime(event.startTime)}
+            {event.endTime && (
+              <span style={{ color: "var(--border-strong)" }}>
+                {" "}
+                · {formatDuration(event.startTime, event.endTime)}
+              </span>
+            )}
+          </p>
+        </div>
+
+        {event.attendees.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <div className="flex -space-x-1.5">
+              {knownAttendees.slice(0, 4).map((a) => {
+                const color = getAvatarColor(a.name ?? a.email);
+                return (
                   <Link
-                    href={`/meetings/${event.id}/prep`}
-                    className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[10px] font-medium transition-colors"
-                    style={{
-                      backgroundColor: "var(--surface-sunken)",
-                      color: "var(--text-secondary)",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent-color)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; }}
+                    key={a.email}
+                    href={`/people?contact=${a.contactId}`}
+                    title={a.name ?? a.email}
                   >
-                    Prep
-                  </Link>
-                  {event.htmlLink && (
-                    <a
-                      href={event.htmlLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 transition-colors"
-                      style={{ color: "var(--text-tertiary)", transitionDuration: "var(--duration-fast)" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
+                    <Avatar
+                      className="h-5 w-5 ring-2"
+                      style={
+                        { "--tw-ring-color": "var(--surface)" } as React.CSSProperties
+                      }
                     >
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 mt-0.5">
-                  <p className="ds-caption">
-                    {formatEventTime(event.startTime)}
-                    {event.endTime && (
-                      <span style={{ color: "var(--border-strong)" }}> · {formatDuration(event.startTime, event.endTime)}</span>
-                    )}
-                  </p>
-                </div>
-
-                {/* Attendees */}
-                {event.attendees.length > 0 && (
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <div className="flex -space-x-1.5">
-                      {knownAttendees.slice(0, 4).map((a) => {
-                        const color = getAvatarColor(a.name ?? a.email);
-                        return (
-                          <Link
-                            key={a.email}
-                            href={`/people?contact=${a.contactId}`}
-                            title={a.name ?? a.email}
-                          >
-                            <Avatar className="h-5 w-5 ring-2" style={{ "--tw-ring-color": "var(--surface)" } as React.CSSProperties}>
-                              <AvatarFallback
-                                className="text-[8px] font-semibold"
-                                style={{ backgroundColor: color.bg, color: color.text }}
-                              >
-                                {getInitials(a.name ?? a.email)}
-                              </AvatarFallback>
-                            </Avatar>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                    {knownAttendees.length > 0 && (
-                      <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                        {knownAttendees.map((a) => a.name ?? a.email.split("@")[0]).slice(0, 2).join(", ")}
-                        {knownAttendees.length > 2 && ` +${knownAttendees.length - 2}`}
-                      </span>
-                    )}
-                    {unknownCount > 0 && knownAttendees.length > 0 && (
-                      <span className="text-[11px]" style={{ color: "var(--border-strong)" }}>+{unknownCount}</span>
-                    )}
-                    {unknownCount > 0 && knownAttendees.length === 0 && (
-                      <div className="flex items-center gap-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                        <Users className="h-3 w-3" />
-                        {unknownCount} attendee{unknownCount !== 1 ? "s" : ""}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                      <AvatarFallback
+                        className="text-[8px] font-semibold"
+                        style={{ backgroundColor: color.bg, color: color.text }}
+                      >
+                        {getInitials(a.name ?? a.email)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Link>
+                );
+              })}
             </div>
-          );
-        })}
+            {knownAttendees.length > 0 && (
+              <span
+                className="text-[11px]"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                {knownAttendees
+                  .map((a) => a.name ?? a.email.split("@")[0])
+                  .slice(0, 2)
+                  .join(", ")}
+                {knownAttendees.length > 2 && ` +${knownAttendees.length - 2}`}
+              </span>
+            )}
+            {unknownCount > 0 && knownAttendees.length > 0 && (
+              <span
+                className="text-[11px]"
+                style={{ color: "var(--border-strong)" }}
+              >
+                +{unknownCount}
+              </span>
+            )}
+            {unknownCount > 0 && knownAttendees.length === 0 && (
+              <div
+                className="flex items-center gap-1 text-[11px]"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                <Users className="h-3 w-3" />
+                {unknownCount} attendee{unknownCount !== 1 ? "s" : ""}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
