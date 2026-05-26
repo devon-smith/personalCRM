@@ -14,10 +14,17 @@
  * triggers from the Next.js side, add a job programmatically via
  * `addJob` from worker/queue-client.ts.
  */
+// ─── dotenv before everything ──────────────────────────────────────────
 // Load .env.local first (Next.js convention, overrides .env), then .env.
 // Default `import "dotenv/config"` only loads .env, which silently drops vars
 // the user only set in .env.local — caused signal-detection to no-op when
 // BRAVE_API_KEY lived only in .env.local.
+//
+// This MUST run before any module that captures env vars at import time —
+// notably the `prisma` singleton in src/lib/prisma.ts. The Prisma client
+// uses a lazy Proxy specifically to dodge this ordering trap (ESM hoists
+// imports above this dotenv call), but other modules that read
+// process.env at top level will see undefined unless dotenv ran first.
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local", override: true });
 dotenv.config({ path: ".env" });
@@ -39,9 +46,17 @@ import memorySynthesis from "./tasks/memory-synthesis.js";
 import mentionExtraction from "./tasks/mention-extraction.js";
 import observationsGeneration from "./tasks/observations-generation.js";
 
-// WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
-// connection (port 5432) when the pooler (6543) hits its session limit. The
-// Next.js side still uses DATABASE_URL.
+// ─── WORKER_DATABASE_URL — direct connection only ──────────────────────
+// graphile-worker uses named prepared statements internally. Postgres
+// pgBouncer in transaction-pooling mode (port 6543 on Supabase) drops
+// the underlying connection between statements, so the named statement
+// hash is gone by the time graphile-worker tries to execute it — every
+// other job fails with "prepared statement <hash> does not exist".
+//
+// WORKER_DATABASE_URL must point at the DIRECT connection (port 5432);
+// the Next.js side keeps using DATABASE_URL on the transaction-pool
+// connection (6543) because Prisma's PrismaPg adapter handles the
+// session loss correctly.
 const connectionString =
   process.env.WORKER_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!connectionString) {

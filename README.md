@@ -20,6 +20,70 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Local Setup
+
+Fresh-clone walkthrough. Everything below has bitten one verification
+round or another; the lessons are encoded in `.env.example` and in
+comments at the top of `worker/index.ts` and `src/lib/prisma.ts`.
+
+1. **Install + Prisma client**
+
+   ```bash
+   npm install
+   npx prisma generate
+   ```
+
+   `prisma generate` is required even on a fresh clone because the
+   generated client lives under `src/generated/` and that path is
+   `.gitignore`'d.
+
+2. **Fill in `.env` + `.env.local`**
+
+   Copy `.env.example` and populate. The split between the two files
+   follows Next.js convention:
+   - `.env`        — shared, committable defaults (none in this repo)
+   - `.env.local`  — per-machine secrets (DATABASE_URL, API keys)
+
+   The worker uses a custom dotenv loader (`worker/index.ts:17`) that
+   loads `.env.local` first, then `.env`. The Next.js side handles
+   this automatically.
+
+   The two database URLs are NOT interchangeable. The web app reads
+   `DATABASE_URL` (transaction-pooled, port 6543, `?pgbouncer=true`).
+   The worker reads `WORKER_DATABASE_URL` (direct connection,
+   port 5432) — graphile-worker uses named prepared statements which
+   pgBouncer transaction-mode drops between calls. See `.env.example`
+   for the explanation.
+
+3. **Apply migrations**
+
+   ```bash
+   npx prisma migrate deploy
+   ```
+
+   `migrate deploy` (not `migrate dev`) is the safe path against a
+   shared database. See `prisma/MIGRATIONS.md` for how to handle
+   schema drift if you've applied DDL via Supabase MCP outside of
+   Prisma.
+
+4. **Run dev + worker**
+
+   Two processes in parallel:
+
+   ```bash
+   npm run dev       # Next.js on http://localhost:3003
+   npm run worker    # graphile-worker
+   ```
+
+5. **First-run housekeeping (optional)**
+
+   ```bash
+   npx tsx scripts/mark-noise-contacts.ts --dry-run
+   npx tsx scripts/release-stale-locks.ts --dry-run
+   ```
+
+   Both are idempotent; drop `--dry-run` to apply.
+
 ## macOS dev gotcha — Turbopack cache write race
 
 Next.js 16.1 (+ Turbopack) sometimes loses a write race during cold-start
