@@ -835,6 +835,14 @@ model Draft {
   recipientEmail     String?
   savedToGmailAt     DateTime?
 
+  // Link back to the InboxItem that triggered this draft (M0.9 task 5).
+  // Set when the inbox-draft-prepopulate worker auto-generates a
+  // draft for an OPEN inbox item; null for drafts the user started
+  // manually. Unique so the worker can't create duplicate drafts
+  // for the same item on a re-run.
+  inboxItemId String? @unique
+  inboxItem   InboxItem? @relation(fields: [inboxItemId], references: [id], onDelete: SetNull)
+
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
@@ -1042,6 +1050,7 @@ model InboxItem {
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  draft   Draft?
 
   @@unique([userId, contactId, channel, threadKey])
   @@index([userId, status])

@@ -45,6 +45,7 @@ import graphEdgeExtraction from "./tasks/graph-edge-extraction.js";
 import memorySynthesis from "./tasks/memory-synthesis.js";
 import mentionExtraction from "./tasks/mention-extraction.js";
 import observationsGeneration from "./tasks/observations-generation.js";
+import inboxDraftPrepopulate from "./tasks/inbox-draft-prepopulate.js";
 
 // ─── WORKER_DATABASE_URL — direct connection only ──────────────────────
 // graphile-worker uses named prepared statements internally. Postgres
@@ -84,6 +85,7 @@ const taskList = {
   "memory-synthesis": memorySynthesis,
   "mention-extraction": mentionExtraction,
   "observations-generation": observationsGeneration,
+  "inbox-draft-prepopulate": inboxDraftPrepopulate,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -140,6 +142,11 @@ const crontab = `
 # from recent signals (unanswered inbound, stale open threads,
 # life events, dormant inner-circle). Surfaces on the dashboard.
 0 6 * * * observations-generation
+# Daily at 04:00 UTC: pre-populate Draft queue from OPEN inbox items.
+# 20 items/run @ ~$0.01/item = ~$0.20/day. Sits between
+# memory-synthesis (03:00) and observations-generation (06:00) so
+# the queue is fresh by the morning brief.
+0 4 * * * inbox-draft-prepopulate
 `.trim();
 
 async function main() {

@@ -13,6 +13,7 @@ import {
   ChevronUp,
   Send,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "@/lib/date-utils";
@@ -36,6 +37,7 @@ interface Draft {
   readonly subjectLine: string | null;
   readonly status: string;
   readonly createdAt: string;
+  readonly inboxItemId: string | null;
   readonly contact: DraftContact;
 }
 
@@ -207,6 +209,21 @@ export function DraftQueue() {
                       >
                         {TYPE_LABELS[draft.type] ?? draft.type}
                       </span>
+                      {/* M0.9 task 5: source badge for auto-drafted rows.
+                          Muted so it doesn't compete with the type chip. */}
+                      {draft.inboxItemId && (
+                        <span
+                          className="shrink-0 inline-flex items-center gap-0.5 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
+                          style={{
+                            backgroundColor: "#F4EFE3",
+                            color: "#7A4F3C",
+                          }}
+                          title="Auto-drafted from your inbox"
+                        >
+                          <Sparkles className="h-2.5 w-2.5" strokeWidth={2} />
+                          Auto-drafted
+                        </span>
+                      )}
                     </div>
                     <p className="ds-caption truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>
                       {draft.content.slice(0, 80)}{draft.content.length > 80 ? "..." : ""}
