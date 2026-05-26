@@ -1,9 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   phraseSignal,
   lifeEventDetail,
+  dropAnsweredByThread,
   type Signal,
 } from "@/lib/intelligence/generate-observations";
+import type { PrismaClient } from "@/generated/prisma/client";
 
 function mkSignal(over: Partial<Signal> = {}): Signal {
   return {
@@ -207,5 +209,89 @@ describe("lifeEventDetail — no enum leaks", () => {
         newValue: "VP Engineering",
       }),
     ).toBe("has a new role: VP Engineering");
+  });
+});
+
+describe("dropAnsweredByThread (M0.5)", () => {
+  /**
+   * Hand-rolls a minimal PrismaClient stub. We only call
+   * interaction.findMany; everything else is unused so we cast to
+   * the full type at the boundary.
+   */
+  function mockPrisma(outbounds: Array<{ threadId: string; occurredAt: Date }>) {
+    return {
+      interaction: {
+        findMany: vi.fn(async () => outbounds),
+      },
+    } as unknown as PrismaClient;
+  }
+
+  it("returns all candidates when no OUTBOUND exists", async () => {
+    const prisma = mockPrisma([]);
+    const candidates = [
+      { id: "i1", threadId: "t1", occurredAt: new Date("2026-05-01") },
+      { id: "i2", threadId: "t2", occurredAt: new Date("2026-05-02") },
+    ];
+    const result = await dropAnsweredByThread(prisma, "u1", candidates);
+    expect(result.map((r) => r.id)).toEqual(["i1", "i2"]);
+  });
+
+  it("drops candidates with a later OUTBOUND in the same thread", async () => {
+    const prisma = mockPrisma([
+      { threadId: "t1", occurredAt: new Date("2026-05-05") },
+    ]);
+    const candidates = [
+      { id: "i1", threadId: "t1", occurredAt: new Date("2026-05-01") },
+      { id: "i2", threadId: "t2", occurredAt: new Date("2026-05-02") },
+    ];
+    const result = await dropAnsweredByThread(prisma, "u1", candidates);
+    expect(result.map((r) => r.id)).toEqual(["i2"]);
+  });
+
+  it("keeps candidates when the OUTBOUND is OLDER than the inbound", async () => {
+    // Inbound at 5/10, outbound at 5/01 — they wrote first, then you got
+    // a new inbound. We have NOT replied to this one yet.
+    const prisma = mockPrisma([
+      { threadId: "t1", occurredAt: new Date("2026-05-01") },
+    ]);
+    const candidates = [
+      { id: "i1", threadId: "t1", occurredAt: new Date("2026-05-10") },
+    ];
+    const result = await dropAnsweredByThread(prisma, "u1", candidates);
+    expect(result.map((r) => r.id)).toEqual(["i1"]);
+  });
+
+  it("keeps candidates with no threadId (legacy / non-email rows)", async () => {
+    const prisma = mockPrisma([]);
+    const candidates = [
+      { id: "i1", threadId: null, occurredAt: new Date("2026-05-01") },
+    ];
+    const result = await dropAnsweredByThread(prisma, "u1", candidates);
+    expect(result.map((r) => r.id)).toEqual(["i1"]);
+  });
+
+  it("returns [] for an empty candidate list and skips DB call", async () => {
+    const prisma = mockPrisma([]);
+    const result = await dropAnsweredByThread(prisma, "u1", []);
+    expect(result).toEqual([]);
+    // No DB roundtrip needed.
+    expect(
+      (prisma as unknown as { interaction: { findMany: ReturnType<typeof vi.fn> } })
+        .interaction.findMany,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("respects only the LATEST OUTBOUND per thread for the comparison", async () => {
+    // Two outbounds in the same thread: one older than the inbound,
+    // one newer. The newer one must rule the comparison.
+    const prisma = mockPrisma([
+      { threadId: "t1", occurredAt: new Date("2026-04-01") }, // older
+      { threadId: "t1", occurredAt: new Date("2026-05-15") }, // newer
+    ]);
+    const candidates = [
+      { id: "i1", threadId: "t1", occurredAt: new Date("2026-05-10") },
+    ];
+    const result = await dropAnsweredByThread(prisma, "u1", candidates);
+    expect(result).toEqual([]);
   });
 });

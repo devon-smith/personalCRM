@@ -101,10 +101,12 @@ async function findUnansweredInbound(
   userId: string,
   cutoff: Date,
 ): Promise<Signal[]> {
-  // INBOUND email older than 3 days where the most recent message
-  // in the same thread is also INBOUND (= we never replied). Limit
-  // to contacts with needsReply=true to bias toward stuff that
-  // actually deserves a response.
+  // INBOUND email older than 3 days that the user genuinely hasn't
+  // responded to. `needsReply=true` is the entry filter, but that
+  // flag is set at email-arrival time and doesn't update when the
+  // user replies — so we additionally drop any candidate that has a
+  // later OUTBOUND in the same threadId. Without this, observations
+  // pile up about emails Jennifer answered weeks ago. (M0.5.)
   const candidates = await prisma.interaction.findMany({
     where: {
       userId,
@@ -115,17 +117,22 @@ async function findUnansweredInbound(
       dismissedAt: null,
     },
     orderBy: { occurredAt: "desc" },
-    take: 20,
+    // Over-fetch — the threadId post-filter will drop a chunk.
+    take: 50,
     select: {
       id: true,
       contactId: true,
+      threadId: true,
       subject: true,
       needsReplyReason: true,
       occurredAt: true,
       contact: { select: { name: true } },
     },
   });
-  return candidates.map((c) => ({
+
+  const live = await dropAnsweredByThread(prisma, userId, candidates);
+
+  return live.slice(0, 20).map((c) => ({
     source: "unanswered_inbound",
     contactId: c.contactId,
     contactName: c.contact.name,
@@ -133,6 +140,60 @@ async function findUnansweredInbound(
     refs: [`interaction:${c.id}`],
     observedAt: c.occurredAt,
   }));
+}
+
+interface ThreadCandidate {
+  id: string;
+  threadId: string | null;
+  occurredAt: Date;
+}
+
+/**
+ * Filter out candidates that have a later OUTBOUND interaction in the
+ * same thread — Jennifer already replied.
+ *
+ * Exported for the /api/observations route to re-check persisted
+ * observations at render time; once a row is created we still want
+ * to suppress it from the dashboard once the user replies, even
+ * before the next observation-generation run.
+ */
+export async function dropAnsweredByThread<T extends ThreadCandidate>(
+  prisma: PrismaClient,
+  userId: string,
+  candidates: T[],
+): Promise<T[]> {
+  if (candidates.length === 0) return [];
+
+  const threadIds = candidates
+    .map((c) => c.threadId)
+    .filter((t): t is string => typeof t === "string" && t.length > 0);
+
+  if (threadIds.length === 0) return candidates;
+
+  const outbounds = await prisma.interaction.findMany({
+    where: {
+      userId,
+      threadId: { in: threadIds },
+      direction: "OUTBOUND",
+    },
+    select: { threadId: true, occurredAt: true },
+  });
+
+  // Latest OUTBOUND per thread — only need the max for the comparison.
+  const latestOutbound = new Map<string, Date>();
+  for (const o of outbounds) {
+    if (!o.threadId) continue;
+    const prev = latestOutbound.get(o.threadId);
+    if (!prev || o.occurredAt > prev) {
+      latestOutbound.set(o.threadId, o.occurredAt);
+    }
+  }
+
+  return candidates.filter((c) => {
+    if (!c.threadId) return true;
+    const out = latestOutbound.get(c.threadId);
+    return !out || out <= c.occurredAt;
+  });
 }
 
 async function findStaleOpenThreads(
