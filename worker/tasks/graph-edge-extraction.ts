@@ -58,10 +58,16 @@ interface RunSummary {
   upserted: number;
 }
 
-/** Batch size for chunked upserts. A single Prisma $transaction with
- *  thousands of upserts on the pooler hangs silently — chunking into
- *  small transactions keeps each one well under any timeout. */
-const UPSERT_CHUNK_SIZE = 200;
+/** Batch size for chunked upserts. The original 200/chunk overshot
+ *  Prisma's default 5s interactive-transaction timeout by ~250ms on
+ *  the pooler. 50/chunk runs ~1.2s — well inside the (also bumped)
+ *  30s timeout, with margin for slow queries. */
+const UPSERT_CHUNK_SIZE = 50;
+
+/** Per-chunk transaction timeout in ms. 30s is generous — gives a
+ *  bursty pooler all the headroom it needs while still failing
+ *  loudly if a single chunk is genuinely stuck. */
+const CHUNK_TX_TIMEOUT_MS = 30_000;
 
 async function extractForUser(
   prisma: PrismaClient,
@@ -171,9 +177,12 @@ async function extractForUser(
           },
         });
       }),
+      { timeout: CHUNK_TX_TIMEOUT_MS },
     );
     summary.upserted += chunk.length;
-    if ((i / UPSERT_CHUNK_SIZE) % 5 === 0) {
+    // Log every ~500 rows so a long backfill doesn't fill the log
+    // but progress is visible at ~10s intervals.
+    if ((i / UPSERT_CHUNK_SIZE) % 10 === 0) {
       helpers.logger.info(
         `graph-edge-extraction: user=${userId} upserted ${summary.upserted}/${merged.size}`,
       );
