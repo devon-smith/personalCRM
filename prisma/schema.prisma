@@ -228,12 +228,59 @@ model Contact {
   changelog           ContactChangelog[]
   emailMessages       EmailMessage[]
   drafts              Draft[]
+  profile             ContactProfile?
 
   inboxItems InboxItem[]
 
   @@index([userId])
   @@index([email])
   @@index([userId, lastInteraction])
+}
+
+// Structured per-contact attributes extracted by Claude Sonnet from
+// interactions + scholarly profile + LinkedIn (M7.1). Powers the
+// "About them" section on the contact panel and is a key input to
+// the M7.3 reasoning graph queries.
+//
+// Updated incrementally — the worker only re-runs extraction once a
+// contact has accumulated ≥10 new interactions since the snapshot,
+// keeping Claude costs bounded.
+model ContactProfile {
+  id        String @id @default(uuid())
+  contactId String @unique
+
+  // Topic/expertise areas pulled from email subjects, journal notes,
+  // scholarly publications. Free-form strings to keep the model from
+  // collapsing on a closed taxonomy.
+  expertiseAreas String[] @default([])
+
+  // Structured-JSON blobs for richer attributes. Shapes documented in
+  // src/lib/intelligence/extract-attributes.ts. Kept as Json (not split
+  // into columns) so the schema doesn't churn as we tune extraction.
+  communicationStyle Json? // { formality, responseSpeed, length }
+  geographicContext  Json? // { primaryLocation, travelFrequency }
+  personalitySignals Json? // { humor, warmth, interests }
+
+  // Free-text relationship-stage label produced by Claude. One of:
+  // new | peer | mentor | mentee | dormant | other. String (not enum)
+  // because we may discover new stages during M7 build-out.
+  relationshipStage String?
+
+  // Extensible bag for attributes Claude surfaces that don't fit the
+  // structured slots above. Reviewed periodically; recurring keys
+  // graduate to dedicated fields in future migrations.
+  rawAttributes Json @default("{}")
+
+  // Re-extraction throttling. Compare contact.interactionsCount at
+  // request time vs interactionsAtGeneration; only re-run if delta
+  // exceeds the worker's threshold (10).
+  interactionsAtGeneration Int      @default(0)
+  generatedAt              DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
 }
 
 enum InteractionType {

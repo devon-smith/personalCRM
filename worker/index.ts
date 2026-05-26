@@ -33,6 +33,7 @@ import linkedinNotificationsScan from "./tasks/linkedin-notifications-scan.js";
 import signalDetection from "./tasks/signal-detection.js";
 import morningBrief from "./tasks/morning-brief.js";
 import voiceCorpusIndex from "./tasks/voice-corpus-index.js";
+import contactAttributeExtraction from "./tasks/contact-attribute-extraction.js";
 
 // WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
 // connection (port 5432) when the pooler (6543) hits its session limit. The
@@ -59,6 +60,7 @@ const taskList = {
   "signal-detection": signalDetection,
   "morning-brief": morningBrief,
   "voice-corpus-index": voiceCorpusIndex,
+  "contact-attribute-extraction": contactAttributeExtraction,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -95,6 +97,10 @@ const crontab = `
 # Idempotent — only fetches bodies + extracts features for emails that
 # don't already have a VoiceExample row.
 42 9 * * 0 voice-corpus-index
+# Daily at 02:00 UTC: re-extract ContactProfile for contacts that have
+# accumulated ≥10 new interactions since last extraction (or have
+# never been profiled). 50 contacts per run, prioritized by recency.
+0 2 * * * contact-attribute-extraction
 `.trim();
 
 async function main() {
