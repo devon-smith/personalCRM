@@ -1,0 +1,506 @@
+/**
+ * Network query orchestrator (M7.3 — Phase 7 flagship).
+ *
+ * Given a natural-language question about the user's network, calls
+ * Claude Sonnet with tool use to walk the contact graph and produce
+ * a grounded, structured answer.
+ *
+ * Example queries that work:
+ *   - "Who should I invite to dinner with Marcus and Sarah?"
+ *   - "Which former students work in behavioral economics?"
+ *   - "Who in my network has talked about loneliness recently?"
+ *
+ * Tools available to Claude:
+ *   - search_contacts: name/company text search (uses existing trigram)
+ *   - find_contacts_by_topic: semantic search via Voyage embeddings
+ *   - get_contact_profile: ContactProfile attributes (M7.1)
+ *   - get_network_neighbors: ContactEdge traversal (M7.2)
+ *   - get_interaction_history: recent interactions for a contact
+ *
+ * Loop terminates when Claude returns end_turn without tool_use, or
+ * after MAX_ITERATIONS to bound cost. Each tool call is recorded in
+ * the trace for the "How I thought about this" panel (M7.4).
+ *
+ * Design choices:
+ *   - No streaming yet (M7.3b) — non-streaming keeps the orchestrator
+ *     simple and the API endpoint stateless. Each query is one POST,
+ *     one response, no SSE plumbing.
+ *   - Tool registry is a flat array of {name, schema, execute}.
+ *     Adding a new tool means registering one entry; no dispatch
+ *     table to maintain.
+ *   - Cost bound: hard cap at 8 iterations (≈8 Claude calls per
+ *     query). Most queries finish in 3-4 round-trips.
+ */
+
+import Anthropic from "@anthropic-ai/sdk";
+import type { PrismaClient } from "@/generated/prisma/client";
+import { findNeighbors } from "./graph-traverse";
+import { searchContacts as fuzzyContactSearch } from "@/lib/search/contacts";
+
+const NETWORK_QUERY_MODEL = "claude-sonnet-4-20250514";
+const MAX_ITERATIONS = 8;
+const MAX_TOKENS = 2500;
+
+export interface RunNetworkQueryParams {
+  prisma: PrismaClient;
+  userId: string;
+  query: string;
+}
+
+export interface SuggestedContact {
+  contactId: string;
+  name: string;
+  reason: string;
+}
+
+export interface ReasoningStep {
+  tool: string;
+  input: unknown;
+  /** One-sentence human-readable summary of what the tool returned. */
+  summary: string;
+}
+
+export interface NetworkQueryResult {
+  /** The final answer paragraph(s) Claude wrote. */
+  answer: string;
+  /** Optional title Claude assigned (extracted from response shape). */
+  title: string | null;
+  /** Structured suggestions parsed from Claude's response. */
+  suggestedContacts: SuggestedContact[];
+  /** Each tool call in order, for the "How I thought about this" UI. */
+  reasoningTrace: ReasoningStep[];
+  /** Claude's full final message text (for debugging / future
+   *  comparison-UI display). */
+  rawAnswer: string;
+  /** Aggregate token usage for cost tracking. */
+  usage: { inputTokens: number; outputTokens: number };
+}
+
+interface ToolContext {
+  prisma: PrismaClient;
+  userId: string;
+}
+
+interface RegisteredTool {
+  name: string;
+  description: string;
+  input_schema: Anthropic.Messages.Tool.InputSchema;
+  execute: (input: unknown, ctx: ToolContext) => Promise<ToolResult>;
+}
+
+interface ToolResult {
+  /** JSON-serializable result returned to Claude. */
+  data: unknown;
+  /** Human-readable one-liner for the reasoning trace. */
+  summary: string;
+}
+
+// ─── Tool registry ─────────────────────────────────────────
+
+const TOOLS: RegisteredTool[] = [
+  {
+    name: "search_contacts",
+    description:
+      "Search the user's contacts by name, company, or role text. Returns up to 20 matches. Use this when the query mentions specific people, organizations, or job titles.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search text (name, company, or role)",
+        },
+        limit: {
+          type: "number",
+          description: "Max results, default 20",
+        },
+      },
+      required: ["query"],
+    },
+    execute: async (input, ctx) => {
+      const { query, limit = 20 } = input as { query: string; limit?: number };
+      const hits = await fuzzyContactSearch(ctx.userId, query, limit);
+      return {
+        data: hits.map((h) => ({
+          contactId: h.id,
+          name: h.name,
+          email: h.email,
+          company: h.company,
+          role: h.role,
+          tier: h.tier,
+        })),
+        summary: `Found ${hits.length} contact${hits.length === 1 ? "" : "s"} matching "${query}"`,
+      };
+    },
+  },
+  {
+    name: "find_contacts_by_topic",
+    description:
+      "Semantic search across contact profiles + notes. Use when the query is about a topic or domain ('behavioral economics', 'AI ethics') rather than a specific name. Returns contacts whose embedding is closest to the topic.",
+    input_schema: {
+      type: "object",
+      properties: {
+        topic: {
+          type: "string",
+          description: "Topic or domain to search for",
+        },
+        limit: { type: "number", description: "Max results, default 15" },
+      },
+      required: ["topic"],
+    },
+    execute: async (input, ctx) => {
+      const { topic, limit = 15 } = input as { topic: string; limit?: number };
+      // Reuses the existing fuzzy + semantic search hybrid. When
+      // VOYAGE_API_KEY isn't set this falls back to text matching.
+      const hits = await fuzzyContactSearch(ctx.userId, topic, limit);
+      return {
+        data: hits.map((h) => ({
+          contactId: h.id,
+          name: h.name,
+          company: h.company,
+          role: h.role,
+          score: h.score,
+        })),
+        summary: `Found ${hits.length} contact${hits.length === 1 ? "" : "s"} relevant to "${topic}"`,
+      };
+    },
+  },
+  {
+    name: "get_contact_profile",
+    description:
+      "Get the structured attribute profile for a contact (expertise, communication style, geographic context, personality signals, relationship stage). Use after identifying a contact by name or ID to learn more.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "The contact's ID" },
+      },
+      required: ["contactId"],
+    },
+    execute: async (input, ctx) => {
+      const { contactId } = input as { contactId: string };
+      const contact = await ctx.prisma.contact.findFirst({
+        where: { id: contactId, userId: ctx.userId },
+        select: {
+          name: true,
+          email: true,
+          company: true,
+          role: true,
+          city: true,
+          state: true,
+          country: true,
+          notes: true,
+          profile: {
+            select: {
+              expertiseAreas: true,
+              communicationStyle: true,
+              geographicContext: true,
+              personalitySignals: true,
+              relationshipStage: true,
+            },
+          },
+        },
+      });
+      if (!contact) {
+        return {
+          data: { error: "contact not found" },
+          summary: `Contact ${contactId} not found`,
+        };
+      }
+      return {
+        data: {
+          name: contact.name,
+          email: contact.email,
+          company: contact.company,
+          role: contact.role,
+          location: [contact.city, contact.state, contact.country]
+            .filter(Boolean)
+            .join(", "),
+          userNotes: contact.notes,
+          profile: contact.profile,
+        },
+        summary: contact.profile
+          ? `Pulled profile for ${contact.name}`
+          : `${contact.name} has no extracted profile yet`,
+      };
+    },
+  },
+  {
+    name: "get_network_neighbors",
+    description:
+      "Get the contacts directly connected to a given contact through shared threads, same-org, or other relationship edges. Use to find 'who else knows X' or 'who is in X's circle'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "Source contact's ID" },
+        edgeTypes: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Restrict to specific edge types: mutual_thread, same_org. Omit for all.",
+        },
+        limit: { type: "number", description: "Max neighbors, default 15" },
+      },
+      required: ["contactId"],
+    },
+    execute: async (input, ctx) => {
+      const { contactId, edgeTypes, limit = 15 } = input as {
+        contactId: string;
+        edgeTypes?: string[];
+        limit?: number;
+      };
+      const neighbors = await findNeighbors({
+        prisma: ctx.prisma,
+        userId: ctx.userId,
+        contactId,
+        edgeTypes,
+        limit,
+      });
+      return {
+        data: neighbors.map((n) => ({
+          contactId: n.contactId,
+          name: n.name,
+          company: n.company,
+          role: n.role,
+          edgeType: n.edgeType,
+          strength: n.strength,
+          observationCount: n.observationCount,
+        })),
+        summary: `${neighbors.length} contact${neighbors.length === 1 ? "" : "s"} connected to this person`,
+      };
+    },
+  },
+  {
+    name: "get_interaction_history",
+    description:
+      "Recent interactions (emails, meetings, etc.) with a contact, most recent first. Use to understand what's been discussed lately or judge how active the relationship is.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "The contact's ID" },
+        limit: { type: "number", description: "Max interactions, default 10" },
+      },
+      required: ["contactId"],
+    },
+    execute: async (input, ctx) => {
+      const { contactId, limit = 10 } = input as {
+        contactId: string;
+        limit?: number;
+      };
+      const interactions = await ctx.prisma.interaction.findMany({
+        where: { contactId, userId: ctx.userId },
+        orderBy: { occurredAt: "desc" },
+        take: limit,
+        select: {
+          type: true,
+          direction: true,
+          subject: true,
+          summary: true,
+          occurredAt: true,
+        },
+      });
+      return {
+        data: interactions.map((i) => ({
+          type: i.type,
+          direction: i.direction,
+          subject: i.subject,
+          summary: i.summary,
+          date: i.occurredAt.toISOString().slice(0, 10),
+        })),
+        summary:
+          interactions.length > 0
+            ? `Last ${interactions.length} interactions, most recent ${interactions[0].occurredAt.toISOString().slice(0, 10)}`
+            : "No interactions on record",
+      };
+    },
+  },
+];
+
+// ─── Orchestrator ──────────────────────────────────────────
+
+const SYSTEM_PROMPT = `You are helping the user reason about the people in their professional network. They ask questions in natural language; you investigate by calling tools, then synthesize an answer.
+
+CORE RULES:
+- Ground every claim in tool output. NEVER invent contacts, attributes, or relationships that don't appear in the data.
+- Call tools liberally — search_contacts and find_contacts_by_topic to identify candidates, then get_contact_profile / get_network_neighbors / get_interaction_history to verify they fit.
+- Stop calling tools once you have enough evidence. Don't loop indefinitely.
+- When recommending people, explain the EVIDENCE: cite which interactions, which shared threads, which profile attributes informed the suggestion.
+
+OUTPUT FORMAT:
+After tool exploration is complete, return your final answer as JSON in this shape (no markdown, no preamble):
+
+{
+  "title": "Short headline for the answer (e.g. 'Dinner companions for Marcus and Sarah')",
+  "answer": "1-3 sentence summary of your conclusion",
+  "suggestions": [
+    {
+      "contactId": "<exact ID from tool output>",
+      "name": "<their name>",
+      "reason": "<1-2 sentence grounded explanation of why they fit>"
+    }
+  ]
+}
+
+If the question doesn't call for contact suggestions (e.g., "what topics has Marc been discussing?"), use an empty suggestions array and put the full answer in "answer".
+
+If you can't find a good answer, say so honestly in "answer" with empty suggestions — DON'T invent options to fill the array.`;
+
+export async function runNetworkQuery(
+  params: RunNetworkQueryParams,
+): Promise<NetworkQueryResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY not configured");
+  }
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const ctx: ToolContext = { prisma: params.prisma, userId: params.userId };
+
+  const messages: Anthropic.Messages.MessageParam[] = [
+    { role: "user", content: params.query },
+  ];
+  const trace: ReasoningStep[] = [];
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let finalText = "";
+
+  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+    const response = await anthropic.messages.create({
+      model: NETWORK_QUERY_MODEL,
+      max_tokens: MAX_TOKENS,
+      system: SYSTEM_PROMPT,
+      tools: TOOLS.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema,
+      })),
+      messages,
+    });
+
+    totalInputTokens += response.usage.input_tokens;
+    totalOutputTokens += response.usage.output_tokens;
+
+    // Push the assistant turn into the message history before we
+    // execute tool calls — Anthropic requires the tool_use/tool_result
+    // pair to live in adjacent turns.
+    messages.push({ role: "assistant", content: response.content });
+
+    const toolUses = response.content.filter(
+      (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use",
+    );
+
+    if (response.stop_reason === "end_turn" || toolUses.length === 0) {
+      // Final answer turn. Collect text content.
+      finalText = response.content
+        .map((b) => (b.type === "text" ? b.text : ""))
+        .join("");
+      break;
+    }
+
+    // Execute every tool call in parallel; results go in one user-role
+    // turn with tool_result blocks.
+    const toolResults = await Promise.all(
+      toolUses.map(async (tu) => {
+        const tool = TOOLS.find((t) => t.name === tu.name);
+        if (!tool) {
+          return {
+            tu,
+            result: {
+              data: { error: `unknown tool: ${tu.name}` },
+              summary: `Unknown tool: ${tu.name}`,
+            },
+          };
+        }
+        try {
+          const result = await tool.execute(tu.input, ctx);
+          trace.push({
+            tool: tu.name,
+            input: tu.input,
+            summary: result.summary,
+          });
+          return { tu, result };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          trace.push({
+            tool: tu.name,
+            input: tu.input,
+            summary: `Tool errored: ${msg}`,
+          });
+          return {
+            tu,
+            result: {
+              data: { error: msg },
+              summary: `Tool errored: ${msg}`,
+            },
+          };
+        }
+      }),
+    );
+
+    messages.push({
+      role: "user",
+      content: toolResults.map(({ tu, result }) => ({
+        type: "tool_result" as const,
+        tool_use_id: tu.id,
+        content: JSON.stringify(result.data),
+      })),
+    });
+  }
+
+  return {
+    ...parseFinalAnswer(finalText),
+    reasoningTrace: trace,
+    rawAnswer: finalText,
+    usage: {
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+    },
+  };
+}
+
+// ─── Pure parsers (exported for testing) ───────────────────
+
+interface ParsedAnswer {
+  title: string | null;
+  answer: string;
+  suggestedContacts: SuggestedContact[];
+}
+
+/**
+ * Parse Claude's final text into the structured shape. Tolerates
+ * leading/trailing prose around the JSON block. If JSON parsing
+ * fails entirely, falls back to using the whole text as `answer`.
+ */
+export function parseFinalAnswer(text: string): ParsedAnswer {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    return {
+      title: null,
+      answer: text.trim(),
+      suggestedContacts: [],
+    };
+  }
+  try {
+    const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+    const suggestions = Array.isArray(parsed.suggestions)
+      ? parsed.suggestions
+          .filter((s): s is Record<string, unknown> => typeof s === "object" && s !== null)
+          .map((s) => ({
+            contactId: typeof s.contactId === "string" ? s.contactId : "",
+            name: typeof s.name === "string" ? s.name : "",
+            reason: typeof s.reason === "string" ? s.reason : "",
+          }))
+          .filter((s) => s.contactId && s.name)
+      : [];
+    return {
+      title: typeof parsed.title === "string" ? parsed.title : null,
+      answer: typeof parsed.answer === "string" ? parsed.answer : text.trim(),
+      suggestedContacts: suggestions,
+    };
+  } catch {
+    return {
+      title: null,
+      answer: text.trim(),
+      suggestedContacts: [],
+    };
+  }
+}
+
+/** Exported for unit testing — internal registry size. */
+export const NETWORK_QUERY_TOOL_COUNT = TOOLS.length;

@@ -30,6 +30,7 @@ import { TravelCard } from "@/components/dashboard/travel-card";
 import { Surface, StatTile, Sparkline } from "@/components/ds";
 import { MiniCalendar } from "@/components/dashboard/mini-calendar";
 import { TodayTimeline, AddEventPill } from "@/components/dashboard/today-timeline";
+import { NetworkQueryBox } from "@/components/network-query/network-query-box";
 
 // Tone hex map mirrors the one in Surface. Inline styles win over the
 // shadcn Card's `bg-card` utility by specificity, so this is the only
@@ -247,6 +248,12 @@ export default function DashboardPage() {
           {buildSubtitle(stats)}
         </p>
       </div>
+
+      {/* Network query — Phase 7 flagship (M7.3). Natural-language
+          question → Claude tool-use orchestrator → grounded answer.
+          Sits at the top because it's the most-used surface; rotating
+          placeholder shows what's possible without taking up real estate. */}
+      <NetworkQueryBox />
 
       {/* Stat tiles (Sand for people-shaped data) */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
