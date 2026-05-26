@@ -18,7 +18,6 @@ import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
 
 import { UpcomingMeetings } from "@/components/dashboard/upcoming-meetings";
-import { ReviewQueue } from "@/components/sightings/review-queue";
 import { UpcomingBirthdays } from "@/components/dashboard/upcoming-birthdays";
 import { SmartScheduling } from "@/components/dashboard/smart-scheduling";
 import { LifeUpdates } from "@/components/dashboard/life-updates";
@@ -395,9 +394,6 @@ export default function DashboardPage() {
         {/* Life Updates */}
         <LifeUpdatesCard />
 
-        {/* Review Queue */}
-        <ReviewQueueCard />
-
         {/* Strongest relationships */}
         {stats.recentlyActive.length > 0 && (
           <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.olive }}>
@@ -636,30 +632,6 @@ export default function DashboardPage() {
 }
 
 // ─── Supporting cards ────────────────────────────────────────
-
-function ReviewQueueCard() {
-  const { data } = useQuery<{ items: unknown[]; totalPending: number }>({
-    queryKey: ["sightings-review"],
-    queryFn: async () => {
-      const res = await fetch("/api/sightings");
-      if (!res.ok) return { items: [], totalPending: 0 };
-      return res.json();
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  if (!data || (data.items.length === 0 && data.totalPending === 0)) {
-    return null;
-  }
-
-  return (
-    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.sand }}>
-      <CardContent className="px-6 py-6">
-        <ReviewQueue />
-      </CardContent>
-    </Card>
-  );
-}
 
 function SmartSchedulingCard() {
   const { data } = useQuery<{ suggestions: { contactId: string }[] }>({

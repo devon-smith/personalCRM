@@ -3,6 +3,7 @@
 import { Suspense, useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { Plus, Search, Upload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ContactList } from "@/components/contacts/contact-list";
@@ -92,6 +93,22 @@ function ContactsPageInner() {
 
   const { data: contacts, isLoading } = useContacts(filters);
 
+  // Pending duplicates count — surfaced as a subtle link in the
+  // header (the Review Queue card on the dashboard was removed in
+  // favor of the dedicated /merge page). Only renders when there's
+  // something to review.
+  const { data: pendingDuplicates } = useQuery<{ totalPending: number }>({
+    queryKey: ["sightings-review-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/sightings");
+      if (!res.ok) return { totalPending: 0 };
+      const json = await res.json();
+      return { totalPending: json.totalPending ?? 0 };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const duplicateCount = pendingDuplicates?.totalPending ?? 0;
+
   const circleOptions = useMemo(
     () => [
       { value: "", label: "All circles" },
@@ -116,7 +133,16 @@ function ContactsPageInner() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
           <h1 className="ds-display-xl">People</h1>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {duplicateCount > 0 && (
+              <Link
+                href="/merge"
+                className="ds-caption transition-colors hover:underline"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                {duplicateCount} duplicate{duplicateCount === 1 ? "" : "s"} to review →
+              </Link>
+            )}
             <Pill
               variant="outline"
               tone="neutral"
