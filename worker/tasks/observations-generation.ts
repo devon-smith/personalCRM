@@ -22,6 +22,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import {
   collectSignals,
   phraseSignal,
+  findEnumLikeToken,
 } from "../../src/lib/intelligence/generate-observations";
 
 interface ObservationsPayload {
@@ -39,10 +40,11 @@ const observationsGeneration: Task = async (rawPayload, helpers) => {
       : (await prisma.user.findMany({ select: { id: true } })).map((u) => u.id);
 
     for (const userId of userIds) {
-      const summary = await generateForUser(prisma, userId);
+      const summary = await generateForUser(prisma, userId, helpers.logger);
       helpers.logger.info(
         `observations-generation: user=${userId} ` +
-          `signals=${summary.signals} created=${summary.created} skipped=${summary.skipped}`,
+          `signals=${summary.signals} created=${summary.created} ` +
+          `skipped=${summary.skipped} leak_dropped=${summary.leakDropped}`,
       );
     }
   } finally {
@@ -54,13 +56,27 @@ interface RunSummary {
   signals: number;
   created: number;
   skipped: number;
+  /** Count of drafts dropped because findEnumLikeToken matched
+   *  their content — alarm on regression (M0.9 task 1). */
+  leakDropped: number;
+}
+
+interface TaskLogger {
+  info: (msg: string) => void;
+  warn: (msg: string) => void;
 }
 
 async function generateForUser(
   prisma: PrismaClient,
   userId: string,
+  logger: TaskLogger,
 ): Promise<RunSummary> {
-  const summary: RunSummary = { signals: 0, created: 0, skipped: 0 };
+  const summary: RunSummary = {
+    signals: 0,
+    created: 0,
+    skipped: 0,
+    leakDropped: 0,
+  };
 
   const signals = await collectSignals(prisma, userId);
   summary.signals = signals.length;
@@ -90,6 +106,23 @@ async function generateForUser(
       continue;
     }
     const draft = phraseSignal(sig);
+
+    // Last-mile regression alarm: if the rendered observation
+    // contains an enum-like token (snake_case word), some new
+    // ChangelogType was added without a humanizer. Skip the write
+    // so Jennifer never sees the leak; the warn log surfaces the
+    // bug loud at the next CI run.
+    const leak = findEnumLikeToken(draft.content);
+    if (leak) {
+      logger.warn(
+        `observations-generation: dropped enum-leak observation ` +
+          `(token="${leak}", source="${draft.source}", ` +
+          `contactId="${draft.contactId}", content="${draft.content}")`,
+      );
+      summary.leakDropped++;
+      continue;
+    }
+
     await prisma.assistantObservation.create({
       data: {
         userId,

@@ -3,6 +3,7 @@ import {
   phraseSignal,
   lifeEventDetail,
   dropAnsweredByThread,
+  findEnumLikeToken,
   type Signal,
 } from "@/lib/intelligence/generate-observations";
 import type { PrismaClient } from "@/generated/prisma/client";
@@ -293,5 +294,125 @@ describe("dropAnsweredByThread (M0.5)", () => {
     ];
     const result = await dropAnsweredByThread(prisma, "u1", candidates);
     expect(result).toEqual([]);
+  });
+});
+
+describe("findEnumLikeToken (M0.9 regression guard)", () => {
+  // Historical leak: ContactChangelog field strings like
+  // "web_mention" and "company_field" reached user-facing content.
+  // Fixed in 1333971; these tests ensure the regression can't
+  // sneak back in via a new ChangelogType without a humanizer.
+
+  it.each([
+    "Jonathan was mentioned recently in web_mention.",
+    "Sarah's company_field updated",
+    "Mark shared a linkedin_post",
+    "Updated the inner_circle assignment",
+    "this is a multi_word_token leak",
+  ])('flags enum-shaped token in "%s"', (content) => {
+    expect(findEnumLikeToken(content)).not.toBeNull();
+  });
+
+  it("returns null on natural-language observations", () => {
+    expect(
+      findEnumLikeToken("Marc asked about Section 3 framing a few days ago"),
+    ).toBeNull();
+    expect(
+      findEnumLikeToken("David is now at Anthropic."),
+    ).toBeNull();
+    expect(
+      findEnumLikeToken(
+        "Open thread with Sarah: they asked about sabbatical timing.",
+      ),
+    ).toBeNull();
+    expect(
+      findEnumLikeToken(
+        "Marcus is in your inner circle; you haven't connected since 2026-01-15.",
+      ),
+    ).toBeNull();
+  });
+
+  it("does not match hyphenated words or emails", () => {
+    // Hyphens, not underscores
+    expect(findEnumLikeToken("She's a sabbatical-bound researcher")).toBeNull();
+    // Emails (won't be in observation copy anyway, but verify)
+    expect(
+      findEnumLikeToken("Reach her at jane.doe@example.com tomorrow"),
+    ).toBeNull();
+  });
+
+  it("returns the first offending token, not all of them", () => {
+    const found = findEnumLikeToken("web_mention then company_field");
+    expect(found).toBe("web_mention");
+  });
+
+  /**
+   * End-to-end sweep: drive phraseSignal across every known source
+   * + every ChangelogType (the historical leak vector) and assert
+   * none of the rendered drafts leak. Catches any future signal-
+   * source / lifeEventDetail divergence.
+   */
+  describe("phraseSignal end-to-end sweep", () => {
+    const baseSig = (over: Partial<Signal>): Signal => ({
+      source: "unanswered_inbound",
+      contactId: "c1",
+      contactName: "Test Person",
+      detail: "something",
+      refs: ["interaction:i1"],
+      observedAt: new Date(),
+      ...over,
+    });
+
+    const sources = [
+      "unanswered_inbound",
+      "stale_open_thread",
+      "recent_life_event",
+      "dormant_inner_circle",
+      "future_unknown_source", // exercises the default branch
+    ];
+
+    const changelogTypes = [
+      "JOB_CHANGE",
+      "ROLE_CHANGE",
+      "COMPANY_CHANGE",
+      "NEWS_MENTION",
+      "UNKNOWN_FUTURE_TYPE", // exercises the default branch
+    ];
+
+    for (const source of sources) {
+      it(`source="${source}" produces clean copy`, () => {
+        const out = phraseSignal(
+          baseSig({ source, detail: "a topic worth discussing" }),
+        );
+        const leak = findEnumLikeToken(out.content);
+        expect(
+          leak,
+          `Leaked enum-like token "${leak}" in: ${out.content}`,
+        ).toBeNull();
+      });
+    }
+
+    for (const type of changelogTypes) {
+      it(`recent_life_event for changelog="${type}" produces clean copy`, () => {
+        // Drive lifeEventDetail with the historic leaky `field`
+        // value ("web_mention") to verify the humanizer keeps
+        // suppressing the enum, then wrap in phraseSignal and
+        // assert end-to-end cleanliness.
+        const detail = lifeEventDetail({
+          type,
+          field: "web_mention",
+          oldValue: null,
+          newValue: "Anthropic",
+        });
+        const out = phraseSignal(
+          baseSig({ source: "recent_life_event", detail }),
+        );
+        const leak = findEnumLikeToken(out.content);
+        expect(
+          leak,
+          `Leaked enum-like token "${leak}" in: ${out.content}`,
+        ).toBeNull();
+      });
+    }
   });
 });

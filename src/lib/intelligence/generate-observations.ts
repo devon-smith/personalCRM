@@ -346,6 +346,23 @@ function stripQuotes(s: string): string {
 }
 
 /**
+ * Regression guard against enum-like tokens leaking into user-facing
+ * copy. Catches the historic `web_mention` / `company_field` /
+ * `linkedin_post` bugs where a ChangelogType `field` value reached
+ * the rendered observation. Matches any `lower_lower` token —
+ * natural English doesn't use snake_case, so the pattern is a
+ * reliable proxy for "an enum slug leaked".
+ *
+ * Returns the first offending token, or null if the content reads
+ * clean. Exported for the observations-generation worker (which
+ * logs + skips on hit) and the regression tests.
+ */
+export function findEnumLikeToken(content: string): string | null {
+  const match = content.match(/\b[a-z]+_[a-z]+(?:_[a-z]+)*\b/);
+  return match ? match[0] : null;
+}
+
+/**
  * Map a ContactChangelog row to user-facing phrasing.
  *
  * Key constraint: NEVER expose raw enum strings (the `field` column
