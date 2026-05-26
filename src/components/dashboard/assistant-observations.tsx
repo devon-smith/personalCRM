@@ -95,7 +95,7 @@ export function AssistantObservations() {
               <div className="flex-1 min-w-0">
                 {o.contactId ? (
                   <Link
-                    href={`/contacts/${o.contactId}`}
+                    href={`/people?contact=${o.contactId}`}
                     className="text-[13px] leading-relaxed hover:underline"
                     style={{ color: "#1B1A17" }}
                   >

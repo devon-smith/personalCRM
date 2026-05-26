@@ -347,7 +347,7 @@ function NetworkPanel({ neighbors }: { neighbors: NeighborShape[] }) {
         {neighbors.slice(0, 8).map((n) => (
           <li key={`${n.contactId}-${n.edgeType}`}>
             <Link
-              href={`/contacts/${n.contactId}`}
+              href={`/people?contact=${n.contactId}`}
               className="flex items-center gap-2.5 py-1 transition-colors rounded-md px-1 -mx-1 hover:bg-[#EFEAE0]"
             >
               <Avatar className="h-7 w-7">

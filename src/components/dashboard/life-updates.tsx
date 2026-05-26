@@ -64,6 +64,7 @@ export function LifeUpdates() {
         {data.entries.map((entry) => {
           const color = getAvatarColor(entry.contactName);
           const isJobChange = entry.type === "JOB_CHANGE" || entry.type === "COMPANY_CHANGE";
+          const isNewsMention = entry.type === "NEWS_MENTION";
 
           return (
             <div
@@ -94,13 +95,29 @@ export function LifeUpdates() {
                         {" to "}
                         <span className="font-medium" style={{ color: "var(--text-primary)" }}>{entry.newValue}</span>
                       </span>
-                    ) : (
+                    ) : isNewsMention ? (
+                      // NEWS_MENTION: oldValue = article title, newValue = URL.
+                      // Don't render `entry.field` (it's the internal "web_mention" enum).
                       <span style={{ color: "var(--text-secondary)" }}>
-                        {" changed "}
-                        {entry.field}
+                        {" was mentioned in the news"}
+                        {entry.oldValue && (
+                          <>
+                            {" — "}
+                            <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+                              &ldquo;{entry.oldValue.length > 70 ? entry.oldValue.slice(0, 67) + "…" : entry.oldValue}&rdquo;
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    ) : (
+                      // Generic life-update fallback. Field is an internal
+                      // enum (e.g. "role", "company"); humanize before
+                      // rendering so we never expose enum strings as copy.
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {" had an update"}
                         {entry.newValue && (
                           <>
-                            {" to "}
+                            {" — "}
                             <span className="font-medium" style={{ color: "var(--text-primary)" }}>{entry.newValue}</span>
                           </>
                         )}

@@ -188,6 +188,43 @@ export default function SavedQueriesPage() {
                       {results[row.id].answer}
                     </p>
                   )}
+                  {/* Empty-result fallback: when the orchestrator
+                      returns no prose AND no suggestions, the inline
+                      panel was previously rendering as an invisible
+                      empty div. Surface SOMETHING — at minimum the
+                      reasoning trace so the user knows the re-run
+                      actually fired. */}
+                  {!results[row.id].answer &&
+                    results[row.id].suggestedContacts.length === 0 && (
+                      <div className="space-y-2">
+                        <p
+                          className="text-[13px] leading-relaxed italic"
+                          style={{ color: "#5A574F" }}
+                        >
+                          No specific suggestions for this re-run — the
+                          orchestrator looked but didn&apos;t find a confident
+                          match. Try refining the query, or check the trace
+                          below.
+                        </p>
+                        {results[row.id].reasoningTrace.length > 0 && (
+                          <ol
+                            className="space-y-0.5 pl-4 list-decimal text-[12px]"
+                            style={{ color: "#8C8A82" }}
+                          >
+                            {results[row.id].reasoningTrace.map((step, i) => (
+                              <li key={i}>
+                                <span
+                                  style={{ color: "#5A574F", fontWeight: 500 }}
+                                >
+                                  {step.tool}
+                                </span>
+                                : {step.summary}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    )}
                   {results[row.id].suggestedContacts.length > 0 && (
                     <ul className="space-y-1.5 text-[13px]">
                       {results[row.id].suggestedContacts.map((s) => (
@@ -196,7 +233,7 @@ export default function SavedQueriesPage() {
                           style={{ color: "#1B1A17" }}
                         >
                           <a
-                            href={`/contacts/${s.contactId}`}
+                            href={`/people?contact=${s.contactId}`}
                             className="font-medium hover:underline"
                           >
                             {s.name}

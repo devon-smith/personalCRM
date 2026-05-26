@@ -380,16 +380,39 @@ function LiveTracePanel({
         </div>
       ))}
       {streamingText && (
-        <p
-          className="text-[14px] leading-relaxed mt-3 pt-3 border-t"
-          style={{ color: "#1B1A17", borderColor: "#ECE7D9" }}
+        <div
+          className="mt-3 pt-3 border-t"
+          style={{ borderColor: "#ECE7D9" }}
         >
-          {streamingText}
-          <span
-            className="inline-block w-1 h-3.5 ml-0.5 align-text-bottom animate-pulse"
-            style={{ backgroundColor: "#7A4F3C" }}
-          />
-        </p>
+          {looksLikeJsonInProgress(streamingText) ? (
+            // The orchestrator's final output is JSON; while Claude is
+            // streaming the structure, surfacing it raw shows
+            // `{ "title": "...", "answer": "...` which is jarring. Show
+            // a calm placeholder until the JSON parses into the final
+            // result panel (which replaces this section).
+            <div
+              className="flex items-center gap-2 text-[13px]"
+              style={{ color: "#5A574F" }}
+            >
+              <span
+                className="inline-block w-1 h-3.5 align-text-bottom animate-pulse"
+                style={{ backgroundColor: "#7A4F3C" }}
+              />
+              Writing answer…
+            </div>
+          ) : (
+            <p
+              className="text-[14px] leading-relaxed"
+              style={{ color: "#1B1A17" }}
+            >
+              {streamingText}
+              <span
+                className="inline-block w-1 h-3.5 ml-0.5 align-text-bottom animate-pulse"
+                style={{ backgroundColor: "#7A4F3C" }}
+              />
+            </p>
+          )}
+        </div>
       )}
     </article>
   );
@@ -438,7 +461,7 @@ function QueryResultPanel({
           {result.suggestedContacts.map((s) => (
             <li key={s.contactId}>
               <Link
-                href={`/contacts/${s.contactId}`}
+                href={`/people?contact=${s.contactId}`}
                 className="flex items-start gap-3 p-3 rounded-xl transition-colors"
                 style={{
                   backgroundColor: "#F4EFE3",
@@ -578,4 +601,17 @@ function QueryResultPanel({
       )}
     </article>
   );
+}
+
+/**
+ * The orchestrator emits its final answer as JSON ({ title, answer,
+ * suggestions, ... }). During streaming the user would otherwise see
+ * raw JSON tokens arrive char-by-char — "{ \"title\": \"..." — which
+ * reads like a glitch. Detect the leading-brace case and show a calm
+ * placeholder instead. The final parsed result replaces this panel
+ * when `complete` arrives.
+ */
+function looksLikeJsonInProgress(text: string): boolean {
+  const trimmed = text.trimStart();
+  return trimmed.startsWith("{") || trimmed.startsWith("```json");
 }
