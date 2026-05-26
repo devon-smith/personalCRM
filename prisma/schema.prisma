@@ -691,6 +691,15 @@ model EmailMessage {
   isAutomated Boolean              @default(false) // true if List-Unsubscribe or Precedence: bulk/list detected
   createdAt   DateTime             @default(now())
 
+  // Per-email mention extraction (M7.2 expansion). Populated by the
+  // mention-extraction worker via Claude Haiku entity recognition.
+  // - mentionsProcessedAt IS NULL  → not yet processed
+  // - mentionsProcessedAt IS NOT NULL → processed; mentionedContactIds
+  //   holds 0+ matched contact IDs
+  // Powers the `mentioned` edge type in ContactEdge.
+  mentionedContactIds String[]  @default([])
+  mentionsProcessedAt DateTime?
+
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
   voiceExample VoiceExample?
@@ -698,6 +707,8 @@ model EmailMessage {
   @@unique([userId, gmailId])
   @@index([userId, occurredAt])
   @@index([contactId])
+  // Lets the mention-extraction worker quickly find unprocessed rows.
+  @@index([userId, mentionsProcessedAt])
 }
 
 // ─── Voice Model (Phase 6) ──────────────────────────────────

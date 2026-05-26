@@ -235,7 +235,7 @@ const TOOLS: RegisteredTool[] = [
           type: "array",
           items: { type: "string" },
           description:
-            "Restrict to specific edge types: mutual_thread, same_org. Omit for all.",
+            "Restrict to specific edge types: mutual_thread (shared conversation), same_org (same company/email-domain), mentioned (one named the other in an email body), introduced_by_user (user initiated a thread connecting them). Omit for all.",
         },
         limit: { type: "number", description: "Max neighbors, default 15" },
       },

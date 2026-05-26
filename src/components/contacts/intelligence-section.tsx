@@ -320,8 +320,8 @@ interface NeighborShape {
 const EDGE_LABEL: Record<string, string> = {
   mutual_thread: "in a shared thread",
   same_org: "same organization",
-  mentioned: "mentioned in email",
-  introduced_by_user: "introduced",
+  mentioned: "mentioned in email body",
+  introduced_by_user: "you introduced them",
 };
 
 function NetworkPanel({ neighbors }: { neighbors: NeighborShape[] }) {

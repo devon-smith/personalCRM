@@ -30,3 +30,4 @@ export interface EdgeProposal {
 
 export { detectMutualThreadEdges } from "./mutual-thread";
 export { detectSameOrgEdges } from "./same-org";
+export { detectIntroducedEdges } from "./introduced";

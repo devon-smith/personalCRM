@@ -36,6 +36,7 @@ import voiceCorpusIndex from "./tasks/voice-corpus-index.js";
 import contactAttributeExtraction from "./tasks/contact-attribute-extraction.js";
 import graphEdgeExtraction from "./tasks/graph-edge-extraction.js";
 import memorySynthesis from "./tasks/memory-synthesis.js";
+import mentionExtraction from "./tasks/mention-extraction.js";
 
 // WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
 // connection (port 5432) when the pooler (6543) hits its session limit. The
@@ -65,6 +66,7 @@ const taskList = {
   "contact-attribute-extraction": contactAttributeExtraction,
   "graph-edge-extraction": graphEdgeExtraction,
   "memory-synthesis": memorySynthesis,
+  "mention-extraction": mentionExtraction,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -113,6 +115,10 @@ const crontab = `
 # ≥5 new interactions since last synthesis. 30 contacts per run,
 # Claude Sonnet per call.
 0 3 * * * memory-synthesis
+# Daily at 03:30 UTC: extract mentions from outbound email bodies
+# via Claude Haiku. 50 emails per run, accumulates "mentioned" edges
+# in ContactEdge. Chews through backlog over weeks.
+30 3 * * * mention-extraction
 `.trim();
 
 async function main() {

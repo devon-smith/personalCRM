@@ -16,6 +16,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import {
   detectMutualThreadEdges,
   detectSameOrgEdges,
+  detectIntroducedEdges,
   type EdgeProposal,
 } from "../../src/lib/intelligence/edge-detectors";
 import { pairKey } from "../../src/lib/intelligence/edge-detectors/mutual-thread";
@@ -43,7 +44,8 @@ const graphEdgeExtraction: Task = async (rawPayload, helpers) => {
       helpers.logger.info(
         `graph-edge-extraction: user=${userId} ` +
           `mutual_thread=${summary.mutualThread} same_org=${summary.sameOrg} ` +
-          `total_edges=${summary.total} upserts_completed=${summary.upserted}`,
+          `introduced=${summary.introduced} total_edges=${summary.total} ` +
+          `upserts_completed=${summary.upserted}`,
       );
     }
   } finally {
@@ -54,6 +56,7 @@ const graphEdgeExtraction: Task = async (rawPayload, helpers) => {
 interface RunSummary {
   mutualThread: number;
   sameOrg: number;
+  introduced: number;
   total: number;
   upserted: number;
 }
@@ -77,6 +80,7 @@ async function extractForUser(
   const summary: RunSummary = {
     mutualThread: 0,
     sameOrg: 0,
+    introduced: 0,
     total: 0,
     upserted: 0,
   };
@@ -88,7 +92,7 @@ async function extractForUser(
   helpers.logger.info(
     `graph-edge-extraction: user=${userId} running detectors`,
   );
-  const [mutualThread, sameOrg] = await Promise.all([
+  const [mutualThread, sameOrg, introduced] = await Promise.all([
     detectMutualThreadEdges({ prisma, userId })
       .then((edges) => {
         helpers.logger.info(
@@ -115,14 +119,28 @@ async function extractForUser(
         );
         return [] as EdgeProposal[];
       }),
+    detectIntroducedEdges({ prisma, userId })
+      .then((edges) => {
+        helpers.logger.info(
+          `graph-edge-extraction: user=${userId} introduced detector → ${edges.length} edges`,
+        );
+        return edges;
+      })
+      .catch((err) => {
+        helpers.logger.info(
+          `graph-edge-extraction: user=${userId} introduced FAILED: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [] as EdgeProposal[];
+      }),
   ]);
   summary.mutualThread = mutualThread.length;
   summary.sameOrg = sameOrg.length;
+  summary.introduced = introduced.length;
 
   // Dedup within-run by canonical key — if a detector emits duplicates
   // (shouldn't, but defensive), keep the highest-strength proposal.
   const merged = new Map<string, EdgeProposal>();
-  for (const proposal of [...mutualThread, ...sameOrg]) {
+  for (const proposal of [...mutualThread, ...sameOrg, ...introduced]) {
     const [from, to] = canonical(proposal.contactA, proposal.contactB);
     const key = `${from}::${to}::${proposal.edgeType}`;
     const existing = merged.get(key);
