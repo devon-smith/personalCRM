@@ -133,12 +133,27 @@ describe("stripDetectedSignatures", () => {
     expect(stripDetectedSignatures(body, [])).toBe(body);
   });
 
-  it("does NOT strip if the matching line is in the body's first half", () => {
-    // A sig line accidentally appearing in body content shouldn't
-    // truncate the email mid-thought.
-    const body = `${SIG_LINE_1}\n\nThis is the actual content of the email which is several lines long and continues on past the false-positive sig match above\nMore content\nEven more content\nKeep going\nAnd more\nStill more body text`;
-    const stripped = stripDetectedSignatures(body, [SIG_LINE_1]);
+  it("does NOT cut on a single short sig match (false-positive safety)", () => {
+    // The original M6.1.1 halfwayIdx guard was removed in round 3
+    // (reply-on-top layouts put sigs in the upper half). Its
+    // replacement: don't cut on a single match shorter than 20 chars
+    // — that's likely incidental body content (e.g., "Website" in a
+    // list), not a sig boundary. Multi-match OR single-long-match
+    // still cuts.
+    const shortSig = "Website";
+    const body = `Hi,\n\nHere's the list:\n\nResume\nWebsite\nReferences\n\nBest,\nJ`;
+    const stripped = stripDetectedSignatures(body, [shortSig]);
     expect(stripped).toBe(body);
+  });
+
+  it("DOES cut on a single LONG sig match even in upper half", () => {
+    // Companion to the safety test above: a long match (the canonical
+    // multi-word sig line) is unique enough to trust on its own,
+    // regardless of position.
+    const longSig = SIG_LINE_1; // 58 chars, well above the 20-char threshold
+    const body = `${longSig}\n\nBody content here\nLine 2\nLine 3\nLine 4`;
+    const stripped = stripDetectedSignatures(body, [longSig]);
+    expect(stripped).toBe("");
   });
 
   it("is idempotent", () => {

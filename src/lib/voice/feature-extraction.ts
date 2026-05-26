@@ -288,16 +288,34 @@ export function stripDetectedSignatures(
   if (signatureLines.length === 0) return body;
   const sigSet = new Set(signatureLines);
   const lines = body.split("\n");
-  // Conservative: only honor a sig match in the back half. A sig
-  // line accidentally appearing in body content shouldn't truncate
-  // the email mid-thought.
-  const halfwayIdx = Math.floor(lines.length / 2);
-  for (let i = halfwayIdx; i < lines.length; i++) {
+
+  // Find every sig match in the body. The original halfwayIdx guard
+  // was wrong for reply-on-top layouts: when Jennifer writes a short
+  // reply followed by a multi-line sig block, the sig name ends up in
+  // the upper half of the post-quote-strip body. The guard skipped
+  // it and left the sig leaking into n-grams (M6.1.1 round 3 bug).
+  const matchIndices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
     if (sigSet.has(normalizeForMatch(lines[i]))) {
-      return lines.slice(0, i).join("\n").trimEnd();
+      matchIndices.push(i);
     }
   }
-  return body;
+  if (matchIndices.length === 0) return body;
+
+  // Single-match safety: if only ONE line matches and it's short
+  // (<20 chars), that's likely incidental body content — Jennifer's
+  // sig has generic-looking lines like "Website" and "| linkedin"
+  // that could plausibly appear in a body paragraph too. Two-line
+  // matches are essentially impossible to false-positive on. A single
+  // long match (the canonical "Jennifer Aaker | ..." line) is unique
+  // enough to trust on its own.
+  if (matchIndices.length === 1) {
+    const matched = normalizeForMatch(lines[matchIndices[0]]);
+    if (matched.length < 20) return body;
+  }
+
+  // Cut from the earliest match to end-of-body.
+  return lines.slice(0, matchIndices[0]).join("\n").trimEnd();
 }
 
 // ─── Top-level extractor ───────────────────────────────────

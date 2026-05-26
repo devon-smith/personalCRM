@@ -282,10 +282,13 @@ On Mon, May 12, 2026 at 3:50 PM Marc wrote:
     expect(features.cleanedBody).toContain("Thanks for sending");
   });
 
-  it("does not strip a sig line that accidentally appears in the body's first half", () => {
-    // Conservative back-half guard: if a detected sig string happens
-    // to match content in Jennifer's actual writing (rare, but
-    // possible), don't truncate her email mid-thought.
+  it("does not strip when sig string appears inline (not as a standalone line)", () => {
+    // After the M6.1.1 round 3 fix removed the halfwayIdx guard, the
+    // protection against truncating-on-content shifted from
+    // position-based to structure-based: matches only fire on whole-
+    // line equality after normalization. A sig phrase quoted INLINE
+    // inside a sentence (length-wise the whole sentence is the line)
+    // can't match the standalone sig form.
     const sigLine = "Jennifer Aaker | General Atlantic Professor | Stanford GSB";
     const body = `Marc,
 
@@ -299,10 +302,67 @@ Talk soon,
 J`;
 
     const features = extractFeatures(body, [sigLine]);
-    // The sig line appears early as content, not as a real sig.
-    // Should NOT be cut from there — Jennifer's actual content
-    // ("Anyway — wanted to check in") must survive.
     expect(features.cleanedBody).toContain("wanted to check in");
     expect(features.cleanedBody).toContain("Talk soon");
+  });
+
+  it("strips sig in upper half of body (reply-on-top + multi-line sig)", () => {
+    // Regression for M6.1.1 round 3: Jennifer writes reply-on-top —
+    // a few lines of fresh content, then a multi-line sig block (her
+    // name + Website + 3 social links). After quote-stripping the
+    // body bottom (the quoted reply chain) the sig name line ends up
+    // around line 5 of ~13 — UPPER half. The old halfwayIdx guard
+    // started scanning at lines.length/2 and skipped the name line.
+    // It DID catch "Website" at line 7 and cut from there, but the
+    // name line above leaked into n-gram extraction and dominated
+    // the fingerprint.
+    const sigName = "Jennifer Aaker | General Atlantic Professor | Stanford GSB";
+    const sigLines = [
+      sigName,
+      "Website",
+      "https://www.instagram.com/jenniferaaker/",
+      "| linkedin",
+    ];
+    const body = `Lets catch up this weekend; share good windows.
+
+Maybe Sunday 11-6pm pst? Or tomorrow 12-2pm pst?
+
+
+${sigName}
+
+Website
+https://www.instagram.com/jenniferaaker/
+  |  linkedin`;
+
+    const features = extractFeatures(body, sigLines);
+    expect(features.cleanedBody).not.toContain("Jennifer Aaker");
+    expect(features.cleanedBody).not.toContain("General Atlantic");
+    expect(features.cleanedBody).not.toContain("instagram");
+    expect(features.cleanedBody).toContain("catch up this weekend");
+  });
+
+  it("does not cut on a single short sig match (false-positive safety)", () => {
+    // Single-match safety: if only one line in the body matches and
+    // it's short (<20 chars), treat it as incidental content rather
+    // than a sig boundary. "Website" appearing as a standalone line
+    // in a list shouldn't eat everything below.
+    const sigLines = ["Website", "| linkedin", "Jennifer Aaker | General Atlantic Professor"];
+    const body = `Marc,
+
+Here's the list you asked for:
+
+Resume
+Website
+References
+
+Let me know if anything else.
+
+J`;
+
+    const features = extractFeatures(body, sigLines);
+    // The "Website" match alone is too short + isolated to be a sig.
+    // The body below should survive.
+    expect(features.cleanedBody).toContain("References");
+    expect(features.cleanedBody).toContain("Let me know");
   });
 });
