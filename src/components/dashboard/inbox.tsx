@@ -25,6 +25,7 @@ import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { EvidenceChevron } from "@/components/shared/evidence-chevron";
 import { useSessionExpanded } from "@/components/ds";
+import { useDraftComposer } from "@/lib/draft-composer-context";
 
 // ─── Swipe gesture hook ─────────────────────────────────────
 
@@ -1150,8 +1151,10 @@ function truncateMessage(text: string, maxLen = 80): string {
 
 function InboxRow({
   item,
-  // Same as GroupChatRow — onResolve dropped from destructure post-
-  // M0.5b. Auto-resolve via lib/inbox.ts handles the surface.
+  // M0.9 restored: onResolve is the manual "Mark replied" escape
+  // hatch. Auto-resolve handles most cases, but legitimately stale
+  // items (cross-channel replies, sync lag) still need a way out.
+  onResolve,
   onDismiss,
   onSnooze,
 }: {
@@ -1161,6 +1164,7 @@ function InboxRow({
   onSnooze: (hours: number) => void;
 }) {
   const [showSnooze, setShowSnooze] = useState(false);
+  const { openComposer } = useDraftComposer();
   const color = getAvatarColor(item.contactName);
   const replyUrl = getReplyUrl(item);
 
@@ -1168,6 +1172,21 @@ function InboxRow({
   const MAX_PREVIEWS = 10;
   const previewMessages = previews.slice(0, MAX_PREVIEWS);
   const extraCount = item.messageCount - MAX_PREVIEWS;
+
+  // Compose a "Draft reply" — preloads the draft modal with
+  // contactId + reply context. Only meaningful for email-shaped
+  // channels; iMessage etc. fall back to the generic reply URL.
+  const isEmailChannel =
+    item.channel === "email" || item.channel === "gmail";
+  function handleDraftReply() {
+    openComposer({
+      contactId: item.contactId,
+      presetTone: "warm",
+      presetContext: "reply_email",
+      threadSubject: previews[0]?.summary?.slice(0, 140) ?? undefined,
+      threadSnippet: previews[0]?.summary ?? undefined,
+    });
+  }
 
   // Channel label
   const channelLabel =
@@ -1459,6 +1478,54 @@ function InboxRow({
             />
           )}
         </div>
+
+        {/* Mark replied — manual resolve escape hatch (M0.9). Auto-
+            resolve handles the canonical case; this covers cross-
+            channel replies, sync lag, and items the user wants gone. */}
+        <button
+          onClick={onResolve}
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
+          style={{
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+            backgroundColor: "transparent",
+            letterSpacing: "-0.01em",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--accent-soft)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
+        >
+          <Check className="h-3 w-3" />
+          Mark replied
+        </button>
+
+        {/* Draft reply — opens the composer pre-loaded with this
+            contact + reply_email context. Email channels only;
+            non-email channels lean on the existing reply URL above. */}
+        {isEmailChannel && (
+          <button
+            onClick={handleDraftReply}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
+            style={{
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              backgroundColor: "transparent",
+              letterSpacing: "-0.01em",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <Pencil className="h-3 w-3" />
+            Draft reply
+          </button>
+        )}
 
         {/* Dismiss for group chats */}
         {item.isGroupChat && (
