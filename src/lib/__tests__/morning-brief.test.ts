@@ -3,6 +3,7 @@ import {
   renderBriefHtml,
   renderBriefText,
   buildBriefSubject,
+  formatConsideredSentence,
   type MorningBriefData,
 } from "@/lib/morning-brief";
 
@@ -18,6 +19,12 @@ function makeData(overrides: Partial<MorningBriefData> = {}): MorningBriefData {
     meetings: [],
     moment: null,
     overnightSignals: [],
+    considered: {
+      emailsScanned: 0,
+      meetingsScanned: 0,
+      signalsScanned: 0,
+      observationsScanned: 0,
+    },
     ...overrides,
   };
 }
@@ -228,5 +235,125 @@ describe("buildBriefSubject", () => {
 
   it("says 'all quiet' on an empty day", () => {
     expect(buildBriefSubject(makeData())).toContain("all quiet");
+  });
+});
+
+describe("formatConsideredSentence (M9.2 task 3)", () => {
+  it("returns empty string when every count is zero", () => {
+    expect(
+      formatConsideredSentence({
+        emailsScanned: 0,
+        meetingsScanned: 0,
+        signalsScanned: 0,
+        observationsScanned: 0,
+      }),
+    ).toBe("");
+  });
+
+  it("formats a single count without comma joins", () => {
+    expect(
+      formatConsideredSentence({
+        emailsScanned: 47,
+        meetingsScanned: 0,
+        signalsScanned: 0,
+        observationsScanned: 0,
+      }),
+    ).toBe("Looked at 47 new emails. Here's what stood out.");
+  });
+
+  it("joins two counts with 'and'", () => {
+    expect(
+      formatConsideredSentence({
+        emailsScanned: 47,
+        meetingsScanned: 12,
+        signalsScanned: 0,
+        observationsScanned: 0,
+      }),
+    ).toBe(
+      "Looked at 47 new emails and 12 calendar events. Here's what stood out.",
+    );
+  });
+
+  it("uses Oxford comma for three+ counts", () => {
+    expect(
+      formatConsideredSentence({
+        emailsScanned: 47,
+        meetingsScanned: 12,
+        signalsScanned: 3,
+        observationsScanned: 0,
+      }),
+    ).toBe(
+      "Looked at 47 new emails, 12 calendar events, and 3 new signals from your network. Here's what stood out.",
+    );
+  });
+
+  it("pluralizes correctly on count=1", () => {
+    const s = formatConsideredSentence({
+      emailsScanned: 1,
+      meetingsScanned: 1,
+      signalsScanned: 1,
+      observationsScanned: 1,
+    });
+    expect(s).toContain("1 new email,");
+    expect(s).toContain("1 calendar event,");
+    expect(s).toContain("1 new signal from your network");
+    expect(s).toContain("1 observation from yesterday");
+    expect(s).not.toContain("emails,");
+    expect(s).not.toContain("events,");
+  });
+
+  it("skips zero-count categories from the joined list", () => {
+    expect(
+      formatConsideredSentence({
+        emailsScanned: 0,
+        meetingsScanned: 12,
+        signalsScanned: 3,
+        observationsScanned: 0,
+      }),
+    ).toBe(
+      "Looked at 12 calendar events and 3 new signals from your network. Here's what stood out.",
+    );
+  });
+});
+
+describe("renderBriefHtml — thinking preamble", () => {
+  it("renders the preamble when counts are non-zero", () => {
+    const html = renderBriefHtml(
+      makeData({
+        considered: {
+          emailsScanned: 47,
+          meetingsScanned: 12,
+          signalsScanned: 3,
+          observationsScanned: 0,
+        },
+      }),
+    );
+    expect(html).toContain("Looked at 47 new emails");
+    expect(html).toContain("font-style:italic");
+  });
+
+  it("omits the preamble block entirely when nothing was scanned", () => {
+    const html = renderBriefHtml(makeData());
+    expect(html).not.toContain("Looked at");
+  });
+});
+
+describe("renderBriefText — thinking preamble", () => {
+  it("includes the preamble line above AWAITING YOUR REPLY", () => {
+    const text = renderBriefText(
+      makeData({
+        considered: {
+          emailsScanned: 47,
+          meetingsScanned: 12,
+          signalsScanned: 0,
+          observationsScanned: 2,
+        },
+      }),
+    );
+    const lines = text.split("\n");
+    const preambleIdx = lines.findIndex((l) => l.startsWith("Looked at"));
+    const awaitingIdx = lines.indexOf("AWAITING YOUR REPLY");
+    expect(preambleIdx).toBeGreaterThanOrEqual(0);
+    expect(awaitingIdx).toBeGreaterThan(preambleIdx);
   });
 });

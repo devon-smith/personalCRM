@@ -46,6 +46,19 @@ export interface BriefSignal {
   contactUrl: string;
 }
 
+/**
+ * "Thinking" preamble counts (M9.2 task 3) — what the system
+ * considered when building the brief. Surfaced as a single calm
+ * sentence at the top so Jennifer can trust the curation: she sees
+ * what was scanned, not just what was selected.
+ */
+export interface BriefConsideredCounts {
+  emailsScanned: number;
+  meetingsScanned: number;
+  signalsScanned: number;
+  observationsScanned: number;
+}
+
 export interface MorningBriefData {
   userId: string;
   userName: string;
@@ -59,6 +72,7 @@ export interface MorningBriefData {
   meetings: BriefMeeting[];
   moment: MomentSuggestion | null;
   overnightSignals: BriefSignal[];
+  considered: BriefConsideredCounts;
 }
 
 // ─── Data assembly ──────────────────────────────────────────
@@ -85,11 +99,20 @@ export async function gatherMorningBrief(
   const forDate = isoDate(now);
   const forDatePretty = prettyDate(now);
 
-  const [priorities, meetings, moment, signals] = await Promise.all([
+  const [priorities, meetings, moment, signals, considered] = await Promise.all([
     loadPriorities(userId, appBaseUrl).catch(() => []),
     loadTodaysMeetings(userId, appBaseUrl, now).catch(() => []),
     loadMoment(userId, forDate, now).catch(() => null),
     loadOvernightSignals(userId, appBaseUrl, now).catch(() => []),
+    loadConsideredCounts(userId, now).catch(
+      () =>
+        ({
+          emailsScanned: 0,
+          meetingsScanned: 0,
+          signalsScanned: 0,
+          observationsScanned: 0,
+        }) satisfies BriefConsideredCounts,
+    ),
   ]);
 
   return {
@@ -103,6 +126,49 @@ export async function gatherMorningBrief(
     meetings,
     moment,
     overnightSignals: signals,
+    considered,
+  };
+}
+
+/**
+ * Count what the system looked at over the past 24h. These are the
+ * inputs the brief was built from — surfacing them in the preamble
+ * lets Jennifer trust the curation rather than wondering what was
+ * filtered out.
+ */
+async function loadConsideredCounts(
+  userId: string,
+  now: Date,
+): Promise<BriefConsideredCounts> {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const endOfTomorrow = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+  const [emails, meetings, signals, observations] = await Promise.all([
+    prisma.emailMessage.count({
+      where: { userId, occurredAt: { gte: since } },
+    }),
+    // Calendar events go through Interaction with type=MEETING; same
+    // window we use for "today's meetings" in the brief itself.
+    prisma.interaction.count({
+      where: {
+        userId,
+        type: "MEETING",
+        occurredAt: { gte: since, lt: endOfTomorrow },
+      },
+    }),
+    prisma.contactChangelog.count({
+      where: { userId, detectedAt: { gte: since } },
+    }),
+    prisma.assistantObservation.count({
+      where: { userId, createdAt: { gte: since } },
+    }),
+  ]);
+
+  return {
+    emailsScanned: emails,
+    meetingsScanned: meetings,
+    signalsScanned: signals,
+    observationsScanned: observations,
   };
 }
 
@@ -221,6 +287,8 @@ async function loadOvernightSignals(
 export function renderBriefHtml(d: MorningBriefData): string {
   const sections: string[] = [];
   sections.push(renderHeader(d));
+  const preamble = renderThinkingPreamble(d.considered);
+  if (preamble) sections.push(preamble);
   sections.push(renderPriorities(d));
   sections.push(renderMeetings(d));
   if (d.moment) sections.push(renderMoment(d.moment, d.appBaseUrl));
@@ -240,6 +308,56 @@ function renderHeader(d: MorningBriefData): string {
   <div style="font-size:13px;color:#78716c;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:6px">${escape(d.forDatePretty)}</div>
   <div style="font-size:28px;font-weight:600;line-height:1.2">${escape(greeting)}</div>
 </div>`;
+}
+
+/**
+ * "Thinking" preamble — small italic line that sits between the
+ * greeting and the priorities block. Returns null when there's
+ * nothing to say (all counts zero) so we don't render an empty
+ * sentence.
+ */
+function renderThinkingPreamble(c: BriefConsideredCounts): string | null {
+  const sentence = formatConsideredSentence(c);
+  if (!sentence) return null;
+  return `<div style="margin-bottom:20px;padding:10px 14px;background:#fafaf9;border-radius:8px;border-left:3px solid #d6d3d1">
+  <div style="font-size:13px;color:#57534e;font-style:italic;line-height:1.5">${escape(sentence)}</div>
+</div>`;
+}
+
+/**
+ * Pure sentence builder — exported for testing. Honors English
+ * pluralization, joins with commas + Oxford "and". Returns empty
+ * string when nothing was scanned (the brief is mostly informational
+ * in that case; no point pretending we did work).
+ */
+export function formatConsideredSentence(c: BriefConsideredCounts): string {
+  const parts: string[] = [];
+  if (c.emailsScanned > 0) {
+    parts.push(`${c.emailsScanned} new email${c.emailsScanned === 1 ? "" : "s"}`);
+  }
+  if (c.meetingsScanned > 0) {
+    parts.push(
+      `${c.meetingsScanned} calendar event${c.meetingsScanned === 1 ? "" : "s"}`,
+    );
+  }
+  if (c.signalsScanned > 0) {
+    parts.push(
+      `${c.signalsScanned} new signal${c.signalsScanned === 1 ? "" : "s"} from your network`,
+    );
+  }
+  if (c.observationsScanned > 0) {
+    parts.push(
+      `${c.observationsScanned} observation${c.observationsScanned === 1 ? "" : "s"} from yesterday`,
+    );
+  }
+  if (parts.length === 0) return "";
+  // Oxford comma join: ["a", "b", "c"] → "a, b, and c"
+  let joined: string;
+  if (parts.length === 1) joined = parts[0];
+  else if (parts.length === 2) joined = `${parts[0]} and ${parts[1]}`;
+  else
+    joined = `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+  return `Looked at ${joined}. Here's what stood out.`;
 }
 
 function renderPriorities(d: MorningBriefData): string {
@@ -351,6 +469,11 @@ export function renderBriefText(d: MorningBriefData): string {
   lines.push(`${d.forDatePretty}`);
   lines.push(`Good morning, ${firstName(d.userName)}.`);
   lines.push("");
+  const preamble = formatConsideredSentence(d.considered);
+  if (preamble) {
+    lines.push(preamble);
+    lines.push("");
+  }
   lines.push("AWAITING YOUR REPLY");
   if (d.priorities.length === 0) {
     lines.push("  (inbox zero)");
