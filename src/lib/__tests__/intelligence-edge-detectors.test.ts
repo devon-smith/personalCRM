@@ -3,6 +3,7 @@ import {
   pairKey,
   unpairKey,
   scoreStrength,
+  volumeStrengthFactor,
 } from "@/lib/intelligence/edge-detectors/mutual-thread";
 import {
   normalizeCompany,
@@ -60,6 +61,64 @@ describe("scoreStrength", () => {
     expect(fiveShared).toBeGreaterThan(oneShared);
     // 50 isn't massively more than 5 because of log scaling.
     expect(fiftyShared - fiveShared).toBeLessThan(0.2);
+  });
+
+  describe("volume signal (M0.8)", () => {
+    it("downweights low-volume relationships when interactions are sparse", () => {
+      const now = new Date();
+      // Same pair count + recency, different interaction volume.
+      const sparse = scoreStrength(3, now, 3); // 3 threads, 3 messages total
+      const dense = scoreStrength(3, now, 60); // 3 threads, 60 messages total
+      expect(dense).toBeGreaterThan(sparse);
+    });
+
+    it("rewards a single high-volume thread over multiple sparse ones", () => {
+      const now = new Date();
+      // One shared thread, 60 messages (deep relationship).
+      const deepOne = scoreStrength(1, now, 60);
+      // Five shared threads, 5 messages total (loose acquaintance).
+      const wideThin = scoreStrength(5, now, 5);
+      // We don't require deepOne > wideThin — count still matters —
+      // but they should be in the same ballpark, not 2x apart like
+      // they were before M0.8.
+      const ratio = wideThin / deepOne;
+      expect(ratio).toBeLessThan(1.6);
+    });
+
+    it("matches prior behavior when totalInteractions is omitted", () => {
+      const now = new Date();
+      const withoutVolume = scoreStrength(3, now);
+      const withImplicit50 = scoreStrength(3, now, 50);
+      // 50+ interactions → volume factor = 1.0, which is identical to
+      // the omitted case (also 1.0). Same final score.
+      expect(withoutVolume).toBeCloseTo(withImplicit50, 2);
+    });
+  });
+});
+
+describe("volumeStrengthFactor (M0.8)", () => {
+  it("floors at 0.5 for zero or negative volume", () => {
+    expect(volumeStrengthFactor(0)).toBeCloseTo(0.5, 2);
+    expect(volumeStrengthFactor(-5)).toBeCloseTo(0.5, 2);
+  });
+
+  it("hits 1.0 at 50 interactions (caps from then on)", () => {
+    expect(volumeStrengthFactor(50)).toBeCloseTo(1.0, 2);
+    expect(volumeStrengthFactor(500)).toBeCloseTo(1.0, 2);
+  });
+
+  it("ramps monotonically between the floor and the cap", () => {
+    expect(volumeStrengthFactor(1)).toBeLessThan(volumeStrengthFactor(10));
+    expect(volumeStrengthFactor(10)).toBeLessThan(volumeStrengthFactor(25));
+    expect(volumeStrengthFactor(25)).toBeLessThan(volumeStrengthFactor(50));
+  });
+
+  it("is bounded in [0.5, 1.0]", () => {
+    for (const n of [0, 1, 3, 10, 25, 50, 100, 1000]) {
+      const v = volumeStrengthFactor(n);
+      expect(v).toBeGreaterThanOrEqual(0.5);
+      expect(v).toBeLessThanOrEqual(1.0);
+    }
   });
 });
 
