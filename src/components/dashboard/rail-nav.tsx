@@ -9,7 +9,6 @@ import {
   Activity,
   Settings,
   Merge,
-  Plug,
   Search,
   Wrench,
   ChevronRight,
@@ -33,7 +32,6 @@ const ITEMS: RailItem[] = [
   { href: "/activity",    label: "Activity",     icon: Activity, group: "general" },
   { href: "/people",      label: "People",       icon: Users,    group: "general" },
   { href: "/circles",     label: "Circles",      icon: CircleDot, group: "general" },
-  { href: "/integrations",label: "Integrations", icon: Plug,     group: "tools" },
   { href: "/merge",       label: "Merge",        icon: Merge,    group: "tools" },
   { href: "/admin/jobs",  label: "Admin",        icon: Wrench,   group: "tools" },
   { href: "/settings",    label: "Settings",     icon: Settings, group: "tools" },
@@ -50,9 +48,9 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const general = ITEMS.filter((i) => i.group === "general");
   const tools = ITEMS.filter((i) => i.group === "tools");
 
-  // Surface a terracotta status dot on the Integrations item when any
-  // Google account needs reconnect. Same query the banner uses; React
-  // Query dedups the network hit.
+  // Integrations now lives inside Settings, so the terracotta reconnect
+  // dot rides the Settings item. Same query the banner uses; React Query
+  // dedups the network hit.
   const { data: dataHealth } = useQuery<DataHealthResponse>({
     queryKey: ["data-health"],
     queryFn: async () => {
@@ -63,7 +61,7 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
   });
-  const integrationsHasIssue =
+  const settingsHasIssue =
     (dataHealth?.googleAccounts.filter((a) => a.needsReconnect).length ?? 0) > 0;
 
   return (
@@ -120,7 +118,7 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
           label="Tools"
           items={tools}
           pathname={pathname}
-          statusDots={integrationsHasIssue ? { "/integrations": "urgent" } : undefined}
+          statusDots={settingsHasIssue ? { "/settings": "urgent" } : undefined}
         />
       </nav>
 
