@@ -934,7 +934,9 @@ function GroupsTab({
 
 function GroupChatRow({
   item,
-  onResolve,
+  // onResolve omitted from destructure — the "Already replied" chip
+  // that consumed it was removed in M0.5b. Prop kept on the type so
+  // callers' shape doesn't change.
   onDismiss,
   onSnooze,
 }: {
@@ -1060,28 +1062,12 @@ function GroupChatRow({
         </div>
       )}
 
-      {/* "Already replied?" — quiet moss-tinted chip. Matches InboxRow. */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onResolve();
-        }}
-        title="Mark as already replied"
-        className="mt-2 inline-flex items-center gap-1.5 rounded-full pl-2 pr-3 py-1 text-[11.5px] font-medium transition-colors"
-        style={{
-          backgroundColor: "#E4EBE3",
-          color: "#6B8A6E",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "#D6E2D5";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "#E4EBE3";
-        }}
-      >
-        <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#6B8A6E" }} />
-        Already replied
-      </button>
+      {/* "Already replied" manual chip was removed in M0.5b.
+          onOutboundInteraction in lib/inbox.ts auto-resolves any
+          OPEN item on the next Gmail sync once Jennifer sends a
+          reply. Manual mark-as-replied is no longer needed; if the
+          auto-resolve misses a case, that's a sync gap worth fixing
+          rather than papering over with a user-visible button. */}
 
       {/* Actions: Dismiss + Snooze */}
       <div className="flex items-center gap-2 mt-2">
@@ -1158,7 +1144,8 @@ function truncateMessage(text: string, maxLen = 80): string {
 
 function InboxRow({
   item,
-  onResolve,
+  // Same as GroupChatRow — onResolve dropped from destructure post-
+  // M0.5b. Auto-resolve via lib/inbox.ts handles the surface.
   onDismiss,
   onSnooze,
 }: {
@@ -1383,33 +1370,8 @@ function InboxRow({
         </div>
       )}
 
-      {/* "Already replied?" — quiet moss-tinted inline chip; same action,
-          much less visual weight than the prior full-width button. */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onResolve();
-        }}
-        title="Mark as already replied"
-        className="mt-2 inline-flex items-center gap-1.5 rounded-full pl-2 pr-3 py-1 text-[11.5px] font-medium transition-colors"
-        style={{
-          backgroundColor: "var(--status-success-bg)",
-          color: "var(--status-success)",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--surface-olive-raised)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--status-success-bg)";
-        }}
-      >
-        <span
-          aria-hidden
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ backgroundColor: "var(--status-success)" }}
-        />
-        Already replied
-      </button>
+      {/* "Already replied" manual chip removed (M0.5b). Auto-resolve
+          via onOutboundInteraction handles it on the next sync. */}
 
       {/* Meta + Actions — actions appear on hover (or focus) on desktop;
           always visible on touch so they remain reachable without hover. */}
