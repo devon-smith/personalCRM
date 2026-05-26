@@ -62,22 +62,26 @@ async function main(): Promise<void> {
       continue;
     }
 
-    await Promise.all(
-      batch.map((item) =>
-        enqueue("inbox-classify", { inboxItemId: item.id, force })
-          .then(() => {
-            stats.enqueued++;
-          })
-          .catch((err) => {
-            stats.skipped++;
-            console.warn(
-              `[skip] item=${item.id} (${item.contactName}) — ${
-                err instanceof Error ? err.message : String(err)
-              }`,
-            );
-          }),
-      ),
-    );
+    // Serialize the inner loop. Fanning out the whole 50-item batch
+    // via Promise.all opens 50 simultaneous pg connections through
+    // queue-client's pool — with the active worker (concurrency 4)
+    // already holding clients, pgBouncer's 15-client session-mode
+    // ceiling rejects the excess. Serial ~12 jobs/sec on the pooler;
+    // throughput is bounded by the Claude classifier downstream
+    // anyway, so this isn't the bottleneck.
+    for (const item of batch) {
+      try {
+        await enqueue("inbox-classify", { inboxItemId: item.id, force });
+        stats.enqueued++;
+      } catch (err) {
+        stats.skipped++;
+        console.warn(
+          `[skip] item=${item.id} (${item.contactName}) — ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   console.log(
