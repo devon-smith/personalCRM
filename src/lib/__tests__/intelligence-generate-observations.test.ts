@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   phraseSignal,
+  lifeEventDetail,
   type Signal,
 } from "@/lib/intelligence/generate-observations";
 
@@ -106,5 +107,105 @@ describe("phraseSignal", () => {
       }),
     );
     expect(out.content).toBe("Test: some new signal.");
+  });
+});
+
+describe("lifeEventDetail — no enum leaks", () => {
+  // Regression: the production data had ContactChangelog rows where
+  // field="web_mention" and the old phrasing said "was mentioned
+  // recently in web_mention". Leaked an internal enum value into
+  // user-facing copy. Verify the fix.
+
+  it("NEWS_MENTION uses the article title from oldValue", () => {
+    expect(
+      lifeEventDetail({
+        type: "NEWS_MENTION",
+        field: "web_mention",
+        oldValue: "Stanford GSB Announces New Faculty Initiative",
+        newValue: "https://gsb.stanford.edu/news/...",
+      }),
+    ).toBe(
+      'was mentioned recently — "Stanford GSB Announces New Faculty Initiative"',
+    );
+  });
+
+  it("NEWS_MENTION falls back to generic phrasing when oldValue is empty", () => {
+    expect(
+      lifeEventDetail({
+        type: "NEWS_MENTION",
+        field: "web_mention",
+        oldValue: "",
+        newValue: null,
+      }),
+    ).toBe("was mentioned in the news recently");
+    expect(
+      lifeEventDetail({
+        type: "NEWS_MENTION",
+        field: "web_mention",
+        oldValue: null,
+        newValue: null,
+      }),
+    ).toBe("was mentioned in the news recently");
+  });
+
+  it("NEWS_MENTION truncates long article titles", () => {
+    const longTitle = "a".repeat(120);
+    const out = lifeEventDetail({
+      type: "NEWS_MENTION",
+      field: "web_mention",
+      oldValue: longTitle,
+      newValue: null,
+    });
+    expect(out).toContain("…");
+    expect(out.length).toBeLessThan(longTitle.length);
+  });
+
+  it("never leaks the `field` enum string into NEWS_MENTION copy", () => {
+    const out = lifeEventDetail({
+      type: "NEWS_MENTION",
+      field: "web_mention",
+      oldValue: null,
+      newValue: null,
+    });
+    expect(out).not.toContain("web_mention");
+  });
+
+  it("default fallback never leaks `field` either", () => {
+    const out = lifeEventDetail({
+      type: "UNKNOWN_FUTURE_TYPE",
+      field: "internal_enum_value_should_not_appear",
+      oldValue: "an old value",
+      newValue: "a new value",
+    });
+    expect(out).toBe("had a recent life update");
+    expect(out).not.toContain("internal_enum");
+    expect(out).not.toContain("→"); // the old "field → newValue" leak
+  });
+
+  it("JOB_CHANGE / COMPANY_CHANGE / ROLE_CHANGE unchanged", () => {
+    expect(
+      lifeEventDetail({
+        type: "JOB_CHANGE",
+        field: "company",
+        oldValue: "Acme",
+        newValue: "Anthropic",
+      }),
+    ).toBe("is now at Anthropic");
+    expect(
+      lifeEventDetail({
+        type: "COMPANY_CHANGE",
+        field: "company",
+        oldValue: null,
+        newValue: "Stripe",
+      }),
+    ).toBe("is now at Stripe");
+    expect(
+      lifeEventDetail({
+        type: "ROLE_CHANGE",
+        field: "title",
+        oldValue: "Engineer",
+        newValue: "VP Engineering",
+      }),
+    ).toBe("has a new role: VP Engineering");
   });
 });

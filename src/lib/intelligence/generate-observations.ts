@@ -284,7 +284,22 @@ function stripQuotes(s: string): string {
   return s.replace(/^"|"$/g, "").trim();
 }
 
-function lifeEventDetail(e: {
+/**
+ * Map a ContactChangelog row to user-facing phrasing.
+ *
+ * Key constraint: NEVER expose raw enum strings (the `field` column
+ * carries internal labels like "web_mention", "company_field" that
+ * leak into copy when used directly). Pull from the human-facing
+ * data fields (oldValue/newValue) and fall back to generic phrasing
+ * rather than the field name.
+ *
+ * Schema convention from signal-detection.ts:
+ *   NEWS_MENTION  → oldValue: article title, newValue: URL
+ *   JOB_CHANGE    → newValue: new company
+ *   COMPANY_CHANGE → newValue: new company
+ *   ROLE_CHANGE   → newValue: new title
+ */
+export function lifeEventDetail(e: {
   type: string;
   field: string;
   oldValue: string | null;
@@ -296,11 +311,19 @@ function lifeEventDetail(e: {
       return `is now at ${e.newValue ?? "a new role"}`;
     case "ROLE_CHANGE":
       return `has a new role: ${e.newValue ?? "title updated"}`;
-    case "NEWS_MENTION":
-      return `was mentioned recently in ${e.field || "the news"}`;
+    case "NEWS_MENTION": {
+      // oldValue holds the article title (per signal-detection.ts).
+      // Use it directly when present, never expose the enum-y `field`
+      // column which leaked "web_mention" into earlier observations.
+      const title = e.oldValue?.trim();
+      if (title && title.length > 0) {
+        const shown = title.length > 70 ? title.slice(0, 67) + "…" : title;
+        return `was mentioned recently — "${shown}"`;
+      }
+      return "was mentioned in the news recently";
+    }
     default:
-      return e.newValue
-        ? `had a life update: ${e.field} → ${e.newValue}`
-        : "had a recent life update";
+      // Don't reference `field` here either — same enum-leak risk.
+      return "had a recent life update";
   }
 }
