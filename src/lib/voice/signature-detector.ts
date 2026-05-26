@@ -20,6 +20,7 @@
  */
 
 import { stripQuotedAndSignature } from "./feature-extraction";
+import { normalizeLine } from "./normalize";
 
 export interface DetectOptions {
   /** Fraction of emails a line must appear in to count as signature.
@@ -53,13 +54,6 @@ export interface DetectionResult {
 const TIMESTAMP_RE = /\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}/;
 const PURE_PUNCT_RE = /^[\s\p{P}\p{S}]+$/u;
 
-function normalize(line: string): string {
-  // Collapse internal whitespace runs and trim. We intentionally
-  // preserve case — "Best, Jennifer" and "best, jennifer" should
-  // count separately because they reflect different patterns.
-  return line.replace(/\s+/g, " ").trim();
-}
-
 function isCandidateLine(line: string): boolean {
   if (line.length < 3) return false;
   if (TIMESTAMP_RE.test(line)) return false;
@@ -82,7 +76,7 @@ function tailCandidates(body: string, tailLines: number): string[] {
   const cleaned = stripQuotedAndSignature(body);
   const lines = cleaned
     .split("\n")
-    .map(normalize)
+    .map(normalizeLine)
     .filter(isCandidateLine);
   return lines.slice(-tailLines);
 }
@@ -91,7 +85,13 @@ export function detectSignatureLines(
   bodies: ReadonlyArray<string>,
   options: DetectOptions = {},
 ): DetectionResult {
-  const threshold = options.threshold ?? 0.3;
+  // 0.20 catches recurring sig variants that don't quite hit 30% (e.g.,
+  // markdown-bold variant A in 30% of corpus, plain variant B in 20%).
+  // With the shared normalizeLine canonicalizing markdown emphasis +
+  // URL defense wrapping, A and B collapse into one bucket and we'd
+  // be over 30% anyway — but the lower floor protects against new
+  // variants the canonicalizer doesn't yet handle.
+  const threshold = options.threshold ?? 0.2;
   const tailLines = options.tailLines ?? 10;
   const minCorpusSize = options.minCorpusSize ?? 20;
 

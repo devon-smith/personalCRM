@@ -224,22 +224,46 @@ async function indexForUser(
   }
 
   // Step 3: embed cleaned bodies via Voyage (batched, optional).
+  //
+  // Batch size capped at 32 (not Voyage's 128 max). A 128-batch of
+  // ~400-token emails is ~50k tokens — Voyage's free-tier per-request
+  // limit chokes on that and returns 429 retryable, which the old
+  // catch silently swallowed (`!err.retryable` skipped logging). We
+  // surface both retryable and terminal errors now, sleep on the
+  // first retryable, and retry the failed batch once before counting
+  // it as a real failure.
+  const EMBED_BATCH_SIZE = Math.min(32, MAX_BATCH_SIZE);
+  const RETRY_DELAY_MS = 8000;
   const embeddings = new Map<string, number[]>(); // emailMessageId → vector
   if (process.env.VOYAGE_API_KEY && prepared.length > 0) {
-    for (let i = 0; i < prepared.length; i += MAX_BATCH_SIZE) {
-      const slice = prepared.slice(i, i + MAX_BATCH_SIZE);
-      try {
-        const { embeddings: vecs } = await embedBatch(
-          slice.map((p) => truncateForEmbedding(p.cleanedBody)),
-          "document",
-        );
-        slice.forEach((p, j) => embeddings.set(p.emailMessageId, vecs[j]));
-      } catch (err) {
-        summary.embedFailures += slice.length;
-        if (err instanceof VoyageError && !err.retryable) {
-          helpers.logger.info(`voice-corpus: voyage terminal error: ${err.message}`);
-          break;
+    for (let i = 0; i < prepared.length; i += EMBED_BATCH_SIZE) {
+      const slice = prepared.slice(i, i + EMBED_BATCH_SIZE);
+      const texts = slice.map((p) => truncateForEmbedding(p.cleanedBody));
+      let succeeded = false;
+      for (let attempt = 0; attempt < 2 && !succeeded; attempt++) {
+        try {
+          const { embeddings: vecs } = await embedBatch(texts, "document");
+          slice.forEach((p, j) => embeddings.set(p.emailMessageId, vecs[j]));
+          succeeded = true;
+        } catch (err) {
+          const isVoyageErr = err instanceof VoyageError;
+          const retryable = isVoyageErr ? err.retryable : false;
+          const msg = err instanceof Error ? err.message : String(err);
+          helpers.logger.info(
+            `voice-corpus: voyage ${retryable ? "retryable" : "terminal"} ` +
+              `error on batch ${i}-${i + slice.length} attempt ${attempt + 1}: ${msg}`,
+          );
+          if (!retryable) break;
+          // Pause before retry — gives the per-minute token window a
+          // chance to reset before the next attempt.
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
         }
+      }
+      if (!succeeded) summary.embedFailures += slice.length;
+      // Small pacing delay between successful batches to stay under
+      // the per-minute token cap even when nothing has failed.
+      if (succeeded && i + EMBED_BATCH_SIZE < prepared.length) {
+        await new Promise((r) => setTimeout(r, 500));
       }
     }
   }

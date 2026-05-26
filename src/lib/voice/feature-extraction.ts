@@ -273,14 +273,13 @@ export function candidateNgrams(cleanedBody: string): string[] {
 /**
  * Strip per-user signature lines from a body. Cuts from the first
  * line that matches any sig line (in the back half of the body) to
- * end-of-body.
+ * end-of-body. Uses the shared `normalizeLine` from ./normalize so
+ * the matching view is identical to what the detector sees.
  *
  * Lives here rather than in signature-detector.ts to avoid a circular
  * import — signature-detector consumes stripQuotedAndSignature above.
  */
-function normalizeForMatch(line: string): string {
-  return line.replace(/\s+/g, " ").trim();
-}
+import { normalizeLine as normalizeForMatch } from "./normalize";
 
 export function stripDetectedSignatures(
   body: string,
