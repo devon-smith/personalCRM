@@ -94,7 +94,13 @@ export async function synthesizeMemory(
 ): Promise<SynthesizedMemory | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  // Same timeout guard as extract-attributes — bounded per-call cost
+  // so a stuck Claude request doesn't block the whole worker loop.
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: 60_000,
+    maxRetries: 2,
+  });
   const prompt = buildSynthesisPrompt(input);
 
   try {

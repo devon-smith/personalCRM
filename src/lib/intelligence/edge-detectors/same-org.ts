@@ -42,6 +42,7 @@ export interface DetectSameOrgParams {
 export async function detectSameOrgEdges(
   params: DetectSameOrgParams,
 ): Promise<EdgeProposal[]> {
+  resetEmissionCounter();
   const { prisma, userId } = params;
   const contacts = await prisma.contact.findMany({
     where: { userId },
@@ -108,17 +109,34 @@ export async function detectSameOrgEdges(
   return proposals;
 }
 
+// Per-bucket cap. A typo'd company or a personal-domain provider
+// that slipped through the filter could otherwise collapse hundreds
+// of contacts together and emit ~20K pairs from a single bucket.
+const MAX_BUCKET_SIZE = 50;
+// Hard global ceiling per detector call. Pathological data shapes
+// (e.g., every contact at "Stanford University" via fuzzy match)
+// shouldn't blow up the daily worker into a million-row transaction.
+const MAX_TOTAL_PAIRS = 20_000;
+
+let emittedSoFar = 0;
+
 function emitPairs(ids: string[], emit: (key: string) => void) {
   if (ids.length < 2) return;
-  // Cap pair generation when a bucket is enormous (a typo'd company
-  // could collapse hundreds of contacts together — unlikely but bounded).
-  const capped = ids.slice(0, 200);
+  const capped = ids.slice(0, MAX_BUCKET_SIZE);
   for (let i = 0; i < capped.length; i++) {
     for (let j = i + 1; j < capped.length; j++) {
+      if (emittedSoFar >= MAX_TOTAL_PAIRS) return;
       if (capped[i] === capped[j]) continue;
       emit(pairKey(capped[i], capped[j]));
+      emittedSoFar++;
     }
   }
+}
+
+/** Reset the global emission counter between detector invocations.
+ *  detectSameOrgEdges calls this at entry. */
+function resetEmissionCounter() {
+  emittedSoFar = 0;
 }
 
 // ─── Pure helpers (exported for testing) ───────────────────

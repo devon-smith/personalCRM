@@ -543,7 +543,14 @@ export async function runNetworkQuery(
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  // 60s per-request timeout + 2 retries. Tool-use loops typically
+  // make 5-10 Claude calls per query; without timeouts, one stuck
+  // call would hang the entire HTTP request.
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: 60_000,
+    maxRetries: 2,
+  });
   const ctx: ToolContext = { prisma: params.prisma, userId: params.userId };
 
   const messages: Anthropic.Messages.MessageParam[] = [

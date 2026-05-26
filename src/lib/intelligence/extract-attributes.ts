@@ -91,7 +91,16 @@ export async function extractAttributes(
 ): Promise<ExtractedAttributes | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  // Timeout + retry guard: the worker hung after 4 contacts on the
+  // first run because the Anthropic SDK default per-request timeout
+  // is effectively unbounded for connection-state edge cases. 60s
+  // hard cap means a stuck call fails fast and the next contact
+  // gets a turn. 2 retries on transient errors (429, 5xx, network).
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: 60_000,
+    maxRetries: 2,
+  });
   const prompt = buildExtractionPrompt(input);
 
   try {

@@ -30,16 +30,20 @@ const graphEdgeExtraction: Task = async (rawPayload, helpers) => {
   const prisma = new PrismaClient({ adapter });
 
   try {
+    helpers.logger.info("graph-edge-extraction: task start, resolving users");
     const userIds = payload.userId
       ? [payload.userId]
       : (await prisma.user.findMany({ select: { id: true } })).map((u) => u.id);
+    helpers.logger.info(
+      `graph-edge-extraction: ${userIds.length} user(s) to process`,
+    );
 
     for (const userId of userIds) {
-      const summary = await extractForUser(prisma, userId);
+      const summary = await extractForUser(prisma, userId, helpers);
       helpers.logger.info(
         `graph-edge-extraction: user=${userId} ` +
           `mutual_thread=${summary.mutualThread} same_org=${summary.sameOrg} ` +
-          `total_edges=${summary.total} new=${summary.created} updated=${summary.updated}`,
+          `total_edges=${summary.total} upserts_completed=${summary.upserted}`,
       );
     }
   } finally {
@@ -51,33 +55,60 @@ interface RunSummary {
   mutualThread: number;
   sameOrg: number;
   total: number;
-  created: number;
-  updated: number;
+  upserted: number;
 }
+
+/** Batch size for chunked upserts. A single Prisma $transaction with
+ *  thousands of upserts on the pooler hangs silently — chunking into
+ *  small transactions keeps each one well under any timeout. */
+const UPSERT_CHUNK_SIZE = 200;
 
 async function extractForUser(
   prisma: PrismaClient,
   userId: string,
+  helpers: { logger: { info: (msg: string) => void } },
 ): Promise<RunSummary> {
   const summary: RunSummary = {
     mutualThread: 0,
     sameOrg: 0,
     total: 0,
-    created: 0,
-    updated: 0,
+    upserted: 0,
   };
 
-  // Run each detector. Easy parallelization since they touch different
-  // source tables. Failures in one don't block the others.
+  // Detector phase. Easy parallelization since they touch different
+  // source tables. Failures in one don't block the others. Log entry
+  // + exit per detector so a future hang is debuggable from the log
+  // alone (the original silent-hang bug had zero observability).
+  helpers.logger.info(
+    `graph-edge-extraction: user=${userId} running detectors`,
+  );
   const [mutualThread, sameOrg] = await Promise.all([
-    detectMutualThreadEdges({ prisma, userId }).catch((err) => {
-      console.warn("[graph-edge-extraction] mutual_thread failed:", err);
-      return [] as EdgeProposal[];
-    }),
-    detectSameOrgEdges({ prisma, userId }).catch((err) => {
-      console.warn("[graph-edge-extraction] same_org failed:", err);
-      return [] as EdgeProposal[];
-    }),
+    detectMutualThreadEdges({ prisma, userId })
+      .then((edges) => {
+        helpers.logger.info(
+          `graph-edge-extraction: user=${userId} mutual_thread detector → ${edges.length} edges`,
+        );
+        return edges;
+      })
+      .catch((err) => {
+        helpers.logger.info(
+          `graph-edge-extraction: user=${userId} mutual_thread FAILED: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [] as EdgeProposal[];
+      }),
+    detectSameOrgEdges({ prisma, userId })
+      .then((edges) => {
+        helpers.logger.info(
+          `graph-edge-extraction: user=${userId} same_org detector → ${edges.length} edges`,
+        );
+        return edges;
+      })
+      .catch((err) => {
+        helpers.logger.info(
+          `graph-edge-extraction: user=${userId} same_org FAILED: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [] as EdgeProposal[];
+      }),
   ]);
   summary.mutualThread = mutualThread.length;
   summary.sameOrg = sameOrg.length;
@@ -94,44 +125,61 @@ async function extractForUser(
     }
   }
   summary.total = merged.size;
+  helpers.logger.info(
+    `graph-edge-extraction: user=${userId} ${merged.size} unique edges to upsert (in chunks of ${UPSERT_CHUNK_SIZE})`,
+  );
 
-  // Upsert. Single transaction so a mid-run failure doesn't leave
-  // half-applied edges that the next run won't reproduce.
-  await prisma.$transaction(
-    Array.from(merged.values()).map((p) => {
-      const evidenceJson = JSON.parse(JSON.stringify(p.evidence)) as Prisma.InputJsonValue;
-      return prisma.contactEdge.upsert({
-        where: {
-          fromContactId_toContactId_edgeType: {
+  // Chunked upsert. The original single-$transaction(...) approach
+  // hung silently on bucket-heavy users (a company with 100+ shared
+  // contacts produces thousands of same_org pairs in one shot;
+  // wrapping all of them in one transaction on the pooler is a
+  // recipe for the connection to give up). Chunking into 200-row
+  // transactions keeps each below any reasonable timeout AND gives
+  // us a progress log line per chunk for debuggability.
+  const allEdges = Array.from(merged.values());
+  for (let i = 0; i < allEdges.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = allEdges.slice(i, i + UPSERT_CHUNK_SIZE);
+    await prisma.$transaction(
+      chunk.map((p) => {
+        const evidenceJson = JSON.parse(
+          JSON.stringify(p.evidence),
+        ) as Prisma.InputJsonValue;
+        return prisma.contactEdge.upsert({
+          where: {
+            fromContactId_toContactId_edgeType: {
+              fromContactId: p.contactA,
+              toContactId: p.contactB,
+              edgeType: p.edgeType,
+            },
+          },
+          create: {
+            userId,
             fromContactId: p.contactA,
             toContactId: p.contactB,
             edgeType: p.edgeType,
+            strength: p.strength,
+            observationCount: 1,
+            evidence: evidenceJson,
           },
-        },
-        create: {
-          userId,
-          fromContactId: p.contactA,
-          toContactId: p.contactB,
-          edgeType: p.edgeType,
-          strength: p.strength,
-          observationCount: 1,
-          evidence: evidenceJson,
-        },
-        update: {
-          // Max strength wins — a stronger signal supersedes weaker
-          // earlier observations.
-          strength: { set: p.strength },
-          observationCount: { increment: 1 },
-          evidence: evidenceJson,
-          lastReinforcedAt: new Date(),
-        },
-      });
-    }),
-  );
+          update: {
+            // Max strength wins — a stronger signal supersedes weaker
+            // earlier observations.
+            strength: { set: p.strength },
+            observationCount: { increment: 1 },
+            evidence: evidenceJson,
+            lastReinforcedAt: new Date(),
+          },
+        });
+      }),
+    );
+    summary.upserted += chunk.length;
+    if ((i / UPSERT_CHUNK_SIZE) % 5 === 0) {
+      helpers.logger.info(
+        `graph-edge-extraction: user=${userId} upserted ${summary.upserted}/${merged.size}`,
+      );
+    }
+  }
 
-  // We can't easily distinguish created vs updated in a batch upsert
-  // without an extra query per row. For now, leave both at 0 and just
-  // report `total` — the diff between runs tells us churn anyway.
   return summary;
 }
 
