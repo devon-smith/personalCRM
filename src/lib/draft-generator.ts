@@ -96,6 +96,19 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     select: { id: true, content: true, mood: true, createdAt: true },
   });
 
+  // Get ContactMemory (M8.3) — synthesized conversational context.
+  // Null when the memory-synthesis worker hasn't run yet for this contact.
+  const memory = await prisma.contactMemory.findUnique({
+    where: { contactId: params.contactId },
+    select: {
+      discussedTopics: true,
+      theyMentioned: true,
+      openThreads: true,
+      personalContext: true,
+      recurringThemes: true,
+    },
+  });
+
   // Get changelog entries (life updates)
   const lifeUpdates = await prisma.contactChangelog.findMany({
     where: { contactId: params.contactId, status: { in: ["PENDING", "SEEN"] } },
@@ -109,6 +122,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     ...interactions.map((i) => `interaction:${i.id}`),
     ...journalEntries.map((j) => `journal:${j.id}`),
     ...lifeUpdates.map((u) => `changelog:${u.id}`),
+    ...(memory ? [`memory:${params.contactId}`] : []),
   ];
 
   const circleNames = contact.circles.map((c) => c.circle.name);
@@ -128,6 +142,11 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
   const lifeUpdatesSummary = lifeUpdates
     .map((u) => `- ${u.type}: ${u.field} changed from "${u.oldValue}" to "${u.newValue}"`)
     .join("\n");
+
+  // M8.3: synthesized memory becomes a structured "What I know"
+  // block. Only render sections that have content so the prompt
+  // doesn't pad with empty headers.
+  const memorySummary = memory ? buildMemorySummary(memory) : "";
 
   // Try AI generation first, fall back to templates
   if (process.env.ANTHROPIC_API_KEY) {
@@ -155,6 +174,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
         interactionsSummary,
         journalSummary,
         lifeUpdatesSummary,
+        memorySummary,
         inputRefs: voiceContext
           ? [
               ...inputRefs,
@@ -199,6 +219,7 @@ async function generateWithAI(params: GenerateDraftParams & {
   interactionsSummary: string;
   journalSummary: string;
   lifeUpdatesSummary: string;
+  memorySummary: string;
   inputRefs: string[];
   voiceContext: VoiceContext | null;
 }): Promise<DraftResult> {
@@ -218,6 +239,7 @@ IMPORTANT:
 - If replying to an email, acknowledge the delay if it's been more than 3 days. Don't be overly apologetic, just briefly.
 - Reference specific things from past interactions when possible.
 - If the contact is at a specific company, you can reference it naturally.
+- Use the "What I know" memory section when present: reference open threads (questions they asked, things you promised), personal context (their family, location, life events), and recurring themes they care about — naturally, not as a checklist. Never invent details that aren't in the memory.
 - Never use: ${profile.bannedPhrases.map((p) => `'${p}'`).join(", ")}.
 - ${profile.firstName} signs emails '${profile.emailSignoff}' for professional${profile.casualSignoff ? `, '${profile.emailSignoff}' for casual` : ", nothing for casual texts"}.
 - For texts/casual: no greeting needed, just dive in.
@@ -278,6 +300,10 @@ Return ONLY valid JSON with no markdown:
     recentInteractions: params.interactionsSummary || "None",
     journalNotes: params.journalSummary || "None",
     lifeUpdates: params.lifeUpdatesSummary || "None",
+    // M8.3: ContactMemory injected as structured "What I know" text.
+    // Empty string when the synthesis worker hasn't profiled this
+    // contact yet — model just gets less context, no schema impact.
+    whatIKnowAboutThem: params.memorySummary || "None",
   }, null, 2);
 
   const message = await anthropic.messages.create({
@@ -397,6 +423,78 @@ async function tryFetchVoiceContext(args: {
     console.warn("[draft-generator] voice context unavailable:", err);
     return null;
   }
+}
+
+/**
+ * Format ContactMemory into the "What I know" prompt block (M8.3).
+ * Pure function — passed only the JSON shape that comes back from
+ * Prisma, no DB access. Returns an empty string when every section
+ * is empty so the caller can short-circuit to "None" in the prompt.
+ *
+ * Exported for unit testing.
+ */
+export function buildMemorySummary(memory: {
+  discussedTopics: unknown;
+  theyMentioned: unknown;
+  openThreads: unknown;
+  personalContext: unknown;
+  recurringThemes: string[];
+}): string {
+  const sections: string[] = [];
+
+  const personal = memory.personalContext as Record<string, unknown> | null;
+  if (personal && typeof personal === "object") {
+    const entries = Object.entries(personal).filter(
+      ([, v]) => typeof v === "string" && v.length > 0,
+    );
+    if (entries.length > 0) {
+      sections.push(
+        "Personal context: " +
+          entries.map(([k, v]) => `${k}: ${v as string}`).join("; "),
+      );
+    }
+  }
+
+  if (memory.recurringThemes.length > 0) {
+    sections.push(`Recurring themes: ${memory.recurringThemes.join(", ")}`);
+  }
+
+  const openThreads = Array.isArray(memory.openThreads)
+    ? (memory.openThreads as Array<Record<string, unknown>>).filter(
+        (t) => t.status !== "resolved",
+      )
+    : [];
+  if (openThreads.length > 0) {
+    sections.push(
+      "Open threads:\n" +
+        openThreads
+          .slice(0, 5)
+          .map((t) => {
+            const who = t.raisedBy === "user" ? "You" : "They";
+            const date = t.raisedAt ? ` (${t.raisedAt})` : "";
+            return `  - ${who}${date}: ${t.subject}`;
+          })
+          .join("\n"),
+    );
+  }
+
+  const mentioned = Array.isArray(memory.theyMentioned)
+    ? (memory.theyMentioned as Array<Record<string, unknown>>)
+    : [];
+  if (mentioned.length > 0) {
+    sections.push(
+      "They've mentioned about themselves:\n" +
+        mentioned
+          .slice(0, 5)
+          .map(
+            (m) =>
+              `  - ${m.subject}${m.context ? ` (${m.context})` : ""}${m.mentionedAt ? ` [${m.mentionedAt}]` : ""}`,
+          )
+          .join("\n"),
+    );
+  }
+
+  return sections.join("\n\n");
 }
 
 function generateFromTemplate(params: {
