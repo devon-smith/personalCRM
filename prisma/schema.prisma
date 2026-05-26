@@ -40,6 +40,11 @@ model User {
   voiceExamples        VoiceExample[]
   savedQueries         SavedQuery[]
   observations         AssistantObservation[]
+  apiUsageLog          ApiUsageLog[]
+  importLog            ImportLog[]
+  mergeLog             MergeLog[]
+  dailyPriorityQueue   DailyPriorityQueue[]
+  inboxPriorityItems   InboxPriorityItem[]
 }
 
 model Account {
@@ -226,6 +231,13 @@ model Contact {
   // toggle can still reveal them so false positives are recoverable.
   isNoise Boolean @default(false)
 
+  // Soft-delete marker. Set when a contact is merged into another via
+  // MergeLog; the row is retained for merge-undo + audit history.
+  // No application code references this today (the live merge path
+  // does a hard delete after writing MergeLog), but the column
+  // exists in prod for historical merge data.
+  deletedAt DateTime?
+
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   interactions        Interaction[]
   relationshipInsight RelationshipInsight?
@@ -238,10 +250,16 @@ model Contact {
   drafts              Draft[]
   profile             ContactProfile?
   memory              ContactMemory?
-  edgesOut            ContactEdge[]    @relation("ContactEdge_from")
-  edgesIn             ContactEdge[]    @relation("ContactEdge_to")
+  edgesOut            ContactEdge[]        @relation("ContactEdge_from")
+  edgesIn             ContactEdge[]        @relation("ContactEdge_to")
 
   inboxItems InboxItem[]
+
+  dailyPriorityQueue        DailyPriorityQueue[]
+  inboxPriorityItems        InboxPriorityItem[]
+  meetingPrepCache          MeetingPrepCache?
+  meetingPrepWebCache       MeetingPrepWebCache?
+  meetingPersonSummaryCache MeetingPersonSummaryCache[]
 
   @@index([userId])
   @@index([email])
@@ -369,7 +387,7 @@ model ContactEdge {
   lastReinforcedAt DateTime @default(now())
 
   fromContact Contact @relation("ContactEdge_from", fields: [fromContactId], references: [id], onDelete: Cascade)
-  toContact   Contact @relation("ContactEdge_to",   fields: [toContactId],   references: [id], onDelete: Cascade)
+  toContact   Contact @relation("ContactEdge_to", fields: [toContactId], references: [id], onDelete: Cascade)
 
   @@unique([fromContactId, toContactId, edgeType])
   @@index([userId, edgeType])
@@ -935,11 +953,11 @@ enum InboxItemStatus {
 // Title is auto-set from the answer's title on first run, but
 // user-editable.
 model SavedQuery {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  query     String   @db.Text
+  query     String    @db.Text
   title     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   // Bumped each time the user re-runs from the /queries page.
   // Powers default sort ("recently used" first).
   lastRunAt DateTime?
@@ -959,11 +977,11 @@ model SavedQuery {
 // can dismiss; dismissed rows stay in the table for history but never
 // re-surface.
 model AssistantObservation {
-  id        String  @id @default(uuid())
-  userId    String
-  content   String  @db.Text
+  id         String  @id @default(uuid())
+  userId     String
+  content    String  @db.Text
   // Optional anchor to a specific contact — UI links to their panel.
-  contactId String?
+  contactId  String?
   // Tag for what produced this observation: "unanswered_inbound",
   // "stale_open_thread", "recent_life_event", "dormant_inner_circle",
   // etc. Used for analytics + future personalization.
@@ -1029,4 +1047,165 @@ model InboxItem {
   @@index([userId, status])
   @@index([userId, status, triggerAt])
   @@index([contactId])
+}
+
+// ─── Historical orphan models (M0.3 backfill) ───────────────────────────
+// These models existed in earlier app versions; the tables still hold
+// real data in prod (ApiUsageLog has 4068 rows of token-spend history,
+// MergeLog has 94 rows of merge audit, etc), but the application code
+// has stopped referencing them. They live in the schema so:
+//   1. `prisma migrate dev` from a fresh clone replays the same schema
+//   2. `prisma migrate status` doesn't report drift
+//   3. Future code that wants to read this historical data can do so
+//      through the generated Prisma client.
+// If you genuinely want to drop one of these, write a new migration
+// that DROPs the table AND remove the model + back-relations here in
+// the same change.
+
+enum AiModel {
+  HAIKU
+  SONNET
+}
+
+enum AiFeature {
+  DRAFT
+  CLASSIFICATION
+  BRIEF
+  CHAT
+  ACTIONS
+  INSIGHTS
+  ENRICHMENT
+}
+
+enum ImportSource {
+  LINKEDIN_CONNECTIONS
+  LINKEDIN_MESSAGES
+  GOOGLE_CONTACTS
+}
+
+enum ImportStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+model ApiUsageLog {
+  id               String    @id @default(uuid())
+  userId           String
+  model            AiModel
+  feature          AiFeature
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model ImportLog {
+  id          String       @id @default(uuid())
+  userId      String
+  source      ImportSource
+  importedAt  DateTime     @default(now())
+  recordCount Int
+  status      ImportStatus @default(SUCCESS)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, source])
+}
+
+model MergeLog {
+  id                String    @id @default(uuid())
+  userId            String
+  primaryContactId  String
+  mergedContactIds  String[]
+  snapshotJson      Json
+  fieldsAdded       Json
+  conflictsResolved Json
+  mergedAt          DateTime  @default(now())
+  undoneAt          DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, mergedAt])
+  @@index([primaryContactId])
+}
+
+model DailyPriorityQueue {
+  id             String    @id @default(uuid())
+  userId         String
+  contactId      String
+  score          Int
+  triggerType    String
+  triggerContext Json
+  generatedAt    DateTime  @default(now())
+  actionedAt     DateTime?
+  snoozedUntil   DateTime?
+  dismissedAt    DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([userId, generatedAt])
+  @@index([userId, actionedAt])
+}
+
+model InboxPriorityItem {
+  id                     String    @id @default(uuid())
+  userId                 String
+  contactId              String
+  threadId               String
+  subject                String?
+  snippet                String?
+  receivedAt             DateTime
+  senderInteractionCount Int       @default(0)
+  isActive               Boolean   @default(true)
+  dismissedUntil         DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, threadId])
+  @@index([userId, isActive])
+}
+
+model MeetingPrepCache {
+  id                   String   @id @default(uuid())
+  contactId            String   @unique
+  generatedAt          DateTime @default(now())
+  historySummary       String
+  talkingPoints        String[]
+  lastMentionedBullets String[]
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, generatedAt])
+}
+
+model MeetingPrepWebCache {
+  id         String   @id @default(uuid())
+  contactId  String   @unique
+  searchedAt DateTime @default(now())
+  findings   Json
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, searchedAt])
+}
+
+model MeetingPersonSummaryCache {
+  id         String   @id @default(uuid())
+  name       String
+  contactId  String?
+  fetchedAt  DateTime @default(now())
+  crmContext Json?
+  webSummary String?
+
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([name, contactId])
+  @@index([fetchedAt])
 }
