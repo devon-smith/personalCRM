@@ -655,6 +655,208 @@ export async function runNetworkQuery(
   };
 }
 
+// ─── Streaming variant (M7.3b) ─────────────────────────────
+
+/**
+ * Events emitted by `runNetworkQueryStream`. The endpoint
+ * serializes these as SSE; the UI renders them as a live progress
+ * trace.
+ */
+export type StreamEvent =
+  | { type: "iteration_start"; iteration: number }
+  | { type: "tool_called"; tool: string; input: unknown }
+  | { type: "tool_result"; tool: string; summary: string; ok: boolean }
+  | { type: "text_delta"; text: string }
+  | { type: "complete"; result: NetworkQueryResult }
+  | { type: "error"; message: string };
+
+/**
+ * Streaming version of runNetworkQuery. Yields events as the
+ * orchestration unfolds — tool calls show up before they execute,
+ * results appear when they return, the final answer streams in
+ * word-by-word. Caller (the API route) bridges these events to
+ * SSE.
+ *
+ * Same correctness semantics as the non-streaming version: same
+ * tool registry, same termination conditions, same final result
+ * shape. The streaming is purely an output channel — if the
+ * client disconnects, we still complete + log.
+ */
+export async function* runNetworkQueryStream(
+  params: RunNetworkQueryParams,
+): AsyncGenerator<StreamEvent, void, void> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    yield { type: "error", message: "ANTHROPIC_API_KEY not configured" };
+    return;
+  }
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: 60_000,
+    maxRetries: 2,
+  });
+  const ctx: ToolContext = { prisma: params.prisma, userId: params.userId };
+  const messages: Anthropic.Messages.MessageParam[] = [
+    { role: "user", content: params.query },
+  ];
+  const trace: ReasoningStep[] = [];
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let finalText = "";
+
+  try {
+    for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+      yield { type: "iteration_start", iteration: iter };
+
+      const stream = anthropic.messages.stream({
+        model: NETWORK_QUERY_MODEL,
+        max_tokens: MAX_TOKENS,
+        system: SYSTEM_PROMPT,
+        tools: TOOLS.map((t) => ({
+          name: t.name,
+          description: t.description,
+          input_schema: t.input_schema,
+        })),
+        messages,
+      });
+
+      // Track partial tool_use blocks as they stream in. The full
+      // input only assembles after all input_json_delta events for
+      // a given index, terminated by content_block_stop. We surface
+      // "tool_called" exactly once per tool, on block completion.
+      const toolMeta = new Map<number, { name: string; id: string }>();
+      const toolInputBuffer = new Map<number, string>();
+
+      for await (const event of stream) {
+        if (
+          event.type === "content_block_start" &&
+          event.content_block.type === "tool_use"
+        ) {
+          toolMeta.set(event.index, {
+            name: event.content_block.name,
+            id: event.content_block.id,
+          });
+          toolInputBuffer.set(event.index, "");
+        } else if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "input_json_delta"
+        ) {
+          const prev = toolInputBuffer.get(event.index) ?? "";
+          toolInputBuffer.set(event.index, prev + event.delta.partial_json);
+        } else if (event.type === "content_block_stop") {
+          const meta = toolMeta.get(event.index);
+          if (meta) {
+            const jsonStr = toolInputBuffer.get(event.index) || "{}";
+            let input: unknown = {};
+            try {
+              input = JSON.parse(jsonStr || "{}");
+            } catch {
+              input = {};
+            }
+            yield { type: "tool_called", tool: meta.name, input };
+          }
+        } else if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          yield { type: "text_delta", text: event.delta.text };
+        }
+      }
+
+      const finalMessage = await stream.finalMessage();
+      totalInputTokens += finalMessage.usage.input_tokens;
+      totalOutputTokens += finalMessage.usage.output_tokens;
+      messages.push({ role: "assistant", content: finalMessage.content });
+
+      const toolUses = finalMessage.content.filter(
+        (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use",
+      );
+      if (finalMessage.stop_reason === "end_turn" || toolUses.length === 0) {
+        finalText = finalMessage.content
+          .map((b) => (b.type === "text" ? b.text : ""))
+          .join("");
+        break;
+      }
+
+      // Execute tools — sequential here so each result event lands
+      // in order in the client trace. Parallelism saves <1s in
+      // practice; the readability win is worth more.
+      const toolResults: Array<{
+        tu: Anthropic.Messages.ToolUseBlock;
+        result: ToolResult;
+      }> = [];
+      for (const tu of toolUses) {
+        const tool = TOOLS.find((t) => t.name === tu.name);
+        if (!tool) {
+          const result: ToolResult = {
+            data: { error: `unknown tool: ${tu.name}` },
+            summary: `Unknown tool: ${tu.name}`,
+          };
+          toolResults.push({ tu, result });
+          yield {
+            type: "tool_result",
+            tool: tu.name,
+            summary: result.summary,
+            ok: false,
+          };
+          continue;
+        }
+        try {
+          const result = await tool.execute(tu.input, ctx);
+          trace.push({
+            tool: tu.name,
+            input: tu.input,
+            summary: result.summary,
+          });
+          toolResults.push({ tu, result });
+          yield {
+            type: "tool_result",
+            tool: tu.name,
+            summary: result.summary,
+            ok: true,
+          };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          trace.push({
+            tool: tu.name,
+            input: tu.input,
+            summary: `Tool errored: ${msg}`,
+          });
+          toolResults.push({
+            tu,
+            result: { data: { error: msg }, summary: `Tool errored: ${msg}` },
+          });
+          yield {
+            type: "tool_result",
+            tool: tu.name,
+            summary: `Tool errored: ${msg}`,
+            ok: false,
+          };
+        }
+      }
+
+      messages.push({
+        role: "user",
+        content: toolResults.map(({ tu, result }) => ({
+          type: "tool_result" as const,
+          tool_use_id: tu.id,
+          content: JSON.stringify(result.data),
+        })),
+      });
+    }
+
+    const result: NetworkQueryResult = {
+      ...parseFinalAnswer(finalText),
+      reasoningTrace: trace,
+      rawAnswer: finalText,
+      usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+    };
+    yield { type: "complete", result };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    yield { type: "error", message: msg };
+  }
+}
+
 // ─── Pure parsers (exported for testing) ───────────────────
 
 interface ParsedAnswer {

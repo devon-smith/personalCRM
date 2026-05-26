@@ -1,23 +1,28 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Sparkles, Search, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials, getAvatarColor } from "@/lib/avatar";
 
 /**
- * Natural-language network query box (M7.3 flagship UI).
+ * Natural-language network query box (M7.3 flagship UI, M7.3b streaming).
  *
- * Lives at the top of the dashboard. Rotating placeholder rotates
- * every 4s when empty + unfocused. Submits to /api/network-query,
- * renders the structured result below.
+ * Lives at the top of the dashboard. Rotating placeholder cycles
+ * through example queries when the input is empty + unfocused.
  *
- * The result UI is intentionally restrained — title, lead paragraph,
- * suggestion cards, "How I thought about this" disclosure. M7.4 will
- * refine this with the "Refine" inline input + animated reasoning
- * traces.
+ * Streaming flow (M7.3b):
+ *   1. User submits → POST /api/network-query?stream=1
+ *   2. SSE arrives: tool_called → tool_result → ... → complete
+ *   3. UI renders live progress (each tool call appears as a
+ *      pulsing trace line, becomes solid when the result lands)
+ *   4. On `complete`, swap the live trace for the final structured
+ *      result panel (title + answer + suggestions + collapsible
+ *      reasoning trace).
+ *
+ * If streaming fails partway, we fall back to the partial trace +
+ * error message — no silent failures.
  */
 
 const EXAMPLE_QUERIES = [
@@ -44,20 +49,38 @@ interface QueryResult {
   usage: { inputTokens: number; outputTokens: number };
 }
 
+interface LiveStep {
+  tool: string;
+  summary: string | null; // null while still executing, set on tool_result
+  ok: boolean | null;
+}
+
 const TOOL_LABELS: Record<string, string> = {
   search_contacts: "Searching contacts",
   find_contacts_by_topic: "Searching by topic",
   get_contact_profile: "Reading profile",
   get_network_neighbors: "Walking the graph",
   get_interaction_history: "Reading interactions",
+  get_memory_summary: "Reading memory",
+  find_open_threads: "Finding open threads",
+  find_personal_mentions: "Searching personal mentions",
+  find_themes: "Pulling themes",
 };
 
 export function NetworkQueryBox() {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
+
+  // Streaming state
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [liveSteps, setLiveSteps] = useState<LiveStep[]>([]);
+  const [streamingText, setStreamingText] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [showTrace, setShowTrace] = useState(false);
+
+  const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Rotate placeholder every 4s when input is empty + unfocused.
@@ -69,28 +92,118 @@ export function NetworkQueryBox() {
     return () => clearInterval(id);
   }, [focused, query]);
 
-  const mutation = useMutation({
-    mutationFn: async (q: string) => {
-      const res = await fetch("/api/network-query", {
+  // Cancel in-flight stream on unmount.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  const submit = useCallback(async (q: string) => {
+    if (!q.trim() || isStreaming) return;
+
+    setResult(null);
+    setError(null);
+    setLiveSteps([]);
+    setStreamingText("");
+    setShowTrace(false);
+    setIsStreaming(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const res = await fetch("/api/network-query?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q }),
+        body: JSON.stringify({ query: q.trim() }),
+        signal: controller.signal,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Query failed");
-      }
-      return res.json() as Promise<QueryResult>;
-    },
-    onSuccess: (data) => setResult(data),
-  });
 
-  const submit = (q: string) => {
-    if (!q.trim() || mutation.isPending) return;
-    setResult(null);
-    setShowTrace(false);
-    mutation.mutate(q.trim());
-  };
+      if (!res.ok || !res.body) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error ?? `Query failed (${res.status})`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE frames are separated by blank lines. Parse complete
+        // frames out of the buffer and keep any trailing partial.
+        let sepIdx: number;
+        while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
+          const frame = buffer.slice(0, sepIdx);
+          buffer = buffer.slice(sepIdx + 2);
+          handleSseFrame(frame);
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setError(err instanceof Error ? err.message : "Stream failed");
+    } finally {
+      setIsStreaming(false);
+      abortRef.current = null;
+    }
+
+    function handleSseFrame(frame: string) {
+      const lines = frame.split("\n");
+      let event = "message";
+      let dataStr = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) event = line.slice(7).trim();
+        else if (line.startsWith("data: ")) dataStr += line.slice(6);
+      }
+      if (!dataStr) return;
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(dataStr);
+      } catch {
+        return;
+      }
+
+      switch (event) {
+        case "tool_called":
+          setLiveSteps((prev) => [
+            ...prev,
+            {
+              tool: String(data.tool ?? "unknown"),
+              summary: null,
+              ok: null,
+            },
+          ]);
+          break;
+        case "tool_result":
+          setLiveSteps((prev) => {
+            // Find the most recent pending step for this tool (null
+            // summary) and resolve it. There can be multiple calls
+            // to the same tool — match the OLDEST pending one.
+            const idx = prev.findIndex(
+              (s) => s.tool === data.tool && s.summary === null,
+            );
+            if (idx < 0) return prev;
+            const next = [...prev];
+            next[idx] = {
+              tool: next[idx].tool,
+              summary: String(data.summary ?? ""),
+              ok: Boolean(data.ok),
+            };
+            return next;
+          });
+          break;
+        case "text_delta":
+          setStreamingText((prev) => prev + String(data.text ?? ""));
+          break;
+        case "complete":
+          setResult(data.result as QueryResult);
+          break;
+        case "error":
+          setError(String(data.message ?? "Unknown error"));
+          break;
+      }
+    }
+  }, [isStreaming]);
 
   return (
     <section className="space-y-3">
@@ -121,21 +234,21 @@ export function NetworkQueryBox() {
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            disabled={mutation.isPending}
+            disabled={isStreaming}
             placeholder={EXAMPLE_QUERIES[placeholderIdx]}
             className="flex-1 bg-transparent border-0 outline-none text-[14px] py-1.5 placeholder:text-[#8C8A82]"
             style={{ color: "#1B1A17" }}
           />
           <button
             type="submit"
-            disabled={!query.trim() || mutation.isPending}
+            disabled={!query.trim() || isStreaming}
             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-[12px] font-medium disabled:opacity-40 transition-opacity"
             style={{
               backgroundColor: "#7A4F3C",
               color: "white",
             }}
           >
-            {mutation.isPending ? (
+            {isStreaming ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <Search className="h-3 w-3" />
@@ -145,23 +258,99 @@ export function NetworkQueryBox() {
         </div>
       </form>
 
-      {mutation.isError && (
+      {/* Live trace while streaming — collapses into the final
+          result panel once `complete` arrives. */}
+      {isStreaming && liveSteps.length > 0 && !result && (
+        <LiveTracePanel steps={liveSteps} streamingText={streamingText} />
+      )}
+
+      {error && (
         <div
           className="text-[12px] px-3 py-2 rounded-xl"
           style={{ backgroundColor: "#F5E6E2", color: "#7A2D2D" }}
         >
-          {mutation.error instanceof Error
-            ? mutation.error.message
-            : "Something went wrong"}
+          {error}
         </div>
       )}
 
-      {result && <QueryResultPanel result={result} showTrace={showTrace} onToggleTrace={() => setShowTrace((v) => !v)} />}
+      {result && (
+        <QueryResultPanel
+          result={result}
+          showTrace={showTrace}
+          onToggleTrace={() => setShowTrace((v) => !v)}
+        />
+      )}
     </section>
   );
 }
 
-// ─── Result render ─────────────────────────────────────────
+// ─── Live trace (visible while streaming) ──────────────────
+
+function LiveTracePanel({
+  steps,
+  streamingText,
+}: {
+  steps: LiveStep[];
+  streamingText: string;
+}) {
+  return (
+    <article
+      className="rounded-2xl p-4 space-y-1.5"
+      style={{ backgroundColor: "#F4EFE3", border: "1px solid #ECE7D9" }}
+    >
+      <div
+        className="text-[10px] uppercase tracking-wider mb-2"
+        style={{ color: "#8C8A82" }}
+      >
+        Thinking…
+      </div>
+      {steps.map((step, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-2 text-[13px]"
+          style={{
+            color: step.summary ? "#1B1A17" : "#5A574F",
+            opacity: step.summary ? 1 : 0.7,
+          }}
+        >
+          {step.summary === null ? (
+            <Loader2
+              className="h-3 w-3 animate-spin shrink-0"
+              style={{ color: "#7A4F3C" }}
+            />
+          ) : (
+            <span
+              className="h-3 w-3 rounded-full shrink-0 inline-block"
+              style={{
+                backgroundColor: step.ok ? "#7A4F3C" : "#A85A45",
+              }}
+            />
+          )}
+          <span style={{ color: "#5A574F" }}>
+            {TOOL_LABELS[step.tool] ?? step.tool}
+          </span>
+          {step.summary && (
+            <span style={{ color: "#8C8A82" }}>— {step.summary}</span>
+          )}
+        </div>
+      ))}
+      {streamingText && (
+        <p
+          className="text-[14px] leading-relaxed mt-3 pt-3 border-t"
+          style={{ color: "#1B1A17", borderColor: "#ECE7D9" }}
+        >
+          {streamingText}
+          <span
+            className="inline-block w-1 h-3.5 ml-0.5 align-text-bottom animate-pulse"
+            style={{ backgroundColor: "#7A4F3C" }}
+          />
+        </p>
+      )}
+    </article>
+  );
+}
+
+// ─── Final result render (unchanged from M7.3) ─────────────
 
 function QueryResultPanel({
   result,
