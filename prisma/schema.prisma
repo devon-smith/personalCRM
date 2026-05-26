@@ -908,6 +908,29 @@ model Draft {
   inboxItemId String? @unique
   inboxItem   InboxItem? @relation(fields: [inboxItemId], references: [id], onDelete: SetNull)
 
+  // M0.x.6 — Workspace state. Drafts that go through the iterative
+  // workspace (/drafts/[id]/compose) carry their version history,
+  // refinement chat, and the entry-point thread key so refinements
+  // can re-load the inbound message context as needed.
+  //
+  // `workspaceVersions` shape:
+  //   Array<{ version: number, content: string, subjectLine: string | null,
+  //           generatedAt: string, sourceRequest: string | "manual_edit" | "initial",
+  //           tokensIn?: number, tokensOut?: number }>
+  // `refinementChat` shape:
+  //   Array<{ role: "user" | "assistant", content: string, timestamp: string,
+  //           versionId?: number }>
+  //
+  // Both default to empty JSON arrays so existing non-workspace
+  // drafts read cleanly.
+  workspaceVersions Json     @default("[]")
+  refinementChat    Json     @default("[]")
+  /// When set, refinement endpoints re-load the inbound message via
+  /// loadReplyContext (M0.x.4) instead of relying on what was
+  /// passed at create time.
+  threadKey         String?
+  isWorkspaceDraft  Boolean  @default(false)
+
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 

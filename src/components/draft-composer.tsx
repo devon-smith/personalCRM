@@ -527,6 +527,27 @@ export function DraftComposer() {
                 </>
               )}
             </Button>
+
+            {/* M0.x.6: escape hatch into the iterative workspace.
+                Quick modal stays the default; this link upgrades a
+                heavy draft session to the three-column workspace. */}
+            {effectiveContact && (
+              <button
+                onClick={() => {
+                  const params = new URLSearchParams();
+                  params.set("contactId", effectiveContact.id);
+                  if (threadKey) params.set("threadKey", threadKey);
+                  params.set("tone", tone);
+                  params.set("context", context);
+                  closeComposer();
+                  window.location.href = `/drafts/new/compose?${params.toString()}`;
+                }}
+                className="w-full text-[11.5px] underline"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                Open workspace for iterative refinement →
+              </button>
+            )}
           </div>
         )}
 
