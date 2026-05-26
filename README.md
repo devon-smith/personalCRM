@@ -45,6 +45,24 @@ If you're getting bitten repeatedly even with Spotlight excluded, pin Next
 to the last known-stable point release (`npm i next@16.0.4 --save-exact`)
 until the upstream race is fixed.
 
+## Operational scripts
+
+A few helper scripts live in `scripts/` for one-off maintenance.
+None require staging — all are safe to run against the live DB
+(or `--dry-run` to preview).
+
+- **`npx tsx scripts/enqueue.ts <task-name> [<json-payload>]`** —
+  enqueue any worker task by name. Useful for backfills.
+- **`npx tsx scripts/release-stale-locks.ts [--dry-run]`** — release
+  graphile-worker job locks held by dead workers. Targets rows
+  locked >6h with no `last_error`. Run when the queue stops making
+  progress and the worker logs show no activity — usually means a
+  prior process died (OOM, container kill) without releasing its
+  locks. Safe to schedule weekly.
+- **`npx tsx scripts/mark-noise-contacts.ts [--dry-run] [--verbose]`** —
+  scans all contacts through the noise detector and toggles
+  `Contact.isNoise`. Re-run after tightening the detector.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
