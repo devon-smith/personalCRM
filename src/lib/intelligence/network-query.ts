@@ -312,6 +312,200 @@ const TOOLS: RegisteredTool[] = [
       };
     },
   },
+  // ─── Memory tools (M8.2) ────────────────────────────────
+  {
+    name: "get_memory_summary",
+    description:
+      "Pull the synthesized conversational memory for a contact: recent topics discussed, things they've mentioned about themselves, open threads (questions or commitments still pending), personal context (family, location). Use when the user asks 'what did we last discuss', 'what did I promise', 'has X mentioned Y'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "The contact's ID" },
+      },
+      required: ["contactId"],
+    },
+    execute: async (input, ctx) => {
+      const { contactId } = input as { contactId: string };
+      const contact = await ctx.prisma.contact.findFirst({
+        where: { id: contactId, userId: ctx.userId },
+        select: {
+          name: true,
+          memory: {
+            select: {
+              discussedTopics: true,
+              theyMentioned: true,
+              openThreads: true,
+              personalContext: true,
+              recurringThemes: true,
+              synthesizedAt: true,
+            },
+          },
+        },
+      });
+      if (!contact?.memory) {
+        return {
+          data: { error: "no memory synthesized yet" },
+          summary: `${contact?.name ?? "Contact"} has no memory yet (worker runs daily)`,
+        };
+      }
+      return {
+        data: contact.memory,
+        summary: `Pulled conversational memory for ${contact.name}`,
+      };
+    },
+  },
+  {
+    name: "find_open_threads",
+    description:
+      "Across all contacts (or a specific one if contactId provided), find open conversational threads — questions raised but not answered, commitments made but not fulfilled. Use for 'what do I owe people', 'what's still open'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contactId: {
+          type: "string",
+          description:
+            "Optional — restrict to one contact. Omit to scan globally.",
+        },
+        limit: { type: "number", description: "Max threads, default 20" },
+      },
+    },
+    execute: async (input, ctx) => {
+      const { contactId, limit = 20 } = input as {
+        contactId?: string;
+        limit?: number;
+      };
+      const memories = await ctx.prisma.contactMemory.findMany({
+        where: contactId
+          ? { contactId, contact: { userId: ctx.userId } }
+          : { contact: { userId: ctx.userId } },
+        select: {
+          openThreads: true,
+          contact: { select: { id: true, name: true } },
+        },
+      });
+      const allThreads: Array<{
+        contactId: string;
+        contactName: string;
+        subject: string;
+        raisedBy: string;
+        raisedAt: string;
+        status: string;
+      }> = [];
+      for (const m of memories) {
+        if (!Array.isArray(m.openThreads)) continue;
+        for (const t of m.openThreads as Array<Record<string, unknown>>) {
+          if (typeof t !== "object" || t === null) continue;
+          if (t.status === "resolved") continue;
+          allThreads.push({
+            contactId: m.contact.id,
+            contactName: m.contact.name,
+            subject: String(t.subject ?? ""),
+            raisedBy: String(t.raisedBy ?? ""),
+            raisedAt: String(t.raisedAt ?? ""),
+            status: String(t.status ?? "open"),
+          });
+        }
+      }
+      // Sort by raisedAt desc so most-recent unresolved threads land first.
+      allThreads.sort((a, b) => b.raisedAt.localeCompare(a.raisedAt));
+      const trimmed = allThreads.slice(0, limit);
+      return {
+        data: trimmed,
+        summary: `${trimmed.length} open thread${trimmed.length === 1 ? "" : "s"}${contactId ? " for this contact" : " across all contacts"}`,
+      };
+    },
+  },
+  {
+    name: "find_personal_mentions",
+    description:
+      "Search across all contacts' memory for things THEY have mentioned about themselves matching a query (e.g., 'daughter applying to Stanford', 'sabbatical', 'moving to NYC'). Returns contacts who said something matching with the context.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "What to search for — keyword or short phrase",
+        },
+        limit: { type: "number", description: "Max results, default 15" },
+      },
+      required: ["query"],
+    },
+    execute: async (input, ctx) => {
+      const { query, limit = 15 } = input as { query: string; limit?: number };
+      const memories = await ctx.prisma.contactMemory.findMany({
+        where: { contact: { userId: ctx.userId } },
+        select: {
+          theyMentioned: true,
+          contact: { select: { id: true, name: true } },
+        },
+      });
+      const q = query.toLowerCase();
+      const matches: Array<{
+        contactId: string;
+        contactName: string;
+        subject: string;
+        context: string;
+        mentionedAt: string;
+      }> = [];
+      for (const m of memories) {
+        if (!Array.isArray(m.theyMentioned)) continue;
+        for (const item of m.theyMentioned as Array<Record<string, unknown>>) {
+          if (typeof item !== "object" || item === null) continue;
+          const subject = String(item.subject ?? "");
+          const context = String(item.context ?? "");
+          if (
+            subject.toLowerCase().includes(q) ||
+            context.toLowerCase().includes(q)
+          ) {
+            matches.push({
+              contactId: m.contact.id,
+              contactName: m.contact.name,
+              subject,
+              context,
+              mentionedAt: String(item.mentionedAt ?? ""),
+            });
+          }
+        }
+      }
+      matches.sort((a, b) => b.mentionedAt.localeCompare(a.mentionedAt));
+      return {
+        data: matches.slice(0, limit),
+        summary: `${matches.length} contact${matches.length === 1 ? "" : "s"} mentioned something matching "${query}"`,
+      };
+    },
+  },
+  {
+    name: "find_themes",
+    description:
+      "Get the recurring themes (topics that surface repeatedly) for a contact. Use to understand what's most on someone's mind across all their interactions with the user.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contactId: { type: "string", description: "The contact's ID" },
+      },
+      required: ["contactId"],
+    },
+    execute: async (input, ctx) => {
+      const { contactId } = input as { contactId: string };
+      const memory = await ctx.prisma.contactMemory.findFirst({
+        where: { contactId, contact: { userId: ctx.userId } },
+        select: { recurringThemes: true, contact: { select: { name: true } } },
+      });
+      if (!memory) {
+        return {
+          data: { error: "no memory synthesized yet" },
+          summary: "No memory data for this contact",
+        };
+      }
+      return {
+        data: { themes: memory.recurringThemes },
+        summary:
+          memory.recurringThemes.length > 0
+            ? `${memory.recurringThemes.length} recurring themes for ${memory.contact.name}`
+            : `${memory.contact.name} has no recurring themes identified yet`,
+      };
+    },
+  },
 ];
 
 // ─── Orchestrator ──────────────────────────────────────────

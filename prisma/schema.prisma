@@ -229,6 +229,7 @@ model Contact {
   emailMessages       EmailMessage[]
   drafts              Draft[]
   profile             ContactProfile?
+  memory              ContactMemory?
   edgesOut            ContactEdge[]    @relation("ContactEdge_from")
   edgesIn             ContactEdge[]    @relation("ContactEdge_to")
 
@@ -279,6 +280,50 @@ model ContactProfile {
   interactionsAtGeneration Int      @default(0)
   generatedAt              DateTime @default(now())
   updatedAt                DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+}
+
+// Synthesized relational memory per contact (M8.1). Distinct from
+// ContactProfile (M7.1) — profile holds STABLE attributes (expertise,
+// communication style); memory holds CONVERSATIONAL state (what's
+// been discussed, what's open, what they mentioned about themselves).
+//
+// Generated incrementally: each synthesis pass pulls the prior
+// memory and layers in new interactions since interactionsAtSynthesis,
+// producing an updated snapshot. Throttled to contacts with ≥5 new
+// interactions since the last synthesis.
+model ContactMemory {
+  id        String @id @default(uuid())
+  contactId String @unique
+
+  // Topics that have come up in conversation, with last-mention date
+  // and rough frequency. Shape: [{ topic, lastMentioned, frequency }]
+  discussedTopics Json @default("[]")
+
+  // Personal things THEY mentioned about themselves (family, life
+  // events, opinions). Shape: [{ subject, context, mentionedAt }]
+  theyMentioned Json @default("[]")
+
+  // Open conversational threads — questions asked but not answered,
+  // commitments made but not fulfilled. Shape:
+  // [{ subject, raisedBy: "user"|"them", raisedAt, status }]
+  openThreads Json @default("[]")
+
+  // Stable personal context: family, location, role transitions,
+  // life events. Shape: { family?, location?, recentTransitions? }
+  personalContext Json @default("{}")
+
+  // Recurring themes — topics that surface repeatedly. Surfaced
+  // separately from discussedTopics so the UI can lead with them.
+  recurringThemes String[] @default([])
+
+  // Throttling — only re-synthesize when delta exceeds threshold.
+  interactionsAtSynthesis Int      @default(0)
+  synthesizedAt           DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 

@@ -115,9 +115,9 @@ describe("parseFinalAnswer", () => {
 });
 
 describe("tool registry", () => {
-  it("registers exactly the 5 tools shipped in M7.3", () => {
+  it("registers all 9 tools (5 from M7.3 + 4 memory tools from M8.2)", () => {
     // If this number changes, double-check the system prompt still
     // describes the right tools to Claude.
-    expect(NETWORK_QUERY_TOOL_COUNT).toBe(5);
+    expect(NETWORK_QUERY_TOOL_COUNT).toBe(9);
   });
 });

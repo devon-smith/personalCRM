@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles, Users } from "lucide-react";
+import { Sparkles, Users, BookOpen } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -33,20 +33,173 @@ export function IntelligenceSection({ contactId }: { contactId: string }) {
     },
   });
 
+  const { data: memoryData } = useQuery({
+    queryKey: ["contact", contactId, "memory"],
+    queryFn: async () => {
+      const res = await fetch(`/api/contacts/${contactId}/memory`);
+      if (!res.ok) throw new Error("Failed to load memory");
+      return res.json() as Promise<{ memory: MemoryShape | null }>;
+    },
+  });
+
   const profile = profileData?.profile;
   const neighbors = networkData?.neighbors ?? [];
+  const memory = memoryData?.memory;
 
-  if (!profile && neighbors.length === 0) {
-    // Don't render an empty pane — the daily worker hasn't populated
-    // these yet, and a "no data" panel is just noise.
+  if (!profile && neighbors.length === 0 && !memory) {
     return null;
   }
 
   return (
     <div className="space-y-5">
+      {memory && <MemoryPanel memory={memory} />}
       {profile && <AboutPanel profile={profile} />}
       {neighbors.length > 0 && <NetworkPanel neighbors={neighbors} />}
     </div>
+  );
+}
+
+// ─── Memory panel (M8.1) ────────────────────────────────────
+
+interface MemoryShape {
+  discussedTopics: Array<{ topic: string; lastMentioned: string; frequency: string }>;
+  theyMentioned: Array<{ subject: string; context: string; mentionedAt: string }>;
+  openThreads: Array<{
+    subject: string;
+    raisedBy: string;
+    raisedAt: string;
+    status: string;
+  }>;
+  personalContext: Record<string, string>;
+  recurringThemes: string[];
+  synthesizedAt: string;
+}
+
+function MemoryPanel({ memory }: { memory: MemoryShape }) {
+  const personalEntries = Object.entries(memory.personalContext).filter(
+    ([, v]) => v && v.length > 0,
+  );
+  const openThreads = memory.openThreads.filter((t) => t.status !== "resolved");
+
+  // If memory exists but everything's empty, don't render the panel.
+  if (
+    memory.recurringThemes.length === 0 &&
+    memory.theyMentioned.length === 0 &&
+    openThreads.length === 0 &&
+    personalEntries.length === 0
+  ) {
+    return null;
+  }
+
+  return (
+    <section
+      className="rounded-2xl p-4"
+      style={{ backgroundColor: "#EFEAE0", border: "1px solid #DDD9CF" }}
+    >
+      <header className="flex items-center gap-1.5 mb-3">
+        <BookOpen className="h-3.5 w-3.5" style={{ color: "#7A4F3C" }} />
+        <h3
+          className="text-[11px] font-medium uppercase tracking-wider"
+          style={{ color: "#5A574F" }}
+        >
+          What I know
+        </h3>
+      </header>
+
+      <div className="space-y-3 text-[13px]">
+        {memory.recurringThemes.length > 0 && (
+          <div>
+            <div
+              className="text-[10px] uppercase tracking-wide mb-1"
+              style={{ color: "#8C8A82" }}
+            >
+              Themes
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {memory.recurringThemes.map((t) => (
+                <span
+                  key={t}
+                  className="px-1.5 py-0.5 rounded-full text-[11px]"
+                  style={{ backgroundColor: "#E4E9E9", color: "#5A574F" }}
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {personalEntries.length > 0 && (
+          <div>
+            <div
+              className="text-[10px] uppercase tracking-wide mb-1"
+              style={{ color: "#8C8A82" }}
+            >
+              About them
+            </div>
+            <ul className="space-y-0.5">
+              {personalEntries.map(([k, v]) => (
+                <li key={k} style={{ color: "#1B1A17" }}>
+                  <span style={{ color: "#5A574F" }}>{k}:</span> {v}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {openThreads.length > 0 && (
+          <div>
+            <div
+              className="text-[10px] uppercase tracking-wide mb-1"
+              style={{ color: "#8C8A82" }}
+            >
+              Open threads
+            </div>
+            <ul className="space-y-1">
+              {openThreads.slice(0, 4).map((t, i) => (
+                <li key={i} className="flex items-baseline gap-2">
+                  <span
+                    className="text-[10px] uppercase tracking-wide shrink-0"
+                    style={{
+                      color: t.status === "stale" ? "#7A2D2D" : "#7A4F3C",
+                    }}
+                  >
+                    {t.raisedBy === "user" ? "You" : "They"}
+                  </span>
+                  <span style={{ color: "#1B1A17" }}>{t.subject}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {memory.theyMentioned.length > 0 && (
+          <div>
+            <div
+              className="text-[10px] uppercase tracking-wide mb-1"
+              style={{ color: "#8C8A82" }}
+            >
+              They mentioned
+            </div>
+            <ul className="space-y-1">
+              {memory.theyMentioned.slice(0, 4).map((m, i) => (
+                <li key={i} style={{ color: "#1B1A17" }}>
+                  {m.subject}
+                  {m.context && (
+                    <span
+                      className="ml-1 text-[11px]"
+                      style={{ color: "#8C8A82" }}
+                    >
+                      ({m.context})
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

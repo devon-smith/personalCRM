@@ -35,6 +35,7 @@ import morningBrief from "./tasks/morning-brief.js";
 import voiceCorpusIndex from "./tasks/voice-corpus-index.js";
 import contactAttributeExtraction from "./tasks/contact-attribute-extraction.js";
 import graphEdgeExtraction from "./tasks/graph-edge-extraction.js";
+import memorySynthesis from "./tasks/memory-synthesis.js";
 
 // WORKER_DATABASE_URL takes precedence so the worker can talk to the direct
 // connection (port 5432) when the pooler (6543) hits its session limit. The
@@ -63,6 +64,7 @@ const taskList = {
   "voice-corpus-index": voiceCorpusIndex,
   "contact-attribute-extraction": contactAttributeExtraction,
   "graph-edge-extraction": graphEdgeExtraction,
+  "memory-synthesis": memorySynthesis,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -107,6 +109,10 @@ const crontab = `
 # same-org). Runs after contact-attribute-extraction so contact data
 # is freshest.
 30 2 * * * graph-edge-extraction
+# Daily at 03:00 UTC: re-synthesize ContactMemory for contacts with
+# ≥5 new interactions since last synthesis. 30 contacts per run,
+# Claude Sonnet per call.
+0 3 * * * memory-synthesis
 `.trim();
 
 async function main() {
