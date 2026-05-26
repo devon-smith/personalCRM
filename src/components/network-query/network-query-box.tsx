@@ -10,6 +10,7 @@ import {
   Bookmark,
   Wand2,
   Check,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -86,12 +87,23 @@ export function NetworkQueryBox() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [liveSteps, setLiveSteps] = useState<LiveStep[]>([]);
   const [streamingText, setStreamingText] = useState("");
-  const [result, setResult] = useState<QueryResult | null>(null);
+  // Hydrate from sessionStorage so a parent re-mount (e.g. dashboard's
+  // loading skeleton firing during a sync invalidation) doesn't wipe
+  // the answer Jennifer is reading. Persists per tab; clears when the
+  // tab closes or the user explicitly dismisses / submits a new query.
+  // M0.9 fix: "I did a query on the ai but then the results went away
+  // very quickly."
+  const [result, setResult] = useState<QueryResult | null>(() =>
+    readPersistedResult(),
+  );
+  const [submittedQuery, setSubmittedQuery] = useState<string | null>(() =>
+    readPersistedQuery(),
+  );
   const [error, setError] = useState<string | null>(null);
   const [showTrace, setShowTrace] = useState(false);
-  // M7.4: track which query produced the current result so refine
-  // + save can reference it. Set on every submit.
-  const [submittedQuery, setSubmittedQuery] = useState<string | null>(null);
+  // M7.4: submittedQuery tracks which question produced the current
+  // result so refine + save can reference it. Hydrated above alongside
+  // result so the pair stays in sync across re-mounts.
   const [savedFlash, setSavedFlash] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -108,6 +120,23 @@ export function NetworkQueryBox() {
 
   // Cancel in-flight stream on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Persist result + submittedQuery to sessionStorage on every change.
+  // Hydration runs in useState initializers above; this effect keeps
+  // storage in sync going forward.
+  useEffect(() => {
+    persistResult(result, submittedQuery);
+  }, [result, submittedQuery]);
+
+  // Explicit dismiss handler — the "navigates away / new query" cases
+  // are handled by unmount + the submit reset.
+  const dismissResult = useCallback(() => {
+    setResult(null);
+    setSubmittedQuery(null);
+    setStreamingText("");
+    setLiveSteps([]);
+    setShowTrace(false);
+  }, []);
 
   const submit = useCallback(async (q: string) => {
     if (!q.trim() || isStreaming) return;
@@ -323,10 +352,69 @@ export function NetworkQueryBox() {
             }
           }}
           savedFlash={savedFlash}
+          onDismiss={dismissResult}
         />
       )}
     </section>
   );
+}
+
+// ─── Result persistence helpers ────────────────────────────
+//
+// sessionStorage survives the same-tab life of the component but dies
+// on tab close. Parent re-mounts (e.g. dashboard sync invalidation
+// briefly triggering the loading skeleton) no longer wipe the answer
+// Jennifer is reading. Defensive against ANY re-mount cause, not just
+// the ones we can prove from the diagnostic.
+
+const STORAGE_KEY = "network-query-last-result";
+
+interface PersistedSlot {
+  result: QueryResult;
+  submittedQuery: string;
+}
+
+function readPersistedResult(): QueryResult | null {
+  const slot = readSlot();
+  return slot?.result ?? null;
+}
+
+function readPersistedQuery(): string | null {
+  const slot = readSlot();
+  return slot?.submittedQuery ?? null;
+}
+
+function readSlot(): PersistedSlot | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedSlot>;
+    if (!parsed.result || !parsed.submittedQuery) return null;
+    return parsed as PersistedSlot;
+  } catch {
+    return null;
+  }
+}
+
+function persistResult(
+  result: QueryResult | null,
+  submittedQuery: string | null,
+): void {
+  try {
+    if (typeof window === "undefined") return;
+    if (result && submittedQuery) {
+      window.sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ result, submittedQuery }),
+      );
+    } else {
+      window.sessionStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    // SessionStorage can throw in private browsing / quota-exceeded
+    // / disabled-cookies contexts. Persistence is best-effort.
+  }
 }
 
 // ─── Live trace (visible while streaming) ──────────────────
@@ -427,6 +515,7 @@ function QueryResultPanel({
   onRefine,
   onSave,
   savedFlash,
+  onDismiss,
 }: {
   result: QueryResult;
   showTrace: boolean;
@@ -434,17 +523,37 @@ function QueryResultPanel({
   onRefine: (refinement: string) => void;
   onSave: () => void;
   savedFlash: boolean;
+  onDismiss: () => void;
 }) {
   const [refinement, setRefinement] = useState("");
   const [refineOpen, setRefineOpen] = useState(false);
   return (
     <article
-      className="rounded-2xl p-5 space-y-4"
+      className="relative rounded-2xl p-5 space-y-4"
       style={{ backgroundColor: "#FBF8F1", border: "1px solid #ECE7D9" }}
     >
+      {/* Explicit dismiss — the answer otherwise persists until a new
+          query or tab close. Top-right, subtle. */}
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss result"
+        className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+        style={{ color: "#8C8A82" }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "#ECE7D9";
+          e.currentTarget.style.color = "#1B1A17";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "";
+          e.currentTarget.style.color = "#8C8A82";
+        }}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
       {result.title && (
         <h2
-          className="text-[15px] font-medium uppercase tracking-wider"
+          className="text-[15px] font-medium uppercase tracking-wider pr-6"
           style={{ color: "#5A574F" }}
         >
           {result.title}
