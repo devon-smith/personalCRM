@@ -39,12 +39,32 @@ export async function GET(
       runCount: true,
       createdAt: true,
       lastRunAt: true,
+      parentQueryId: true,
+      followUpCount: true,
     },
   });
   if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.json({ savedQuery: row });
+
+  // M0.x.9: pull the follow-up thread (children) chronologically so
+  // /ask/[id] can render the conversation under the parent answer.
+  // Owner-scoped via session userId for safety.
+  const followUps = await prisma.savedQuery.findMany({
+    where: { parentQueryId: id, userId: session.user.id },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      query: true,
+      title: true,
+      answer: true,
+      evidence: true,
+      isStarred: true,
+      createdAt: true,
+    },
+  });
+
+  return NextResponse.json({ savedQuery: row, followUps });
 }
 
 export async function DELETE(

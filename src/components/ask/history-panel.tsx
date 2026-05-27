@@ -34,6 +34,8 @@ export interface SavedQueryRow {
   runCount: number;
   createdAt: string;
   lastRunAt: string | null;
+  /** M0.x.9 — number of follow-up queries threaded under this one. */
+  followUpCount?: number;
 }
 
 interface Evidence {
@@ -337,6 +339,18 @@ function HistoryRow({
             style={{ color: "var(--text-primary)" }}
           >
             {row.title ?? row.query}
+            {(row.followUpCount ?? 0) > 0 && (
+              <span
+                className="ml-1.5 text-[11px] font-normal"
+                style={{ color: "var(--text-tertiary)" }}
+                title={`${row.followUpCount} follow-up question${
+                  row.followUpCount === 1 ? "" : "s"
+                }`}
+              >
+                · +{row.followUpCount} follow-up
+                {row.followUpCount === 1 ? "" : "s"}
+              </span>
+            )}
           </p>
           {row.title && row.title !== row.query && (
             <p

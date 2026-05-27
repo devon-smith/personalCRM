@@ -1067,11 +1067,26 @@ model SavedQuery {
   isStarred    Boolean  @default(false)
   runCount     Int      @default(1)
 
+  // M0.x.9 — follow-up threading. A query asked AS A FOLLOW-UP to
+  // a previous one carries the parent's id here. The parent stays
+  // the canonical top-level entry; children render nested under it
+  // in /ask/[id]. Top-level history hides rows with a non-null
+  // parentQueryId so the list stays clean.
+  parentQueryId String?
+  parent        SavedQuery?  @relation("FollowUps", fields: [parentQueryId], references: [id], onDelete: SetNull)
+  followUps     SavedQuery[] @relation("FollowUps")
+  /// Denormalized — incremented whenever a child is created.
+  /// Lets the history list show "+N follow-ups" badges without
+  /// a per-row count query.
+  followUpCount Int @default(0)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, lastRunAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, isStarred, createdAt(sort: Desc)])
+  // For /ask/[id]: pull children of a query in chronological order.
+  @@index([parentQueryId, createdAt])
 }
 
 // Unprompted observations the assistant surfaces on the dashboard

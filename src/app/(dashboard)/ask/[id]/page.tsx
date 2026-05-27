@@ -11,9 +11,11 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
+  CornerDownRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Surface, SectionLabel } from "@/components/ds";
+import { NetworkQueryBox } from "@/components/network-query/network-query-box";
 
 /**
  * /ask/[id] — deep-link to one historical query + its answer (M0.x.7).
@@ -21,6 +23,10 @@ import { Surface, SectionLabel } from "@/components/ds";
  * Shareable single-user URL. Star, delete, and "Re-run" actions
  * work the same as the row in /ask history. Re-run navigates back
  * to /ask with the query text seeded into the input.
+ *
+ * M0.x.9: when the query has follow-ups (or Jennifer asks one
+ * via the embedded NetworkQueryBox at the bottom), they render
+ * chronologically under the parent as a conversation thread.
  */
 
 interface SavedQueryRow {
@@ -33,6 +39,18 @@ interface SavedQueryRow {
   runCount: number;
   createdAt: string;
   lastRunAt: string | null;
+  parentQueryId?: string | null;
+  followUpCount?: number;
+}
+
+interface FollowUpRow {
+  id: string;
+  query: string;
+  title: string | null;
+  answer: string | null;
+  evidence: unknown;
+  isStarred: boolean;
+  createdAt: string;
 }
 
 interface Evidence {
@@ -64,7 +82,10 @@ export default function AskByIdPage({
   // single-session surface.
   const [renderNow] = useState(() => Date.now());
 
-  const { data, isLoading, error } = useQuery<{ savedQuery: SavedQueryRow }>({
+  const { data, isLoading, error } = useQuery<{
+    savedQuery: SavedQueryRow;
+    followUps: FollowUpRow[];
+  }>({
     queryKey: ["saved-query", id],
     queryFn: async () => {
       const res = await fetch(`/api/saved-queries/${encodeURIComponent(id)}`);
@@ -303,6 +324,169 @@ export default function AskByIdPage({
           Delete
         </button>
       </div>
+
+      {/* M0.x.9 — follow-up thread + ask-a-follow-up input.
+          Threads render chronologically under the parent answer.
+          Submitting via the embedded NetworkQueryBox sets
+          parentQueryId so the new row links back to this query
+          rather than landing as a new top-level entry. */}
+      <FollowUpThread
+        parentId={row.id}
+        followUps={data.followUps ?? []}
+        onFollowUpComplete={() => {
+          qc.invalidateQueries({ queryKey: ["saved-query", row.id] });
+          qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
+        }}
+      />
+    </div>
+  );
+}
+
+function FollowUpThread({
+  parentId,
+  followUps,
+  onFollowUpComplete,
+}: {
+  parentId: string;
+  followUps: FollowUpRow[];
+  onFollowUpComplete: (id: string) => void;
+}) {
+  return (
+    <div className="pt-4 space-y-4 border-t" style={{ borderColor: "var(--border)" }}>
+      <div className="flex items-center gap-2">
+        <CornerDownRight
+          className="h-3.5 w-3.5"
+          style={{ color: "var(--text-tertiary)" }}
+        />
+        <SectionLabel>
+          Follow-ups ({followUps.length})
+        </SectionLabel>
+      </div>
+
+      {followUps.length === 0 && (
+        <p
+          className="text-[12.5px]"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          Ask a follow-up below to dig deeper — it&rsquo;ll thread under
+          this answer rather than starting a new history entry.
+        </p>
+      )}
+
+      {followUps.map((fu, idx) => (
+        <FollowUpItem key={fu.id} item={fu} index={idx + 1} />
+      ))}
+
+      {/* Compact embedded query box, parented to this query. */}
+      <div className="pt-2">
+        <NetworkQueryBox
+          parentQueryId={parentId}
+          placeholder="Ask a follow-up about this answer…"
+          onCompleteFollowUp={onFollowUpComplete}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FollowUpItem({ item, index }: { item: FollowUpRow; index: number }) {
+  const [expanded, setExpanded] = useState(true);
+  const evidence = (item.evidence ?? null) as Evidence | null;
+  return (
+    <div
+      className="rounded-[var(--radius-md)] border pl-4 pr-3 py-3"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+        borderLeftWidth: 3,
+        borderLeftColor: "var(--accent-color)",
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <p
+            className="text-[10.5px] uppercase font-semibold tracking-wider"
+            style={{ color: "var(--text-tertiary)" }}
+          >
+            Follow-up #{index}
+          </p>
+          <p
+            className="text-[13px] font-medium mt-0.5 truncate"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {item.title ?? item.query}
+          </p>
+        </div>
+        <span
+          className="text-[11.5px] tabular-nums shrink-0 ml-2"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          {new Date(item.createdAt).toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          {item.title && item.title !== item.query && (
+            <p
+              className="text-[12px]"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              Asked: <em>{item.query}</em>
+            </p>
+          )}
+          {item.answer ? (
+            <p
+              className="text-[13px] whitespace-pre-wrap"
+              style={{ color: "var(--text-primary)", lineHeight: 1.55 }}
+            >
+              {item.answer}
+            </p>
+          ) : (
+            <p
+              className="inline-flex items-center gap-1 text-[12px]"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              <AlertCircle className="h-3 w-3" />
+              No answer cached for this follow-up.
+            </p>
+          )}
+          {evidence?.suggestedContacts &&
+            evidence.suggestedContacts.length > 0 && (
+              <ul className="space-y-0.5 mt-1">
+                {evidence.suggestedContacts.slice(0, 3).map((c) => (
+                  <li
+                    key={c.contactId}
+                    className="text-[11.5px]"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    ·{" "}
+                    <Link
+                      href={`/people?contact=${c.contactId}`}
+                      className="underline"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {c.name}
+                    </Link>
+                    {c.reason ? (
+                      <span style={{ color: "var(--text-tertiary)" }}>
+                        {" "}
+                        — {c.reason}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+        </div>
+      )}
     </div>
   );
 }

@@ -33,16 +33,23 @@ export async function GET(req: NextRequest) {
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? Math.min(200, Math.max(1, Number(limitParam))) : 50;
 
+  const includeFollowUps = url.searchParams.get("includeFollowUps") === "1";
+
   const where: {
     userId: string;
     isStarred?: boolean;
     createdAt?: { gte: Date };
+    parentQueryId?: null;
   } = { userId: session.user.id };
   if (starredOnly) where.isStarred = true;
   if (since) {
     const date = new Date(since);
     if (!isNaN(date.getTime())) where.createdAt = { gte: date };
   }
+  // M0.x.9: by default the top-level list hides follow-ups (they
+  // render nested under their parent on /ask/[id]). Set
+  // ?includeFollowUps=1 to get every row including children.
+  if (!includeFollowUps) where.parentQueryId = null;
 
   const queries = await prisma.savedQuery.findMany({
     where,
@@ -58,6 +65,8 @@ export async function GET(req: NextRequest) {
       runCount: true,
       createdAt: true,
       lastRunAt: true,
+      parentQueryId: true,
+      followUpCount: true,
     },
   });
   return NextResponse.json({ queries });
@@ -105,6 +114,8 @@ export async function POST(req: NextRequest) {
       runCount: true,
       createdAt: true,
       lastRunAt: true,
+      parentQueryId: true,
+      followUpCount: true,
     },
   });
   return NextResponse.json({ savedQuery: saved });

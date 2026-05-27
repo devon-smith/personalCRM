@@ -84,6 +84,9 @@ const TOOL_LABELS: Record<string, string> = {
 export function NetworkQueryBox({
   seedQuery,
   onSeedConsumed,
+  parentQueryId,
+  placeholder,
+  onCompleteFollowUp,
 }: {
   /** When set (and non-empty), fill the input with this text and
    *  immediately submit. Used by /ask history's Re-run button. */
@@ -91,6 +94,16 @@ export function NetworkQueryBox({
   /** Called once the seedQuery has been consumed so the parent can
    *  clear its state — otherwise re-runs would loop. */
   onSeedConsumed?: () => void;
+  /** M0.x.9 — when set, every submit from this instance is sent as
+   *  a follow-up to the given SavedQuery. /ask/[id] uses this to
+   *  thread refinements under a parent. */
+  parentQueryId?: string | null;
+  /** Override the rotating placeholder — used when the box is
+   *  embedded under a thread ("Ask a follow-up about this answer…"). */
+  placeholder?: string;
+  /** Called after a follow-up successfully persists so the parent
+   *  page can refresh its thread list without polling. */
+  onCompleteFollowUp?: (newSavedQueryId: string) => void;
 } = {}) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -187,7 +200,10 @@ export function NetworkQueryBox({
       const res = await fetch("/api/network-query?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q.trim() }),
+        body: JSON.stringify({
+          query: q.trim(),
+          parentQueryId: parentQueryId ?? undefined,
+        }),
         signal: controller.signal,
       });
 
@@ -270,20 +286,28 @@ export function NetworkQueryBox({
         case "text_delta":
           setStreamingText((prev) => prev + String(data.text ?? ""));
           break;
-        case "complete":
-          setResult(data.result as QueryResult);
+        case "complete": {
+          const completed = data.result as QueryResult;
+          setResult(completed);
           // M0.x.8: refresh /ask history + the "View question history (N)"
           // counter immediately so the new auto-saved row appears
           // without requiring a page reload.
           qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
           qc.invalidateQueries({ queryKey: ["saved-queries"] });
+          // M0.x.9: when this submit was a follow-up, let the parent
+          // page (e.g. /ask/[id] thread view) know so it can refresh
+          // its child list without polling.
+          if (parentQueryId && completed.savedQueryId && onCompleteFollowUp) {
+            onCompleteFollowUp(completed.savedQueryId);
+          }
           break;
+        }
         case "error":
           setError(String(data.message ?? "Unknown error"));
           break;
       }
     }
-  }, [isStreaming, qc]);
+  }, [isStreaming, qc, parentQueryId, onCompleteFollowUp]);
 
   // M0.x.7: parent passes a seedQuery (from /ask history "Re-run").
   // Fill the input + auto-submit, then notify so the parent clears.
@@ -328,7 +352,7 @@ export function NetworkQueryBox({
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             disabled={isStreaming}
-            placeholder={EXAMPLE_QUERIES[placeholderIdx]}
+            placeholder={placeholder ?? EXAMPLE_QUERIES[placeholderIdx]}
             className="flex-1 bg-transparent border-0 outline-none text-[14px] py-1.5 placeholder:text-[#8C8A82]"
             style={{ color: "#1B1A17" }}
           />

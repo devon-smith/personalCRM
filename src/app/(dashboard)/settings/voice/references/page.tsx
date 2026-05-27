@@ -134,7 +134,7 @@ export default function VoiceReferencesPage() {
   );
 
   const onDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
+    (e: React.DragEvent<HTMLLabelElement>) => {
       e.preventDefault();
       setIsDragging(false);
       handleFiles(e.dataTransfer.files);
@@ -199,16 +199,20 @@ export default function VoiceReferencesPage() {
         </div>
       </div>
 
-      {/* Drop zone */}
-      <div
+      {/* Drop zone — uses <label htmlFor> rather than a JS click()
+          trick so the file picker opens reliably across browsers.
+          The previous `<div onClick={() => ref.click()}>` pattern
+          fired into recursive click events through the input child,
+          which silently no-op'd in some browsers. */}
+      <label
+        htmlFor="reference-file-input"
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className="rounded-2xl border-2 border-dashed px-6 py-12 text-center cursor-pointer transition-colors"
+        className="block rounded-2xl border-2 border-dashed px-6 py-12 text-center cursor-pointer transition-colors"
         style={{
           borderColor: isDragging ? "var(--accent-color)" : "var(--border)",
           backgroundColor: isDragging
@@ -218,10 +222,11 @@ export default function VoiceReferencesPage() {
       >
         <input
           ref={fileInputRef}
+          id="reference-file-input"
           type="file"
           multiple
           accept={ACCEPTED_EXT}
-          className="hidden"
+          className="sr-only"
           onChange={(e) => {
             handleFiles(e.target.files);
             // Reset so re-uploading the same file fires onChange.
@@ -266,7 +271,7 @@ export default function VoiceReferencesPage() {
             </p>
           </div>
         )}
-      </div>
+      </label>
 
       {/* Last-upload outcome feedback */}
       {lastOutcomes && lastOutcomes.length > 0 && (

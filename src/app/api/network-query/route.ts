@@ -33,8 +33,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { query?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    query?: string;
+    parentQueryId?: string;
+  };
   const query = typeof body.query === "string" ? body.query.trim() : "";
+  const parentQueryId =
+    typeof body.parentQueryId === "string" && body.parentQueryId.length > 0
+      ? body.parentQueryId
+      : null;
   if (!query) {
     return NextResponse.json({ error: "query is required" }, { status: 400 });
   }
@@ -47,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const url = new URL(req.url);
   if (url.searchParams.get("stream") === "1") {
-    return streamResponse(session.user.id, query);
+    return streamResponse(session.user.id, query, parentQueryId);
   }
 
   // Non-streaming path (unchanged from M7.3).
@@ -61,7 +68,12 @@ export async function POST(req: NextRequest) {
     // M0.x.7: every query auto-saves with its answer. Trust depends
     // on Jennifer being able to come back and re-read what we told
     // her — the old flow lost that the moment she navigated away.
-    const saved = await persistSavedQuery(session.user.id, query, result);
+    const saved = await persistSavedQuery(
+      session.user.id,
+      query,
+      result,
+      parentQueryId,
+    );
     await logAIGeneration({
       userId: session.user.id,
       feature: "network_query",
@@ -90,7 +102,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function streamResponse(userId: string, query: string): Response {
+function streamResponse(
+  userId: string,
+  query: string,
+  parentQueryId: string | null,
+): Response {
   const encoder = new TextEncoder();
   const startedAt = Date.now();
 
@@ -118,7 +134,12 @@ function streamResponse(userId: string, query: string): Response {
           if (ev.type === "complete") {
             // M0.x.7: persist before sending the complete event so a
             // refresh sees the same id in history immediately.
-            const saved = await persistSavedQuery(userId, query, ev.result);
+            const saved = await persistSavedQuery(
+              userId,
+              query,
+              ev.result,
+              parentQueryId,
+            );
             send("complete", {
               result: { ...ev.result, savedQueryId: saved.id },
             });
@@ -175,12 +196,28 @@ function streamResponse(userId: string, query: string): Response {
  * asked twice produces two snapshots (her network may have changed
  * between runs, and the second answer might be materially
  * different). Title falls back to the first 80 chars of the query.
+ *
+ * M0.x.9: when parentQueryId is set, link this as a follow-up to a
+ * prior query + bump the parent's followUpCount. Validates that the
+ * parent belongs to the same user before linking — never allow a
+ * follow-up to escape its owner.
  */
 async function persistSavedQuery(
   userId: string,
   query: string,
   result: import("@/lib/intelligence/network-query").NetworkQueryResult,
+  parentQueryId: string | null,
 ): Promise<{ id: string }> {
+  // M0.x.9 — guard against persisting "ghost" rows when Claude
+  // returns an empty answer (structured-output parse failure, etc).
+  // The history panel would render those as "No answer cached" and
+  // confuse Jennifer (she sees a row with no content from a query
+  // she ran moments ago). Throw instead — the caller already
+  // catches and surfaces an error event.
+  if (!result.answer || result.answer.trim().length === 0) {
+    throw new Error("Query produced an empty answer — not persisting");
+  }
+
   const evidence = {
     suggestedContacts: result.suggestedContacts,
     reasoningTrace: result.reasoningTrace,
@@ -190,16 +227,41 @@ async function persistSavedQuery(
   const title =
     result.title ??
     (query.length > 80 ? query.slice(0, 77) + "…" : query);
-  const saved = await prisma.savedQuery.create({
-    data: {
-      userId,
-      query,
-      title,
-      answer: result.answer,
-      evidence: evidence as unknown as object,
-      lastRunAt: new Date(),
-    },
-    select: { id: true },
-  });
+
+  // Verify parent ownership before linking. A bogus parentQueryId
+  // becomes a top-level row instead of leaking cross-user data.
+  let verifiedParent: string | null = null;
+  if (parentQueryId) {
+    const parent = await prisma.savedQuery.findFirst({
+      where: { id: parentQueryId, userId },
+      select: { id: true },
+    });
+    if (parent) verifiedParent = parent.id;
+  }
+
+  // One transaction: create the row + bump the parent's count atomically
+  // so the denormalized counter can't drift on a partial failure.
+  const [saved] = await prisma.$transaction([
+    prisma.savedQuery.create({
+      data: {
+        userId,
+        query,
+        title,
+        answer: result.answer,
+        evidence: evidence as unknown as object,
+        lastRunAt: new Date(),
+        parentQueryId: verifiedParent,
+      },
+      select: { id: true },
+    }),
+    ...(verifiedParent
+      ? [
+          prisma.savedQuery.update({
+            where: { id: verifiedParent },
+            data: { followUpCount: { increment: 1 } },
+          }),
+        ]
+      : []),
+  ]);
   return saved;
 }
