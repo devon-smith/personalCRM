@@ -94,20 +94,22 @@ export async function extractText(
 }
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
-  // pdf-parse v2 — class-based API on top of pdfjs-dist. Pass the
-  // raw bytes as Uint8Array, getText() returns a TextResult whose
-  // `text` field is the concatenated document text. Always destroy
-  // the parser so pdfjs releases its worker handles.
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({
-    data: new Uint8Array(buffer),
+  // unpdf is built for Node / serverless / edge runtimes — wraps
+  // pdfjs-dist with sane defaults that don't need a Web Worker.
+  // pdf-parse v2 (our previous choice) tried to set up pdfjs's
+  // "fake worker" and crashed in Next.js dev with
+  //   "Setting up fake worker failed: Cannot find module …"
+  // when the user's cwd path had a quirk pdfjs-dist couldn't
+  // resolve. unpdf side-steps all of that.
+  const { extractText } = await import("unpdf");
+  const { text } = await extractText(new Uint8Array(buffer), {
+    mergePages: true,
   });
-  try {
-    const result = await parser.getText();
-    return result.text ?? "";
-  } finally {
-    await parser.destroy().catch(() => {});
-  }
+  // With mergePages:true the overload returns `text: string`. Cast
+  // defensively in case the upstream type drifts to string[] on a
+  // future major.
+  if (Array.isArray(text)) return (text as string[]).join("\n\n");
+  return typeof text === "string" ? text : "";
 }
 
 async function extractDocxText(buffer: Buffer): Promise<string> {
