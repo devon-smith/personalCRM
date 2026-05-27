@@ -887,13 +887,29 @@ function ReplyingToPanel({
         >
           Replying to
         </span>
-        <span className="ds-caption" style={{ color: "var(--text-tertiary)" }}>
-          {occurred.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+        <span className="ds-caption tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+          {occurred.toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
         </span>
       </div>
       <div>
         <p className="ds-body-sm font-medium" style={{ color: "var(--text-primary)" }}>
           {sender}
+          {/* Surface the email address as its own metadata field when
+              there's a display name (otherwise sender already IS the
+              email). */}
+          {inbound.fromName && inbound.fromEmail && (
+            <span
+              className="ml-1.5 ds-caption font-normal"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              &lt;{inbound.fromEmail}&gt;
+            </span>
+          )}
         </p>
         {inbound.subject && (
           <p

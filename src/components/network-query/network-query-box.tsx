@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials, getAvatarColor } from "@/lib/avatar";
@@ -114,10 +114,11 @@ export function NetworkQueryBox({
   );
   const [error, setError] = useState<string | null>(null);
   const [showTrace, setShowTrace] = useState(false);
-  // M7.4: submittedQuery tracks which question produced the current
-  // result so refine + save can reference it. Hydrated above alongside
-  // result so the pair stays in sync across re-mounts.
-  const [savedFlash, setSavedFlash] = useState(false);
+  // M0.x.7: star state for the current answer panel. Fresh queries
+  // always start unstarred (the auto-saved row is new). Toggle
+  // updates this immediately + PATCHes the row; rollback on error.
+  const [isStarred, setIsStarred] = useState(false);
+  const qc = useQueryClient();
 
   // M0.9: surface a "View saved questions (N)" link below the input
   // — /queries already exists but Jennifer wasn't finding it.
@@ -174,7 +175,7 @@ export function NetworkQueryBox({
     setLiveSteps([]);
     setStreamingText("");
     setShowTrace(false);
-    setSavedFlash(false);
+    setIsStarred(false);
     setQuery(q.trim());
     setSubmittedQuery(q.trim());
     setIsStreaming(true);
@@ -271,13 +272,18 @@ export function NetworkQueryBox({
           break;
         case "complete":
           setResult(data.result as QueryResult);
+          // M0.x.8: refresh /ask history + the "View question history (N)"
+          // counter immediately so the new auto-saved row appears
+          // without requiring a page reload.
+          qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
+          qc.invalidateQueries({ queryKey: ["saved-queries"] });
           break;
         case "error":
           setError(String(data.message ?? "Unknown error"));
           break;
       }
     }
-  }, [isStreaming]);
+  }, [isStreaming, qc]);
 
   // M0.x.7: parent passes a seedQuery (from /ask history "Re-run").
   // Fill the input + auto-submit, then notify so the parent clears.
@@ -396,12 +402,14 @@ export function NetworkQueryBox({
           }
           onToggleStar={async () => {
             // M0.x.7 — every query auto-saves; the toolbar action
-            // just flips the star bit. Optimistic flash only.
+            // just flips the star bit. Optimistic flip so the icon
+            // updates immediately; rollback on error.
             if (!result.savedQueryId) {
               toast.error("Couldn't star this query (not yet saved)");
               return;
             }
-            const nextStarred = !savedFlash; // re-using flash flag as the visual toggle
+            const nextStarred = !isStarred;
+            setIsStarred(nextStarred);
             try {
               const res = await fetch(
                 `/api/saved-queries/${encodeURIComponent(result.savedQueryId)}`,
@@ -412,15 +420,17 @@ export function NetworkQueryBox({
                 },
               );
               if (!res.ok) throw new Error("Star failed");
-              setSavedFlash(nextStarred);
               toast.success(nextStarred ? "Starred" : "Unstarred");
+              qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
+              qc.invalidateQueries({ queryKey: ["saved-queries"] });
             } catch (err) {
+              setIsStarred(!nextStarred); // rollback
               toast.error(
                 err instanceof Error ? err.message : "Couldn't star",
               );
             }
           }}
-          isStarred={savedFlash}
+          isStarred={isStarred}
           onDismiss={dismissResult}
         />
       )}

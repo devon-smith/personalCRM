@@ -26,6 +26,7 @@ import { formatDistanceToNow } from "@/lib/date-utils";
 import { EvidenceChevron } from "@/components/shared/evidence-chevron";
 import { useSessionExpanded } from "@/components/ds";
 import { useDraftComposer } from "@/lib/draft-composer-context";
+import { trimToShortPhrase } from "@/lib/inbox/response-classifier";
 
 // ─── Swipe gesture hook ─────────────────────────────────────
 
@@ -151,6 +152,9 @@ interface InboxItemsData {
   totalGroupChats: number;
   filteredOut?: number;
   view?: "needs-reply" | "all";
+  /** M0.x.8: count for each side of the toggle so both chips render. */
+  needsReplyCount?: number;
+  allInboundCount?: number;
 }
 
 interface ActivityItem {
@@ -709,6 +713,7 @@ export function Inbox() {
             view={inboxView}
             onSetView={setInboxView}
             filteredOut={inboxData?.filteredOut ?? 0}
+            needsReplyCount={inboxData?.needsReplyCount ?? 0}
             onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
             onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
             onSnooze={(itemId, hours, channel) =>
@@ -747,10 +752,16 @@ function NeedsReplyToggle({
   view,
   onSetView,
   filteredOut,
+  needsReplyCount,
 }: {
   view: "needs-reply" | "all";
   onSetView: (v: "needs-reply" | "all") => void;
+  /** Items hidden by the Needs-reply filter — surfaced as "+N" on
+   *  the All-inbound chip when Jennifer is on the Needs-reply view. */
   filteredOut: number;
+  /** Items in the Needs-reply view — surfaced as "+N" on the
+   *  Needs-reply chip when Jennifer is on the All-inbound view. */
+  needsReplyCount: number;
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -759,6 +770,9 @@ function NeedsReplyToggle({
         onClick={() => onSetView("needs-reply")}
       >
         Needs reply
+        {view === "all" && needsReplyCount > 0 ? (
+          <CountChip>+{needsReplyCount}</CountChip>
+        ) : null}
       </ToggleSegment>
       <ToggleSegment
         active={view === "all"}
@@ -766,15 +780,21 @@ function NeedsReplyToggle({
       >
         All inbound
         {view === "needs-reply" && filteredOut > 0 ? (
-          <span
-            className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums"
-            style={{ backgroundColor: "#EFEAE0", color: "#7A4F3C" }}
-          >
-            +{filteredOut}
-          </span>
+          <CountChip>+{filteredOut}</CountChip>
         ) : null}
       </ToggleSegment>
     </div>
+  );
+}
+
+function CountChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums"
+      style={{ backgroundColor: "#EFEAE0", color: "#7A4F3C" }}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -823,6 +843,7 @@ function InboxTab({
   view,
   onSetView,
   filteredOut,
+  needsReplyCount,
   onResolve,
   onDismiss,
   onSnooze,
@@ -835,6 +856,7 @@ function InboxTab({
   view: "needs-reply" | "all";
   onSetView: (v: "needs-reply" | "all") => void;
   filteredOut: number;
+  needsReplyCount: number;
   onResolve: (itemId: string, channel: string) => void;
   onDismiss: (itemId: string, channel: string) => void;
   onSnooze: (itemId: string, hours: number, channel: string) => void;
@@ -844,12 +866,14 @@ function InboxTab({
   // Always show the view toggle if there are items either showing or
   // hidden behind the filter. Hiding the toggle when count=0 makes the
   // surface feel broken when the user flipped to "All" expecting more.
-  const showToggle = waitingItems.length > 0 || filteredOut > 0;
+  const showToggle =
+    waitingItems.length > 0 || filteredOut > 0 || needsReplyCount > 0;
   const toggle = showToggle ? (
     <NeedsReplyToggle
       view={view}
       onSetView={onSetView}
       filteredOut={filteredOut}
+      needsReplyCount={needsReplyCount}
     />
   ) : null;
 
@@ -1545,8 +1569,8 @@ function InboxRow({
           }}
         >
           {item.needsResponse === false
-            ? `Marked as no reply needed · ${item.responseReason}`
-            : item.responseReason}
+            ? `Marked as no reply needed · ${trimToShortPhrase(item.responseReason)}`
+            : trimToShortPhrase(item.responseReason)}
         </p>
       )}
 

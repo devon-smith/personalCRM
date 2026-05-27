@@ -76,11 +76,22 @@ Categories that DON'T need a response (needsResponse=false):
 
 Be conservative: when in doubt, lean toward needsResponse=true with lower confidence rather than skipping something important.
 
+"reason" rules — STRICT:
+- Maximum 6 words. Title-case or sentence-case, no terminal period.
+- Phrase, not a sentence. Verb-first when natural.
+- Good: "Asks a direct question", "Brief thanks", "FYI forward",
+  "Requests meeting time", "Newsletter", "Out-of-office reply",
+  "Acknowledges receipt".
+- Bad: "Agreement and acknowledgment without new requests or questions",
+  "This is a thank-you message that doesn't require a reply",
+  "The sender is just confirming they received your email."
+- If you can't say it in 6 words, the category itself is the reason.
+
 Return ONLY valid JSON in this exact shape:
 {
   "needsResponse": true,
   "confidence": 0.85,
-  "reason": "short phrase like 'Asks a direct question'",
+  "reason": "Asks a direct question",
   "category": "question"
 }`;
 
@@ -150,6 +161,16 @@ const VALID_CATEGORIES: ReadonlyArray<ResponseCategory> = [
   "autoresponder",
 ];
 
+/** Cap classifier reasons at 6 words + 60 chars, strip a terminal
+ *  period. Defensive — the system prompt asks for short phrases but
+ *  Sonnet sometimes drifts into full sentences on long inbound mail. */
+export function trimToShortPhrase(raw: string): string {
+  const cleaned = raw.trim().replace(/[.\s]+$/, "");
+  const words = cleaned.split(/\s+/);
+  const capped = words.slice(0, 6).join(" ");
+  return capped.length > 60 ? capped.slice(0, 57) + "…" : capped;
+}
+
 export function parseClassifyResponse(text: string): ClassifyResult {
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -178,10 +199,10 @@ export function parseClassifyResponse(text: string): ClassifyResult {
           : 0.5,
       reason:
         typeof parsed.reason === "string" && parsed.reason.length > 0
-          ? parsed.reason
+          ? trimToShortPhrase(parsed.reason)
           : parsed.needsResponse
             ? "Looks like it needs a reply"
-            : "Doesn't appear to need a reply",
+            : "Doesn't need a reply",
       category,
     };
   } catch {

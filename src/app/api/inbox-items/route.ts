@@ -69,14 +69,22 @@ export async function GET(req: Request) {
       },
     });
 
-    // Count items the classifier hid so the UI can show "N more filtered"
-    // without a separate request.
-    const filteredOut =
-      view === "needs-reply"
-        ? await prisma.inboxItem.count({
-            where: { userId, status: "OPEN", needsResponse: false },
-          })
-        : 0;
+    // M0.x.8: return BOTH counts always — the UI shows the inactive
+    // tab's count as a "+N" chip on both sides, not just one. The
+    // tiny extra count() cost beats a second request from the client.
+    const [needsReplyCount, allOpenCount] = await Promise.all([
+      prisma.inboxItem.count({
+        where: {
+          userId,
+          status: "OPEN",
+          OR: [{ needsResponse: null }, { needsResponse: true }],
+        },
+      }),
+      prisma.inboxItem.count({
+        where: { userId, status: "OPEN" },
+      }),
+    ]);
+    const filteredOut = allOpenCount - needsReplyCount;
 
     // Fetch OPEN items (filtered by view) + draft threadIds in parallel.
     // Fail-open: when needsResponse IS NULL the classifier hasn't run
@@ -178,6 +186,10 @@ export async function GET(req: Request) {
       totalGroupChats: groupChats.length,
       filteredOut,
       view,
+      // M0.x.8: each tab's count so the inactive side can show its
+      // own "+N" chip regardless of which view is active.
+      needsReplyCount,
+      allInboundCount: allOpenCount,
     });
 
     inboxCache = {

@@ -2,7 +2,33 @@ import { describe, it, expect } from "vitest";
 import {
   parseClassifyResponse,
   buildUserPrompt,
+  trimToShortPhrase,
 } from "@/lib/inbox/response-classifier";
+
+describe("trimToShortPhrase (M0.x.8)", () => {
+  it("keeps phrases that are already short", () => {
+    expect(trimToShortPhrase("Asks a direct question")).toBe(
+      "Asks a direct question",
+    );
+  });
+  it("caps at 6 words", () => {
+    expect(
+      trimToShortPhrase(
+        "Agreement and acknowledgment without new requests or questions",
+      ),
+    ).toBe("Agreement and acknowledgment without new requests");
+  });
+  it("strips a terminal period", () => {
+    expect(trimToShortPhrase("Brief thanks.")).toBe("Brief thanks");
+  });
+  it("ellipses when the 6-word cap is still over 60 chars", () => {
+    const long =
+      "Extraordinarily verbose and supercalifragilistic conversation completely unnecessarily";
+    const out = trimToShortPhrase(long);
+    expect(out.length).toBeLessThanOrEqual(60);
+    expect(out.endsWith("…")).toBe(true);
+  });
+});
 
 describe("parseClassifyResponse", () => {
   it("parses a needsResponse=true classification", () => {
