@@ -22,7 +22,6 @@ import {
   searchRecentMentions,
   type BraveSearchHit,
 } from "../../src/lib/research/brave-search";
-import { articleMentionsAffiliation } from "../../src/lib/research/news-mention-gate";
 
 const TIER_FILTER = ["INNER_CIRCLE"];
 const DEDUP_WINDOW_DAYS = 7;
@@ -39,21 +38,7 @@ const signalDetection: Task = async (_payload, helpers) => {
   try {
     const contacts = await prisma.contact.findMany({
       where: { tier: { in: TIER_FILTER as ("INNER_CIRCLE" | "PROFESSIONAL")[] } },
-      select: {
-        id: true,
-        userId: true,
-        name: true,
-        company: true,
-        role: true,
-        tags: true,
-        lastSeenScholarlyInstitution: true,
-        // M0.x.10 — pull expertiseAreas from the joined ContactProfile
-        // so the disambiguation gate can match articles mentioning the
-        // contact's research areas (in addition to company / school).
-        profile: {
-          select: { expertiseAreas: true },
-        },
-      },
+      select: { id: true, userId: true, name: true, company: true },
     });
 
     if (contacts.length === 0) {
@@ -66,10 +51,6 @@ const signalDetection: Task = async (_payload, helpers) => {
     let queried = 0;
     let written = 0;
     let skippedRecent = 0;
-    // M0.x.10 — counter for hits that failed the affiliation gate
-    // (article didn't mention any distinctive token from the contact).
-    // Tracked separately from skippedRecent so we can tune the gate.
-    let skippedNoAffiliation = 0;
     let failed = 0;
     const dedupCutoff = new Date(Date.now() - DEDUP_WINDOW_DAYS * 86_400_000);
 
@@ -90,29 +71,6 @@ const signalDetection: Task = async (_payload, helpers) => {
         // news cards for the same person on the same day creates noise.
         const top = pickBestHit(hits);
         if (!top) continue;
-
-        // M0.x.10 — affiliation gate. The article snippet (title +
-        // description) must mention at least one distinctive token
-        // from the contact's company / role / institution / tags /
-        // expertise. Otherwise it's almost certainly a same-name
-        // collision (e.g. our Toby vs. random Toby Smith podcast).
-        const gate = articleMentionsAffiliation(
-          {
-            company: c.company,
-            role: c.role,
-            scholarlyInstitution: c.lastSeenScholarlyInstitution,
-            tags: c.tags,
-            expertiseAreas: c.profile?.expertiseAreas ?? [],
-          },
-          { title: top.title, description: top.description },
-        );
-        if (!gate.passes) {
-          skippedNoAffiliation++;
-          helpers.logger.debug(
-            `  gated ${c.name}: "${top.title.slice(0, 60)}" — no affiliation match (considered=${gate.tokensConsidered.length})`,
-          );
-          continue;
-        }
 
         // Dedup against the last 7 days of NEWS_MENTION rows for this
         // contact, matched by URL — Brave often returns the same article
@@ -153,7 +111,7 @@ const signalDetection: Task = async (_payload, helpers) => {
     }
 
     helpers.logger.info(
-      `signal-detection: ${queried} queried, ${written} new mentions, ${skippedRecent} duplicates, ${skippedNoAffiliation} gated (no affiliation match), ${failed} failed`,
+      `signal-detection: ${queried} queried, ${written} new mentions, ${skippedRecent} duplicates, ${failed} failed`,
     );
   } finally {
     await prisma.$disconnect();
