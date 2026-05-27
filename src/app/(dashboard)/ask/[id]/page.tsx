@@ -383,6 +383,7 @@ function FollowUpThread({
           parentQueryId={parentId}
           placeholder="Ask a follow-up about this answer…"
           onCompleteFollowUp={onFollowUpComplete}
+          compact
         />
       </div>
     </div>

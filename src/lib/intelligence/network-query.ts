@@ -45,6 +45,17 @@ export interface RunNetworkQueryParams {
   prisma: PrismaClient;
   userId: string;
   query: string;
+  /** M0.x.11 — when set, the orchestrator seeds the conversation
+   *  with the prior turn so Claude treats `query` as a follow-up.
+   *  Used by the Refine flow on /ask and the embedded follow-up
+   *  input on /ask/[id]. Without context, the refinement gets
+   *  shoved into a single-turn prompt and frequently produces
+   *  empty answers ("Additional constraint: …" pattern confuses
+   *  the structured-output flow). */
+  priorContext?: {
+    readonly question: string;
+    readonly answer: string;
+  };
 }
 
 export interface SuggestedContact {
@@ -79,6 +90,28 @@ export interface NetworkQueryResult {
 interface ToolContext {
   prisma: PrismaClient;
   userId: string;
+}
+
+/**
+ * Build the initial messages array. When priorContext is set, seed
+ * the conversation with the prior turn so Claude treats `query` as a
+ * follow-up: the prior question/answer becomes turn 1, the new query
+ * becomes turn 2. Otherwise it's a single-turn conversation.
+ *
+ * Pure — exported for unit testing.
+ */
+export function buildSeedMessages(
+  query: string,
+  priorContext?: { question: string; answer: string },
+): Anthropic.Messages.MessageParam[] {
+  if (!priorContext) {
+    return [{ role: "user", content: query }];
+  }
+  return [
+    { role: "user", content: priorContext.question },
+    { role: "assistant", content: priorContext.answer },
+    { role: "user", content: query },
+  ];
 }
 
 interface RegisteredTool {
@@ -553,9 +586,10 @@ export async function runNetworkQuery(
   });
   const ctx: ToolContext = { prisma: params.prisma, userId: params.userId };
 
-  const messages: Anthropic.Messages.MessageParam[] = [
-    { role: "user", content: params.query },
-  ];
+  const messages: Anthropic.Messages.MessageParam[] = buildSeedMessages(
+    params.query,
+    params.priorContext,
+  );
   const trace: ReasoningStep[] = [];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -695,17 +729,27 @@ export async function* runNetworkQueryStream(
     maxRetries: 2,
   });
   const ctx: ToolContext = { prisma: params.prisma, userId: params.userId };
-  const messages: Anthropic.Messages.MessageParam[] = [
-    { role: "user", content: params.query },
-  ];
+  const messages: Anthropic.Messages.MessageParam[] = buildSeedMessages(
+    params.query,
+    params.priorContext,
+  );
   const trace: ReasoningStep[] = [];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let finalText = "";
+  // M0.x.11 — when a prior iteration produced any text, emit a
+  // paragraph break before the next iteration's first text_delta
+  // so the streaming render shows "...past students.\n\nGreat!..."
+  // instead of "...past students.Great!..."
+  let prevIterationHadText = false;
 
   try {
     for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
       yield { type: "iteration_start", iteration: iter };
+      if (iter > 0 && prevIterationHadText) {
+        yield { type: "text_delta", text: "\n\n" };
+      }
+      let iterationHadText = false;
 
       const stream = anthropic.messages.stream({
         model: NETWORK_QUERY_MODEL,
@@ -758,6 +802,7 @@ export async function* runNetworkQueryStream(
           event.type === "content_block_delta" &&
           event.delta.type === "text_delta"
         ) {
+          iterationHadText = true;
           yield { type: "text_delta", text: event.delta.text };
         }
       }
@@ -766,6 +811,7 @@ export async function* runNetworkQueryStream(
       totalInputTokens += finalMessage.usage.input_tokens;
       totalOutputTokens += finalMessage.usage.output_tokens;
       messages.push({ role: "assistant", content: finalMessage.content });
+      prevIterationHadText = iterationHadText;
 
       const toolUses = finalMessage.content.filter(
         (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use",

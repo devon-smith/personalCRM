@@ -52,9 +52,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // M0.x.11 — when a parentQueryId is set (follow-up flow), load
+  // the parent's question + answer and seed the orchestrator with
+  // them as turn 1. Refines stopped producing empty answers as
+  // soon as Claude saw the prior turn structurally.
+  const priorContext = await loadPriorContext(session.user.id, parentQueryId);
+
   const url = new URL(req.url);
   if (url.searchParams.get("stream") === "1") {
-    return streamResponse(session.user.id, query, parentQueryId);
+    return streamResponse(session.user.id, query, parentQueryId, priorContext);
   }
 
   // Non-streaming path (unchanged from M7.3).
@@ -64,6 +70,7 @@ export async function POST(req: NextRequest) {
       prisma,
       userId: session.user.id,
       query,
+      priorContext,
     });
     // M0.x.7: every query auto-saves with its answer. Trust depends
     // on Jennifer being able to come back and re-read what we told
@@ -106,6 +113,7 @@ function streamResponse(
   userId: string,
   query: string,
   parentQueryId: string | null,
+  priorContext: { question: string; answer: string } | undefined,
 ): Response {
   const encoder = new TextEncoder();
   const startedAt = Date.now();
@@ -122,6 +130,7 @@ function streamResponse(
           prisma,
           userId,
           query,
+          priorContext,
         })) {
           // Forward every event as SSE EXCEPT complete — we wrap
           // that one with the persisted savedQueryId so the client
@@ -264,4 +273,25 @@ async function persistSavedQuery(
       : []),
   ]);
   return saved;
+}
+
+/**
+ * M0.x.11 — load a parent query's question + answer to seed the
+ * follow-up conversation. Returns undefined when no parent (top-
+ * level query) or when the parent doesn't belong to this user
+ * (owner-scoped). Empty/null parent answers also return undefined
+ * — seeding with an empty assistant turn would confuse Claude.
+ */
+async function loadPriorContext(
+  userId: string,
+  parentQueryId: string | null,
+): Promise<{ question: string; answer: string } | undefined> {
+  if (!parentQueryId) return undefined;
+  const parent = await prisma.savedQuery.findFirst({
+    where: { id: parentQueryId, userId },
+    select: { query: true, answer: true },
+  });
+  if (!parent) return undefined;
+  if (!parent.answer || parent.answer.trim().length === 0) return undefined;
+  return { question: parent.query, answer: parent.answer };
 }

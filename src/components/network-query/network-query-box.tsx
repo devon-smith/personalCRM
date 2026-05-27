@@ -87,6 +87,7 @@ export function NetworkQueryBox({
   parentQueryId,
   placeholder,
   onCompleteFollowUp,
+  compact,
 }: {
   /** When set (and non-empty), fill the input with this text and
    *  immediately submit. Used by /ask history's Re-run button. */
@@ -104,6 +105,12 @@ export function NetworkQueryBox({
   /** Called after a follow-up successfully persists so the parent
    *  page can refresh its thread list without polling. */
   onCompleteFollowUp?: (newSavedQueryId: string) => void;
+  /** M0.x.11 — when true, suppress the inline result panel after a
+   *  query completes. Used by /ask/[id]'s embedded follow-up box
+   *  so the answer renders only once in the thread (parent's
+   *  thread refresh shows the new follow-up; the embedded box
+   *  doesn't double-render it). */
+  compact?: boolean;
 } = {}) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -180,7 +187,16 @@ export function NetworkQueryBox({
     setShowTrace(false);
   }, []);
 
-  const submit = useCallback(async (q: string) => {
+  const submit = useCallback(async (
+    q: string,
+    opts: {
+      /** Override the box-level parentQueryId for this one submit. */
+      parentOverride?: string | null;
+      /** Don't mutate the visible input — useful for Refine, which
+       *  shouldn't pollute the ask bar with the raw refinement text. */
+      suppressVisible?: boolean;
+    } = {},
+  ) => {
     if (!q.trim() || isStreaming) return;
 
     setResult(null);
@@ -189,7 +205,7 @@ export function NetworkQueryBox({
     setStreamingText("");
     setShowTrace(false);
     setIsStarred(false);
-    setQuery(q.trim());
+    if (!opts.suppressVisible) setQuery(q.trim());
     setSubmittedQuery(q.trim());
     setIsStreaming(true);
 
@@ -197,12 +213,16 @@ export function NetworkQueryBox({
     abortRef.current = controller;
 
     try {
+      const effectiveParent =
+        opts.parentOverride !== undefined
+          ? opts.parentOverride
+          : parentQueryId ?? null;
       const res = await fetch("/api/network-query?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: q.trim(),
-          parentQueryId: parentQueryId ?? undefined,
+          parentQueryId: effectiveParent ?? undefined,
         }),
         signal: controller.signal,
       });
@@ -397,8 +417,11 @@ export function NetworkQueryBox({
       )}
 
       {/* Live trace while streaming — collapses into the final
-          result panel once `complete` arrives. */}
-      {isStreaming && liveSteps.length > 0 && !result && (
+          result panel once `complete` arrives. In compact mode (an
+          embedded follow-up box on /ask/[id]) we suppress everything
+          past the input bar so the answer renders only once in the
+          parent thread. */}
+      {!compact && isStreaming && liveSteps.length > 0 && !result && (
         <LiveTracePanel steps={liveSteps} streamingText={streamingText} />
       )}
 
@@ -411,19 +434,25 @@ export function NetworkQueryBox({
         </div>
       )}
 
-      {result && submittedQuery && (
+      {!compact && result && submittedQuery && (
         <QueryResultPanel
           result={result}
           showTrace={showTrace}
           onToggleTrace={() => setShowTrace((v) => !v)}
-          onRefine={(refinement) =>
-            // Refining re-runs the orchestrator with the original
-            // question + the new constraint stacked on top. We don't
-            // pass the prior answer back — Claude re-derives so the
-            // refined result is self-consistent rather than a delta
-            // off a possibly-misleading first pass.
-            submit(`${submittedQuery}\n\nAdditional constraint: ${refinement}`)
-          }
+          onRefine={(refinement) => {
+            // M0.x.11 — refine as a proper multi-turn follow-up:
+            // pass the refinement alone as the new query + the
+            // current result's savedQueryId as parentQueryId. The
+            // server seeds the orchestrator with parent question +
+            // answer so Claude sees this as turn 2 of a conversation
+            // (not a single-turn "original\n\nAdditional constraint"
+            // pattern, which was producing empty answers and looked
+            // ugly in the input bar).
+            submit(refinement, {
+              parentOverride: result.savedQueryId ?? null,
+              suppressVisible: true,
+            });
+          }}
           onToggleStar={async () => {
             // M0.x.7 — every query auto-saves; the toolbar action
             // just flips the star bit. Optimistic flip so the icon
@@ -828,7 +857,30 @@ function QueryResultPanel({
  * placeholder instead. The final parsed result replaces this panel
  * when `complete` arrives.
  */
+/**
+ * Detect when the streaming text is showing raw structured-output
+ * JSON the orchestrator is producing as its final answer. The
+ * previous check only matched text that STARTED with `{` — in
+ * practice Claude often emits a sentence or two of prose before
+ * the JSON envelope, so the raw `{ "title": "...", "answer": ...`
+ * leaked into the visible stream.
+ *
+ * This catches:
+ *  - Text starting with `{` or ```json fence
+ *  - Text containing any of the known final-answer JSON field
+ *    markers in the last 400 chars (handles prose-then-JSON)
+ */
 function looksLikeJsonInProgress(text: string): boolean {
   const trimmed = text.trimStart();
-  return trimmed.startsWith("{") || trimmed.startsWith("```json");
+  if (trimmed.startsWith("{") || trimmed.startsWith("```json")) return true;
+  // Scan only the tail — if the model wrote prose then started JSON,
+  // the markers will be near the end of what we've buffered so far.
+  const tail = text.slice(-400);
+  return (
+    /"answer"\s*:/.test(tail) ||
+    /"title"\s*:/.test(tail) ||
+    /"suggestedContacts"\s*:/.test(tail) ||
+    /"suggestions"\s*:/.test(tail) ||
+    /"contactId"\s*:/.test(tail)
+  );
 }
