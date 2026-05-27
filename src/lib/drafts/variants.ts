@@ -86,6 +86,16 @@ export function buildVariantsUserPrompt(
   context: RefineContextSummary,
 ): string {
   const parts: string[] = [];
+
+  // M0.x.12 — Jennifer's custom voice instructions apply to every
+  // variant. Even the "with_humor" variant honors her overrides.
+  const userInstructions = context.userInstructions?.trim();
+  if (userInstructions) {
+    parts.push(
+      `CUSTOM VOICE INSTRUCTIONS (apply to ALL three variants):\n${userInstructions}\n`,
+    );
+  }
+
   parts.push(`RECIPIENT: ${context.recipientFullName} (${context.relationshipType})`);
   if (context.recipientEmail) parts.push(`Email: ${context.recipientEmail}`);
 

@@ -260,6 +260,10 @@ interface VoiceContext {
   references: VoiceReferenceForPrompt[];
   learnedProfile: LearnedProfile | null;
   relationshipType: RelationshipType;
+  /** M0.x.12 — Jennifer's free-form custom instructions from
+   *  /settings/voice. Highest-priority voice signal; rendered at
+   *  the top of the voice block. */
+  userInstructions: string | null;
 }
 
 async function generateWithAI(params: Omit<GenerateDraftParams, "replyContext"> & {
@@ -311,6 +315,7 @@ Return ONLY valid JSON with no markdown:
         examples: params.voiceContext.examples,
         references: params.voiceContext.references,
         relationshipType: params.voiceContext.relationshipType,
+        userInstructions: params.voiceContext.userInstructions,
       })
     : null;
   const closingGuidance = params.voiceContext
@@ -319,6 +324,7 @@ Return ONLY valid JSON with no markdown:
         examples: params.voiceContext.examples,
         references: params.voiceContext.references,
         relationshipType: params.voiceContext.relationshipType,
+        userInstructions: params.voiceContext.userInstructions,
       })
     : "";
 
@@ -533,7 +539,7 @@ async function tryFetchVoiceContext(args: {
         : Promise.resolve([] as VoiceExampleResult[]),
       prisma.voiceProfile.findUnique({
         where: { userId: args.userId },
-        select: { learned: true },
+        select: { learned: true, userInstructions: true },
       }),
       getVoiceReferences({
         prisma,
@@ -547,11 +553,13 @@ async function tryFetchVoiceContext(args: {
     ]);
     const learnedProfile =
       (profile?.learned as unknown as LearnedProfile | null) ?? null;
+    const userInstructions = profile?.userInstructions ?? null;
     const ctx: VoiceContext = {
       examples,
       references,
       learnedProfile,
       relationshipType,
+      userInstructions,
     };
     // If there's truly nothing to inject, return null so the caller
     // takes the cheaper non-voice path.
@@ -561,6 +569,7 @@ async function tryFetchVoiceContext(args: {
         examples,
         references,
         relationshipType,
+        userInstructions,
       })
     ) {
       return null;

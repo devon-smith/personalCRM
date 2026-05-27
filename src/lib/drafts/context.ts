@@ -92,6 +92,13 @@ export async function buildRefineContext(args: {
   });
   const memorySummary = memory ? buildMemorySummary(memory) : "";
 
+  // M0.x.12 — load Jennifer's custom voice instructions so refinements
+  // + variants honor the same global voice rules as the draft pipeline.
+  const profile = await args.prisma.voiceProfile.findUnique({
+    where: { userId: args.userId },
+    select: { userInstructions: true },
+  });
+
   const firstName = contact.name.split(" ")[0] ?? contact.name;
 
   return {
@@ -102,5 +109,6 @@ export async function buildRefineContext(args: {
     memorySummary,
     replyContext,
     references,
+    userInstructions: profile?.userInstructions ?? null,
   };
 }

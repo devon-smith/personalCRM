@@ -48,6 +48,7 @@ export async function GET() {
     overrides,
     indexedEmailCount: profile?.indexedEmailCount ?? 0,
     lastIndexedAt: profile?.lastIndexedAt?.toISOString() ?? null,
+    userInstructions: profile?.userInstructions ?? null,
   });
 }
 
@@ -56,7 +57,12 @@ interface PatchBody {
   assertions?: Record<string, unknown>;
   /** If true, replace removedPhrases wholesale; otherwise merge. */
   replaceRemovedPhrases?: boolean;
+  /** M0.x.12 — Jennifer's free-form custom voice instructions. Set
+   *  to "" to clear; omit to leave unchanged. Capped at 4000 chars. */
+  userInstructions?: string;
 }
+
+const USER_INSTRUCTIONS_MAX = 4000;
 
 export async function PATCH(req: NextRequest) {
   const session = await auth();
@@ -87,17 +93,36 @@ export async function PATCH(req: NextRequest) {
   };
 
   const overridesJson = JSON.parse(JSON.stringify(nextOverrides));
-  await prisma.voiceProfile.upsert({
+
+  // M0.x.12 — userInstructions: only touch when the caller supplied
+  // it (typeof string). Empty string clears; undefined leaves as-is.
+  let nextUserInstructions: string | undefined;
+  if (typeof body.userInstructions === "string") {
+    nextUserInstructions = body.userInstructions
+      .trim()
+      .slice(0, USER_INSTRUCTIONS_MAX);
+  }
+
+  const updated = await prisma.voiceProfile.upsert({
     where: { userId: session.user.id },
     create: {
       userId: session.user.id,
       learned: {},
       overrides: overridesJson,
+      userInstructions: nextUserInstructions ?? null,
     },
     update: {
       overrides: overridesJson,
+      ...(nextUserInstructions !== undefined
+        ? { userInstructions: nextUserInstructions || null }
+        : {}),
     },
+    select: { userInstructions: true },
   });
 
-  return NextResponse.json({ ok: true, overrides: nextOverrides });
+  return NextResponse.json({
+    ok: true,
+    overrides: nextOverrides,
+    userInstructions: updated.userInstructions,
+  });
 }

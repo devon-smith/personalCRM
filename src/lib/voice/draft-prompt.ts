@@ -40,6 +40,10 @@ export interface VoiceReferenceForPrompt {
 export interface BuildVoicePromptParams {
   /** The full per-user learned snapshot from VoiceProfile.learned. */
   learnedProfile: LearnedProfile | null;
+  /** M0.x.12 — Jennifer's free-form custom voice instructions from
+   *  /settings/voice. Rendered at the very top of the voice block as
+   *  the highest-priority guidance. Trimmed and ignored when empty. */
+  userInstructions?: string | null;
   /** The few-shot examples for this draft, top-K from retrieval. */
   examples: ReadonlyArray<VoiceExampleResult>;
   /** The recipient's relationship type — drives which bucket of the
@@ -63,6 +67,9 @@ const REFERENCE_EXCERPT_CHARS = 4000;
  * should fall back to the pre-M6.3 prompt path.
  */
 export function hasVoiceContext(params: BuildVoicePromptParams): boolean {
+  if (params.userInstructions && params.userInstructions.trim().length > 0) {
+    return true;
+  }
   if ((params.references?.length ?? 0) > 0) return true;
   if (params.examples.length > 0) return true;
   const bucket = params.learnedProfile?.byRelationship?.[params.relationshipType];
@@ -80,7 +87,17 @@ export function buildVoiceBlock(params: BuildVoicePromptParams): string | null {
 
   const sections: string[] = [];
 
-  // M0.x.5: voice references FIRST. These represent Jennifer's
+  // M0.x.12: user-typed instructions go FIRST, above even the
+  // references. These are the most-authoritative voice signal —
+  // explicitly typed by Jennifer with the intent of shaping every
+  // outbound message. Reference materials embody her voice; these
+  // are her instructions FOR the model. Direct trumps inferred.
+  const instructions = params.userInstructions?.trim();
+  if (instructions) {
+    sections.push(buildInstructionsBlock(instructions));
+  }
+
+  // M0.x.5: voice references next. These represent Jennifer's
   // intentional voice (curated KB / style guide / humor manual) and
   // should dominate over the observed patterns from sent mail when
   // the two conflict.
@@ -135,6 +152,21 @@ export function buildVoiceBlock(params: BuildVoicePromptParams): string | null {
  * test surface stays small and we can swap the format later without
  * touching buildVoiceBlock.
  */
+/**
+ * M0.x.12 — render Jennifer's free-form custom voice instructions
+ * as the topmost block. Exported for unit testing. Caller is
+ * responsible for length sanity at write-time (we cap UI input at
+ * 4000 chars; nothing here truncates further).
+ */
+export function buildInstructionsBlock(instructions: string): string {
+  return (
+    `## CUSTOM VOICE INSTRUCTIONS (highest priority — apply to every draft)\n` +
+    `Jennifer typed these directly to shape how outbound messages sound. ` +
+    `They override conflicting guidance from references, examples, or learned patterns:\n\n` +
+    instructions
+  );
+}
+
 export function buildReferencesBlock(
   references: ReadonlyArray<VoiceReferenceForPrompt>,
 ): string {

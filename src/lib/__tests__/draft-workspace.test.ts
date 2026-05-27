@@ -165,6 +165,7 @@ describe("buildRefinementUserPrompt", () => {
         memorySummary: "",
         replyContext: null,
         references: [],
+        userInstructions: null,
       },
     };
   }
@@ -327,6 +328,7 @@ describe("buildVariantsUserPrompt", () => {
         memorySummary: "",
         replyContext: null,
         references: [],
+        userInstructions: null,
       },
     );
     expect(out).toContain("shorter_direct");

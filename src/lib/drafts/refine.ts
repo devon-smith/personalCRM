@@ -36,6 +36,10 @@ export interface RefineContextSummary {
   readonly replyContext: ReplyContext | null;
   /** Voice references to keep "in the room" across refinements. M0.x.5. */
   readonly references: ReadonlyArray<VoiceReferenceForPrompt>;
+  /** M0.x.12 — Jennifer's free-form custom voice instructions from
+   *  /settings/voice. Threaded into refinement + variants prompts so
+   *  iterative edits respect the same global voice rules drafts use. */
+  readonly userInstructions: string | null;
 }
 
 export interface RefineRunArgs {
@@ -103,6 +107,17 @@ function getClient(): AnthropicLike {
 export function buildRefinementUserPrompt(args: RefineRunArgs): string {
   const ctx = args.context;
   const parts: string[] = [];
+
+  // M0.x.12 — Jennifer's custom voice instructions FIRST, before
+  // any context. These are her own prompt-engineering and the
+  // model should treat them as highest authority.
+  const userInstructions = ctx.userInstructions?.trim();
+  if (userInstructions) {
+    parts.push(
+      `CUSTOM VOICE INSTRUCTIONS (apply to every revision — these override conflicting guidance):\n${userInstructions}\n`,
+    );
+  }
+
   parts.push(`RECIPIENT: ${ctx.recipientFullName} (${ctx.relationshipType})`);
   if (ctx.recipientEmail) parts.push(`Email: ${ctx.recipientEmail}`);
 

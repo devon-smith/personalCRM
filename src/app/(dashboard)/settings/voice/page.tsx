@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, X, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, X, Sparkles, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Surface, SectionLabel, Pill, Sparkline } from "@/components/ds";
 import type {
@@ -18,6 +19,7 @@ interface ProfileResponse {
   overrides: VoiceOverrides;
   indexedEmailCount: number;
   lastIndexedAt: string | null;
+  userInstructions: string | null;
 }
 
 interface StatsResponse {
@@ -111,6 +113,24 @@ export default function VoiceSettingsPage() {
       toast.success("Removed — won't reappear on re-index");
     },
     onError: () => toast.error("Failed to remove phrase"),
+  });
+
+  // M0.x.12 — save the free-form custom voice instructions.
+  const saveInstructions = useMutation({
+    mutationFn: async (text: string) => {
+      const res = await fetch("/api/voice/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userInstructions: text }),
+      });
+      if (!res.ok) throw new Error("Failed to save voice instructions");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["voice", "profile"] });
+      toast.success("Voice instructions saved — applied to every draft now");
+    },
+    onError: () => toast.error("Failed to save voice instructions"),
   });
 
   return (
@@ -211,6 +231,15 @@ export default function VoiceSettingsPage() {
           </Link>
         </div>
       </Surface>
+
+      {/* M0.x.12 — Custom voice instructions textarea. Applied to
+          every outbound message (drafts, refinements, variants) as
+          highest-priority guidance. */}
+      <CustomInstructionsCard
+        value={profile?.userInstructions ?? null}
+        onSave={(text) => saveInstructions.mutate(text)}
+        saving={saveInstructions.isPending}
+      />
 
       {/* Per-relationship cards */}
       {profile && profile.learned.overallCount > 0 ? (
@@ -449,4 +478,113 @@ function formatDateRange(oldestIso: string, newestIso: string): string {
   const fmt = (d: Date) =>
     d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
   return `${fmt(oldest)} – ${fmt(newest)}`;
+}
+
+const USER_INSTRUCTIONS_MAX = 4000;
+
+/**
+ * M0.x.12 — free-form custom voice instructions textarea. Whatever
+ * Jennifer types here is prepended as the highest-priority block in
+ * every outbound message Claude generates (drafts, workspace
+ * refinements, variants). Complements the file-based references.
+ */
+function CustomInstructionsCard({
+  value,
+  onSave,
+  saving,
+}: {
+  value: string | null;
+  onSave: (text: string) => void;
+  saving: boolean;
+}) {
+  const [text, setText] = useState<string>(value ?? "");
+  // Sync local edits with server-side updates (e.g. another tab saves).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setText(value ?? "");
+  }, [value]);
+  const dirty = text !== (value ?? "");
+  const overLimit = text.length > USER_INSTRUCTIONS_MAX;
+
+  return (
+    <div
+      className="crm-card crm-animate-enter rounded-[var(--radius-md)] px-4 py-4"
+      style={{
+        backgroundColor: "var(--surface)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <p className="ds-heading-sm" style={{ color: "var(--text-primary)" }}>
+            Custom voice instructions
+          </p>
+          <p
+            className="ds-caption mt-0.5"
+            style={{ color: "var(--text-tertiary)" }}
+          >
+            Anything you want Claude to remember about how you write. Applied
+            to every draft, refinement, and variant — above references and
+            learned patterns.
+          </p>
+        </div>
+      </div>
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={
+          'e.g. "Always warm but direct — no corporate filler.\n' +
+          'Never use \'circle back\' or \'just wanted to\'.\n' +
+          'For casual notes, skip the greeting and dive in."'
+        }
+        rows={6}
+        className="w-full rounded-[var(--radius-sm)] border px-3 py-2 text-[13px] font-mono resize-y"
+        style={{
+          borderColor: overLimit
+            ? "var(--status-urgent, #DC2626)"
+            : "var(--border)",
+          backgroundColor: "var(--surface-sunken)",
+          color: "var(--text-primary)",
+          lineHeight: 1.5,
+        }}
+      />
+
+      <div className="mt-2 flex items-center justify-between">
+        <span
+          className="ds-caption tabular-nums"
+          style={{
+            color: overLimit
+              ? "var(--status-urgent, #DC2626)"
+              : "var(--text-tertiary)",
+          }}
+        >
+          {text.length.toLocaleString()} / {USER_INSTRUCTIONS_MAX.toLocaleString()}
+        </span>
+        <button
+          onClick={() => onSave(text)}
+          disabled={!dirty || saving || overLimit}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50"
+          style={{
+            backgroundColor:
+              dirty && !overLimit
+                ? "var(--accent-color)"
+                : "var(--surface-sunken)",
+            color:
+              dirty && !overLimit
+                ? "var(--text-inverse)"
+                : "var(--text-tertiary)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          {saving ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Save className="h-3 w-3" />
+          )}
+          {saving ? "Saving…" : "Save instructions"}
+        </button>
+      </div>
+    </div>
+  );
 }

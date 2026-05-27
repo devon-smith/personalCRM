@@ -767,6 +767,12 @@ model VoiceProfile {
   // opening / closing detection don't pick up Jennifer's footer block
   // as "voice." Sorted longest-first for deterministic display.
   signatureLines    String[]  @default([])
+  // M0.x.12 — free-form custom voice instructions Jennifer types in
+  // /settings/voice. Applied as the highest-priority block in every
+  // outbound message prompt (drafts, workspace refinements, variants).
+  // Complements the file-based VoiceReferences (which are semantically
+  // retrieved per-draft); these instructions are ALWAYS included.
+  userInstructions  String?   @db.Text
   indexedEmailCount Int       @default(0)
   oldestIndexedAt   DateTime?
   newestIndexedAt   DateTime?
