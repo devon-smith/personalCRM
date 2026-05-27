@@ -1058,10 +1058,20 @@ model SavedQuery {
   // Powers default sort ("recently used" first).
   lastRunAt DateTime?
 
+  // M0.x.7 — every query now auto-saves with its answer so /ask
+  // history is browsable and starrable. Pre-M0.x.7 rows have
+  // answer=NULL (re-run to populate); new rows always carry one.
+  answer       String?  @db.Text
+  /// Shape: { suggestedContacts, reasoningTrace, tokensIn, tokensOut }
+  evidence     Json?
+  isStarred    Boolean  @default(false)
+  runCount     Int      @default(1)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, lastRunAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, isStarred, createdAt(sort: Desc)])
 }
 
 // Unprompted observations the assistant surfaces on the dashboard

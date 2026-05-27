@@ -7,9 +7,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  Bookmark,
+  Star,
   Wand2,
-  Check,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -59,6 +58,9 @@ interface QueryResult {
     summary: string;
   }>;
   usage: { inputTokens: number; outputTokens: number };
+  /** M0.x.7 — id of the auto-saved SavedQuery row. Set when the
+   *  server persists the answer; lets the UI star/deep-link. */
+  savedQueryId?: string;
 }
 
 interface LiveStep {
@@ -79,7 +81,17 @@ const TOOL_LABELS: Record<string, string> = {
   find_themes: "Pulling themes",
 };
 
-export function NetworkQueryBox() {
+export function NetworkQueryBox({
+  seedQuery,
+  onSeedConsumed,
+}: {
+  /** When set (and non-empty), fill the input with this text and
+   *  immediately submit. Used by /ask history's Re-run button. */
+  seedQuery?: string | null;
+  /** Called once the seedQuery has been consumed so the parent can
+   *  clear its state — otherwise re-runs would loop. */
+  onSeedConsumed?: () => void;
+} = {}) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
@@ -163,6 +175,7 @@ export function NetworkQueryBox() {
     setStreamingText("");
     setShowTrace(false);
     setSavedFlash(false);
+    setQuery(q.trim());
     setSubmittedQuery(q.trim());
     setIsStreaming(true);
 
@@ -266,6 +279,19 @@ export function NetworkQueryBox() {
     }
   }, [isStreaming]);
 
+  // M0.x.7: parent passes a seedQuery (from /ask history "Re-run").
+  // Fill the input + auto-submit, then notify so the parent clears.
+  // This is a setState-in-effect on purpose — submit() is the only
+  // entry point that wires the streaming pipeline, and we need to
+  // trigger it from a prop change rather than a click handler.
+  useEffect(() => {
+    if (!seedQuery) return;
+    if (isStreaming) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    submit(seedQuery);
+    if (onSeedConsumed) onSeedConsumed();
+  }, [seedQuery, isStreaming, submit, onSeedConsumed]);
+
   return (
     <section className="space-y-3">
       <form
@@ -319,13 +345,13 @@ export function NetworkQueryBox() {
         </div>
       </form>
 
-      {/* Subtle discoverability link to /queries (saved). Only shows
-          when there's at least one saved query — empty state would
-          add UI weight without reason. */}
+      {/* M0.x.7: every query now auto-saves with its answer. The
+          link points at /ask history, where Jennifer can re-read,
+          star, filter, and re-run any past query. */}
       {savedCount > 0 && (
         <div className="flex justify-end -mt-1">
           <Link
-            href="/queries"
+            href="/ask"
             className="text-[11px] transition-colors"
             style={{ color: "#8C8A82" }}
             onMouseEnter={(e) => {
@@ -335,7 +361,7 @@ export function NetworkQueryBox() {
               e.currentTarget.style.color = "#8C8A82";
             }}
           >
-            View saved question{savedCount === 1 ? "" : "s"} ({savedCount}) →
+            View question history ({savedCount}) →
           </Link>
         </div>
       )}
@@ -368,27 +394,33 @@ export function NetworkQueryBox() {
             // off a possibly-misleading first pass.
             submit(`${submittedQuery}\n\nAdditional constraint: ${refinement}`)
           }
-          onSave={async () => {
+          onToggleStar={async () => {
+            // M0.x.7 — every query auto-saves; the toolbar action
+            // just flips the star bit. Optimistic flash only.
+            if (!result.savedQueryId) {
+              toast.error("Couldn't star this query (not yet saved)");
+              return;
+            }
+            const nextStarred = !savedFlash; // re-using flash flag as the visual toggle
             try {
-              const res = await fetch("/api/saved-queries", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  query: submittedQuery,
-                  title: result.title ?? null,
-                }),
-              });
-              if (!res.ok) throw new Error("Save failed");
-              setSavedFlash(true);
-              toast.success("Saved — find it on /queries");
-              setTimeout(() => setSavedFlash(false), 2000);
+              const res = await fetch(
+                `/api/saved-queries/${encodeURIComponent(result.savedQueryId)}`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ isStarred: nextStarred }),
+                },
+              );
+              if (!res.ok) throw new Error("Star failed");
+              setSavedFlash(nextStarred);
+              toast.success(nextStarred ? "Starred" : "Unstarred");
             } catch (err) {
               toast.error(
-                err instanceof Error ? err.message : "Save failed",
+                err instanceof Error ? err.message : "Couldn't star",
               );
             }
           }}
-          savedFlash={savedFlash}
+          isStarred={savedFlash}
           onDismiss={dismissResult}
         />
       )}
@@ -550,16 +582,16 @@ function QueryResultPanel({
   showTrace,
   onToggleTrace,
   onRefine,
-  onSave,
-  savedFlash,
+  onToggleStar,
+  isStarred,
   onDismiss,
 }: {
   result: QueryResult;
   showTrace: boolean;
   onToggleTrace: () => void;
   onRefine: (refinement: string) => void;
-  onSave: () => void;
-  savedFlash: boolean;
+  onToggleStar: () => void;
+  isStarred: boolean;
   onDismiss: () => void;
 }) {
   const [refinement, setRefinement] = useState("");
@@ -666,17 +698,22 @@ function QueryResultPanel({
           Refine
         </button>
         <button
-          onClick={onSave}
-          disabled={savedFlash}
-          className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider transition-colors disabled:opacity-60"
-          style={{ color: savedFlash ? "#7A4F3C" : "#8C8A82" }}
+          onClick={onToggleStar}
+          className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider transition-colors"
+          style={{ color: isStarred ? "#B58B3C" : "#8C8A82" }}
+          aria-pressed={isStarred}
+          title={
+            isStarred
+              ? "Remove star — this answer stays in history regardless"
+              : "Star this answer to find it faster later"
+          }
         >
-          {savedFlash ? (
-            <Check className="h-3 w-3" />
-          ) : (
-            <Bookmark className="h-3 w-3" />
-          )}
-          {savedFlash ? "Saved" : "Save query"}
+          <Star
+            className="h-3 w-3"
+            fill={isStarred ? "#B58B3C" : "none"}
+            strokeWidth={isStarred ? 1.4 : 1.6}
+          />
+          {isStarred ? "Starred" : "Star"}
         </button>
       </div>
 

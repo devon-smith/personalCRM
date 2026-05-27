@@ -58,16 +58,21 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       query,
     });
+    // M0.x.7: every query auto-saves with its answer. Trust depends
+    // on Jennifer being able to come back and re-read what we told
+    // her — the old flow lost that the moment she navigated away.
+    const saved = await persistSavedQuery(session.user.id, query, result);
     await logAIGeneration({
       userId: session.user.id,
       feature: "network_query",
       model: "claude-sonnet-4-20250514",
       inputRefs: result.suggestedContacts.map((s) => `contact:${s.contactId}`),
+      outputId: saved.id,
       tokensIn: result.usage.inputTokens,
       tokensOut: result.usage.outputTokens,
       latencyMs: Date.now() - startedAt,
     });
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, savedQueryId: saved.id });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await logAIGeneration({
@@ -102,12 +107,21 @@ function streamResponse(userId: string, query: string): Response {
           userId,
           query,
         })) {
-          // Forward every event as SSE. The discriminated type lives
-          // on `ev.type` and the rest of the fields are the payload.
-          const { type, ...rest } = ev;
-          send(type, rest);
+          // Forward every event as SSE EXCEPT complete — we wrap
+          // that one with the persisted savedQueryId so the client
+          // can deep-link immediately.
+          if (ev.type !== "complete") {
+            const { type, ...rest } = ev;
+            send(type, rest);
+          }
 
-          if (type === "complete") {
+          if (ev.type === "complete") {
+            // M0.x.7: persist before sending the complete event so a
+            // refresh sees the same id in history immediately.
+            const saved = await persistSavedQuery(userId, query, ev.result);
+            send("complete", {
+              result: { ...ev.result, savedQueryId: saved.id },
+            });
             // Final logging — same shape as the non-streaming path.
             await logAIGeneration({
               userId,
@@ -116,11 +130,14 @@ function streamResponse(userId: string, query: string): Response {
               inputRefs: ev.result.suggestedContacts.map(
                 (s) => `contact:${s.contactId}`,
               ),
+              outputId: saved.id,
               tokensIn: ev.result.usage.inputTokens,
               tokensOut: ev.result.usage.outputTokens,
               latencyMs: Date.now() - startedAt,
             });
-          } else if (type === "error") {
+            continue;
+          }
+          if (ev.type === "error") {
             await logAIGeneration({
               userId,
               feature: "network_query",
@@ -150,4 +167,39 @@ function streamResponse(userId: string, query: string): Response {
       "X-Accel-Buffering": "no",
     },
   });
+}
+
+/**
+ * M0.x.7: persist a completed query + its full answer + evidence as
+ * a SavedQuery row. We never dedupe on query text — same question
+ * asked twice produces two snapshots (her network may have changed
+ * between runs, and the second answer might be materially
+ * different). Title falls back to the first 80 chars of the query.
+ */
+async function persistSavedQuery(
+  userId: string,
+  query: string,
+  result: import("@/lib/intelligence/network-query").NetworkQueryResult,
+): Promise<{ id: string }> {
+  const evidence = {
+    suggestedContacts: result.suggestedContacts,
+    reasoningTrace: result.reasoningTrace,
+    tokensIn: result.usage.inputTokens,
+    tokensOut: result.usage.outputTokens,
+  };
+  const title =
+    result.title ??
+    (query.length > 80 ? query.slice(0, 77) + "…" : query);
+  const saved = await prisma.savedQuery.create({
+    data: {
+      userId,
+      query,
+      title,
+      answer: result.answer,
+      evidence: evidence as unknown as object,
+      lastRunAt: new Date(),
+    },
+    select: { id: true },
+  });
+  return saved;
 }

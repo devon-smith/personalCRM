@@ -7,6 +7,7 @@ import {
   Users,
   CircleDot,
   Activity,
+  MessageCircleQuestion,
   Settings,
   Merge,
   Search,
@@ -30,6 +31,7 @@ interface RailItem {
 
 const ITEMS: RailItem[] = [
   { href: "/dashboard",   label: "Home",         icon: Home,     group: "general", matchExact: true },
+  { href: "/ask",         label: "Ask",          icon: MessageCircleQuestion, group: "general" },
   { href: "/activity",    label: "Activity",     icon: Activity, group: "general" },
   { href: "/people",      label: "People",       icon: Users,    group: "general" },
   { href: "/feed",        label: "Feed",         icon: Sparkles, group: "general" },

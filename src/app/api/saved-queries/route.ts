@@ -4,28 +4,58 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * GET  /api/saved-queries
- *   Lists the user's saved queries. Sorted by lastRunAt desc
- *   (most-recently re-run first), createdAt desc tiebreak.
+ *   Lists the user's query history with full answers + evidence.
+ *   Sorted by lastRunAt desc, createdAt desc tiebreak.
+ *
+ *   Query params (all client-side filterable too, but these let the
+ *   server cap payload size for power users):
+ *     ?starred=1            → only isStarred=true
+ *     ?since=<isoDate>      → createdAt >= that date
+ *     ?limit=N (default 50) → cap
  *
  * POST /api/saved-queries
- *   Body: { query: string, title?: string }
- *   Creates a new saved query for the user.
+ *   Legacy save-query path. M0.x.7: every query auto-saves via
+ *   /api/network-query, so this endpoint is no longer the primary
+ *   write surface. Kept for backwards compatibility with the M7.4
+ *   client code that posted a query+title without an answer.
  *
- * Per-query deletion lives at /api/saved-queries/[id].
+ * Per-query mutation lives at /api/saved-queries/[id] (PATCH, DELETE).
  */
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const url = new URL(req.url);
+  const starredOnly = url.searchParams.get("starred") === "1";
+  const since = url.searchParams.get("since");
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? Math.min(200, Math.max(1, Number(limitParam))) : 50;
+
+  const where: {
+    userId: string;
+    isStarred?: boolean;
+    createdAt?: { gte: Date };
+  } = { userId: session.user.id };
+  if (starredOnly) where.isStarred = true;
+  if (since) {
+    const date = new Date(since);
+    if (!isNaN(date.getTime())) where.createdAt = { gte: date };
+  }
+
   const queries = await prisma.savedQuery.findMany({
-    where: { userId: session.user.id },
-    orderBy: [{ lastRunAt: "desc" }, { createdAt: "desc" }],
+    where,
+    orderBy: [{ createdAt: "desc" }],
+    take: limit,
     select: {
       id: true,
       query: true,
       title: true,
+      answer: true,
+      evidence: true,
+      isStarred: true,
+      runCount: true,
       createdAt: true,
       lastRunAt: true,
     },
@@ -57,6 +87,8 @@ export async function POST(req: NextRequest) {
       ? body.title.trim().slice(0, 120)
       : null;
 
+  // Legacy path — no answer/evidence. UI should prefer running
+  // through /api/network-query which auto-saves with the answer.
   const saved = await prisma.savedQuery.create({
     data: {
       userId: session.user.id,
@@ -67,6 +99,10 @@ export async function POST(req: NextRequest) {
       id: true,
       query: true,
       title: true,
+      answer: true,
+      evidence: true,
+      isStarred: true,
+      runCount: true,
       createdAt: true,
       lastRunAt: true,
     },

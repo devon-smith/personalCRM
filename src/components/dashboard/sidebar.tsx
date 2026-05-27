@@ -8,6 +8,7 @@ import {
   Users,
   CircleDot,
   Activity,
+  MessageCircleQuestion,
   Settings,
   Menu,
   X,
@@ -19,6 +20,7 @@ import { UserNav } from "@/components/auth/user-nav";
 
 const navItems = [
   { href: "/dashboard", label: "Home", icon: Home },
+  { href: "/ask", label: "Ask", icon: MessageCircleQuestion },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/people", label: "People", icon: Users },
   { href: "/feed", label: "Feed", icon: Sparkles },
