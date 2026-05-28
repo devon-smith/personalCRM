@@ -444,8 +444,22 @@ model Interaction {
   // Legacy classifier fields (Interaction.needsReply*) were removed in
   // M0.x.2 — classification now lives on InboxItem.needsResponse.
 
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // M0.x.13 — Full message body for message channels (WhatsApp, iMessage)
+  // that don't have a separate per-message table like EmailMessage. The
+  // `summary` column above is the truncated display preview; this is the
+  // untruncated text used by voice-corpus indexing and life-event
+  // extraction. Stays null for channels that already store body elsewhere
+  // (email → EmailMessage.fullBody) or where we never fetch it.
+  fullBody             String?   @db.Text
+  // M0.x.13 — Life event extraction tracking for message channels.
+  // Mirrors EmailMessage.lifeEventProcessedAt: NULL → not processed;
+  // non-NULL → processed (a LifeEventSignal row may or may not exist
+  // depending on whether the model detected a signal).
+  lifeEventProcessedAt DateTime?
+
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voiceExample VoiceExample?
 
   @@unique([userId, sourceId])
   @@index([contactId])
@@ -454,6 +468,7 @@ model Interaction {
   @@index([userId, contactId, occurredAt])
   @@index([userId, chatId, occurredAt])
   @@index([threadId])
+  @@index([userId, lifeEventProcessedAt])
 }
 
 // ─── Threads (canonical conversation identity) ─────────────
@@ -793,8 +808,14 @@ model VoiceProfile {
 model VoiceExample {
   id               String   @id @default(uuid())
   userId           String
-  emailMessageId   String   @unique
-  gmailId          String
+  // M0.x.13 — Polymorphic source. Exactly one of emailMessageId /
+  // interactionId is non-null; `channel` tags which one. Existing rows
+  // keep channel="email" via the default; the migration sets it for the
+  // backfill.
+  channel          String   @default("email")
+  emailMessageId   String?  @unique
+  interactionId    String?  @unique
+  gmailId          String?
   relationshipType String
   openingType      String?
   closingType      String?
@@ -810,11 +831,13 @@ model VoiceExample {
   // without breaking the query API.
   embedding Unsupported("vector(512)")?
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  emailMessage EmailMessage @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailMessage EmailMessage? @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+  interaction  Interaction?  @relation(fields: [interactionId], references: [id], onDelete: Cascade)
 
   @@index([userId, relationshipType])
   @@index([userId, sentAt(sort: Desc)])
+  @@index([userId, channel])
 }
 
 // ─── Voice References (M0.x.5) ───────────────────────────────
@@ -835,21 +858,21 @@ model VoiceExample {
 //      voice prompt at draft time.
 
 model VoiceReference {
-  id          String   @id @default(cuid())
+  id          String                      @id @default(cuid())
   userId      String
   filename    String
   /// "gpt_knowledge_base" | "manual_upload" | "book_excerpt" | "style_guide"
-  sourceType  String   @default("gpt_knowledge_base")
+  sourceType  String                      @default("gpt_knowledge_base")
   /// Extracted plain text (capped at MAX_REFERENCE_TEXT_BYTES at upload time)
-  content     String   @db.Text
+  content     String                      @db.Text
   /// SHA-256 of the extracted content — dedup per user
   contentHash String
   /// Tier weight used by the prompt builder. Defaults match the
   /// spec: 1.0 for gpt_knowledge_base, 0.3 for other reference
   /// types. Higher = stronger prompt prominence.
-  weight      Float    @default(1.0)
+  weight      Float                       @default(1.0)
   /// Original byte size of the uploaded file (pre-extraction)
-  byteSize    Int      @default(0)
+  byteSize    Int                         @default(0)
   /// Structured Haiku-extracted style guidance. Shape:
   /// { applicableRelationships: string[] | "all", greetings: [],
   ///   closings: [], signaturePhrases: [], avoidPhrases: [],
@@ -859,7 +882,7 @@ model VoiceReference {
   /// NULL if Voyage was unavailable at upload — those rows still
   /// contribute as wholesale prompt context, just not via retrieval.
   embedding   Unsupported("vector(512)")?
-  addedAt     DateTime @default(now())
+  addedAt     DateTime                    @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -911,7 +934,7 @@ model Draft {
   // draft for an OPEN inbox item; null for drafts the user started
   // manually. Unique so the worker can't create duplicate drafts
   // for the same item on a re-run.
-  inboxItemId String? @unique
+  inboxItemId String?    @unique
   inboxItem   InboxItem? @relation(fields: [inboxItemId], references: [id], onDelete: SetNull)
 
   // M0.x.6 — Workspace state. Drafts that go through the iterative
@@ -929,13 +952,13 @@ model Draft {
   //
   // Both default to empty JSON arrays so existing non-workspace
   // drafts read cleanly.
-  workspaceVersions Json     @default("[]")
-  refinementChat    Json     @default("[]")
+  workspaceVersions Json    @default("[]")
+  refinementChat    Json    @default("[]")
   /// When set, refinement endpoints re-load the inbound message via
   /// loadReplyContext (M0.x.4) instead of relying on what was
   /// passed at create time.
   threadKey         String?
-  isWorkspaceDraft  Boolean  @default(false)
+  isWorkspaceDraft  Boolean @default(false)
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -1067,11 +1090,11 @@ model SavedQuery {
   // M0.x.7 — every query now auto-saves with its answer so /ask
   // history is browsable and starrable. Pre-M0.x.7 rows have
   // answer=NULL (re-run to populate); new rows always carry one.
-  answer       String?  @db.Text
+  answer    String? @db.Text
   /// Shape: { suggestedContacts, reasoningTrace, tokensIn, tokensOut }
-  evidence     Json?
-  isStarred    Boolean  @default(false)
-  runCount     Int      @default(1)
+  evidence  Json?
+  isStarred Boolean @default(false)
+  runCount  Int     @default(1)
 
   // M0.x.9 — follow-up threading. A query asked AS A FOLLOW-UP to
   // a previous one carries the parent's id here. The parent stays
@@ -1084,7 +1107,7 @@ model SavedQuery {
   /// Denormalized — incremented whenever a child is created.
   /// Lets the history list show "+N follow-ups" badges without
   /// a per-row count query.
-  followUpCount Int @default(0)
+  followUpCount Int          @default(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

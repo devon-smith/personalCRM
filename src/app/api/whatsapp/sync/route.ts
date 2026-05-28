@@ -201,6 +201,10 @@ export async function POST(request: Request) {
           direction: msg.isFromMe ? "OUTBOUND" : "INBOUND",
           channel: "whatsapp",
           summary: msg.text.slice(0, 500),
+          // M0.x.13 — Full untruncated body for voice indexing (outbound)
+          // and life-event extraction (inbound). `summary` stays the
+          // 500-char display preview; `fullBody` carries the rest.
+          fullBody: msg.text,
           occurredAt: timestamp,
           sourceId,
           chatId,

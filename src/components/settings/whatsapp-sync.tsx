@@ -138,7 +138,7 @@ export function WhatsAppSync() {
                 className="rounded px-1 py-0.5 text-[11px]"
                 style={{ backgroundColor: "var(--border)" }}
               >
-                whatsapp-sidecar/
+                whatsapp-sidecar-openwa/
               </code>
             </li>
             <li>
@@ -166,9 +166,17 @@ export function WhatsAppSync() {
               >
                 npm start
               </code>
-              {" and scan the QR code with WhatsApp"}
+              {" and scan the QR code from Settings → Linked devices"}
             </li>
           </ol>
+          <p
+            className="mt-2 text-[11px]"
+            style={{ color: "var(--text-tertiary)" }}
+          >
+            The legacy Baileys sidecar (whatsapp-sidecar/) still works
+            but ships more ban signal — prefer openwa for the live
+            account.
+          </p>
         </div>
       )}
 

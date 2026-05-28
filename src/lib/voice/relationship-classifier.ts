@@ -134,14 +134,19 @@ Respond with just the category name, nothing else.`;
 export interface ClassifyArgs {
   prisma: PrismaClient;
   userId: string;
-  recipientEmail: string;
+  /** Email path (Gmail voice indexing). */
+  recipientEmail?: string;
+  /** Direct contact path (WhatsApp / iMessage voice indexing where the
+   *  outbound message has no recipient email but we already know the
+   *  Contact row from upstream phone matching). M0.x.13 addition. */
+  contactId?: string;
 }
 
 /**
- * Resolve a recipient email to a relationship type via the cascade.
- * Caches results across calls — if the same recipient appears in many
- * sent emails (Jennifer corresponds with them often), we only hit the
- * Claude fallback once per indexing run.
+ * Resolve a recipient (by email or contactId) to a relationship type
+ * via the cascade. Caches results across calls — if the same recipient
+ * appears in many outbound messages, we only hit the Claude fallback
+ * once per indexing run.
  *
  * The cache lives in-memory per process. The worker reuses it across
  * the batch; on cold start we re-classify, which is fine.
@@ -153,12 +158,18 @@ export function clearRelationshipClassifierCache(): void {
 }
 
 export async function classifyRecipient(args: ClassifyArgs): Promise<RelationshipType> {
-  const { prisma, userId, recipientEmail } = args;
-  const cacheKey = `${userId}:${recipientEmail.toLowerCase()}`;
+  const { prisma, userId, recipientEmail, contactId } = args;
+  if (!recipientEmail && !contactId) return "unknown";
+
+  const cacheKey = contactId
+    ? `${userId}:cid:${contactId}`
+    : `${userId}:${recipientEmail!.toLowerCase()}`;
   const cached = classifyCache.get(cacheKey);
   if (cached) return cached;
 
-  const result = await classifyUncached(prisma, userId, recipientEmail);
+  const result = contactId
+    ? await classifyByContactId(prisma, userId, contactId)
+    : await classifyUncached(prisma, userId, recipientEmail!);
   classifyCache.set(cacheKey, result);
   return result;
 }
@@ -177,19 +188,53 @@ async function classifyUncached(
         { additionalEmails: { has: recipientEmail.toLowerCase() } },
       ],
     },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      company: true,
-      role: true,
-      tier: true,
-      circles: { select: { circle: { select: { name: true } } } },
-    },
+    select: contactSelect(),
   });
 
   if (!contact) return "unknown";
+  return resolveFromContact(prisma, userId, contact);
+}
 
+async function classifyByContactId(
+  prisma: PrismaClient,
+  userId: string,
+  contactId: string,
+): Promise<RelationshipType> {
+  const contact = await prisma.contact.findFirst({
+    where: { id: contactId, userId },
+    select: contactSelect(),
+  });
+  if (!contact) return "unknown";
+  return resolveFromContact(prisma, userId, contact);
+}
+
+function contactSelect() {
+  return {
+    id: true,
+    name: true,
+    email: true,
+    company: true,
+    role: true,
+    tier: true,
+    circles: { select: { circle: { select: { name: true } } } },
+  } as const;
+}
+
+interface ContactForClassify {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  role: string | null;
+  tier: string;
+  circles: Array<{ circle: { name: string } }>;
+}
+
+async function resolveFromContact(
+  prisma: PrismaClient,
+  userId: string,
+  contact: ContactForClassify,
+): Promise<RelationshipType> {
   // Layer 1: circle membership.
   for (const cc of contact.circles) {
     const type = circleNameToType(cc.circle.name);
