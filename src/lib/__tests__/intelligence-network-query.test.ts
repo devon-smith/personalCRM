@@ -112,6 +112,61 @@ describe("parseFinalAnswer", () => {
     expect(out.answer).toBe("");
     expect(out.suggestedContacts).toEqual([]);
   });
+
+  // ─── M0.x.15: empty-answer JSON fallback ──────────────────
+  it("falls back to fallbackText when JSON answer is empty string", () => {
+    const json = JSON.stringify({
+      title: "Meeting attendees",
+      answer: "",
+      suggestions: [
+        { contactId: "c1", name: "Jenni Aaker", reason: "Co-author on speech" },
+      ],
+    });
+    const fallback =
+      "Based on your close relationship with David Solomon, I recommend the people on his commencement-speech team.";
+    const out = parseFinalAnswer(json, fallback);
+    expect(out.title).toBe("Meeting attendees");
+    expect(out.answer).toMatch(/close relationship with David/);
+    expect(out.suggestedContacts).toHaveLength(1);
+  });
+
+  it("prefers JSON answer when present, ignoring fallbackText", () => {
+    const json = JSON.stringify({
+      title: "x",
+      answer: "JSON answer wins",
+      suggestions: [],
+    });
+    const fallback = "Ignored fallback prose";
+    const out = parseFinalAnswer(json, fallback);
+    expect(out.answer).toBe("JSON answer wins");
+  });
+
+  it("falls back to text-minus-JSON before reaching fallbackText", () => {
+    // When Claude emits prose AND JSON in the final iteration but the
+    // JSON has empty answer, we should grab the surrounding prose
+    // before reaching fallbackText.
+    const text =
+      "Here's what I think: " +
+      JSON.stringify({ title: "x", answer: "", suggestions: [] });
+    const out = parseFinalAnswer(text, "Older accumulated prose");
+    expect(out.answer).toBe("Here's what I think:");
+  });
+
+  it("uses fallbackText when malformed JSON AND text.trim is empty", () => {
+    // Edge case: final iteration emits nothing but a {; fallback prose
+    // from earlier iterations is the only signal. We want to PREFER
+    // the older prose over an empty answer.
+    const fallback = "Earlier prose explaining the answer.";
+    const out = parseFinalAnswer("", fallback);
+    expect(out.answer).toBe(fallback);
+  });
+
+  it("returns empty string when both text and fallback are empty (no crash)", () => {
+    const out = parseFinalAnswer("", "");
+    expect(out.answer).toBe("");
+    expect(out.title).toBeNull();
+    expect(out.suggestedContacts).toEqual([]);
+  });
 });
 
 describe("tool registry", () => {

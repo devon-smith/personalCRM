@@ -566,6 +566,8 @@ After tool exploration is complete, return your final answer as JSON in this sha
   ]
 }
 
+The "answer" field is REQUIRED and must contain your full 1-3 sentence summary. Do NOT leave it empty by putting your reasoning only in between-tool-call commentary. Even if you wrote prose while investigating, you must restate the conclusion in "answer".
+
 If the question doesn't call for contact suggestions (e.g., "what topics has Marc been discussing?"), use an empty suggestions array and put the full answer in "answer".
 
 If you can't find a good answer, say so honestly in "answer" with empty suggestions — DON'T invent options to fill the array.`;
@@ -594,6 +596,11 @@ export async function runNetworkQuery(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let finalText = "";
+  // M0.x.15 — every iteration's text content, concatenated. Used as
+  // fallback in parseFinalAnswer when Claude emits `"answer": ""` in
+  // the final JSON because all the narrative went into between-tool-
+  // call commentary instead.
+  let allText = "";
 
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
     const response = await anthropic.messages.create({
@@ -616,15 +623,21 @@ export async function runNetworkQuery(
     // pair to live in adjacent turns.
     messages.push({ role: "assistant", content: response.content });
 
+    // Accumulate every iteration's text, not just the final one.
+    const iterationText = response.content
+      .map((b) => (b.type === "text" ? b.text : ""))
+      .join("");
+    if (iterationText) {
+      allText = allText ? `${allText}\n\n${iterationText}` : iterationText;
+    }
+
     const toolUses = response.content.filter(
       (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use",
     );
 
     if (response.stop_reason === "end_turn" || toolUses.length === 0) {
       // Final answer turn. Collect text content.
-      finalText = response.content
-        .map((b) => (b.type === "text" ? b.text : ""))
-        .join("");
+      finalText = iterationText;
       break;
     }
 
@@ -679,9 +692,9 @@ export async function runNetworkQuery(
   }
 
   return {
-    ...parseFinalAnswer(finalText),
+    ...parseFinalAnswer(finalText, allText),
     reasoningTrace: trace,
-    rawAnswer: finalText,
+    rawAnswer: finalText || allText,
     usage: {
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
@@ -737,6 +750,11 @@ export async function* runNetworkQueryStream(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let finalText = "";
+  // M0.x.15 — concatenated text across every iteration. Fallback for
+  // parseFinalAnswer when Claude emits `"answer": ""` and all the
+  // substantive prose lives in between-tool-call narration. See the
+  // matching `allText` accumulator in runNetworkQuery above.
+  let allText = "";
   // M0.x.11 — when a prior iteration produced any text, emit a
   // paragraph break before the next iteration's first text_delta
   // so the streaming render shows "...past students.\n\nGreat!..."
@@ -803,6 +821,7 @@ export async function* runNetworkQueryStream(
           event.delta.type === "text_delta"
         ) {
           iterationHadText = true;
+          allText += event.delta.text;
           yield { type: "text_delta", text: event.delta.text };
         }
       }
@@ -891,9 +910,9 @@ export async function* runNetworkQueryStream(
     }
 
     const result: NetworkQueryResult = {
-      ...parseFinalAnswer(finalText),
+      ...parseFinalAnswer(finalText, allText),
       reasoningTrace: trace,
-      rawAnswer: finalText,
+      rawAnswer: finalText || allText,
       usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
     };
     yield { type: "complete", result };
@@ -915,13 +934,24 @@ interface ParsedAnswer {
  * Parse Claude's final text into the structured shape. Tolerates
  * leading/trailing prose around the JSON block. If JSON parsing
  * fails entirely, falls back to using the whole text as `answer`.
+ *
+ * M0.x.15 — `fallbackText` is the concatenated text from every
+ * orchestrator iteration, not just the last one. When Claude emits
+ * `"answer": ""` in the final JSON (treating the prose between tool
+ * calls as the "real" answer), we use the accumulated prose so the
+ * UI doesn't show "empty answer — not persisting." Strips out the
+ * JSON block so the answer isn't a duplicated mess of narrative +
+ * structured output.
  */
-export function parseFinalAnswer(text: string): ParsedAnswer {
+export function parseFinalAnswer(
+  text: string,
+  fallbackText?: string,
+): ParsedAnswer {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) {
     return {
       title: null,
-      answer: text.trim(),
+      answer: pickAnswer(text, fallbackText) || "",
       suggestedContacts: [],
     };
   }
@@ -937,18 +967,42 @@ export function parseFinalAnswer(text: string): ParsedAnswer {
           }))
           .filter((s) => s.contactId && s.name)
       : [];
+    // Prefer Claude's structured `answer` field. Only fall back when
+    // it's explicitly empty / missing / wrong-typed — Claude sometimes
+    // does this when all the substantive prose went into the
+    // narration between tool calls instead.
+    const jsonAnswer =
+      typeof parsed.answer === "string" ? parsed.answer.trim() : "";
+    const proseWithoutJson = text.replace(match[0], "").trim();
+    const answer =
+      jsonAnswer ||
+      proseWithoutJson ||
+      stripJsonFrom(fallbackText ?? "").trim() ||
+      text.trim();
     return {
       title: typeof parsed.title === "string" ? parsed.title : null,
-      answer: typeof parsed.answer === "string" ? parsed.answer : text.trim(),
+      answer,
       suggestedContacts: suggestions,
     };
   } catch {
     return {
       title: null,
-      answer: text.trim(),
+      answer: pickAnswer(text, fallbackText) || "",
       suggestedContacts: [],
     };
   }
+}
+
+function pickAnswer(text: string, fallbackText?: string): string {
+  const trimmed = text.trim();
+  if (trimmed) return trimmed;
+  return (fallbackText ?? "").trim();
+}
+
+function stripJsonFrom(text: string): string {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return text;
+  return text.replace(match[0], "");
 }
 
 /** Exported for unit testing — internal registry size. */
