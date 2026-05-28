@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { Surface, SectionLabel } from "@/components/ds";
 
 /**
- * /settings/voice/references — voice reference materials (M0.x.5).
+ * /voice/references — voice reference materials (M0.x.5).
  *
  * Upload knowledge-base files, style guides, book excerpts that
  * describe Jennifer's intentional voice. These are weighted higher
@@ -148,7 +148,7 @@ export default function VoiceReferencesPage() {
     <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6 sm:py-10 space-y-6">
       <div>
         <Link
-          href="/settings/voice"
+          href="/voice"
           className="inline-flex items-center gap-1 text-[12px]"
           style={{ color: "var(--text-tertiary)" }}
         >

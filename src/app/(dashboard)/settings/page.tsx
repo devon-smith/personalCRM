@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Trash2, Plus } from "lucide-react";
 import { CircleIcon } from "@/components/ui/circle-icon";
 import Link from "next/link";
-import { Plug, MessageSquareText } from "lucide-react";
+import { Plug, Activity } from "lucide-react";
 import { NicknameMatches } from "@/components/settings/nickname-matches";
 
 export default function SettingsPage() {
@@ -44,9 +44,9 @@ export default function SettingsPage() {
         <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
       </Link>
 
-      {/* Link to Voice settings */}
+      {/* M0.x.14 — API usage / cost dashboard */}
       <Link
-        href="/settings/voice"
+        href="/settings/usage"
         className="crm-animate-enter crm-card flex items-center gap-3 p-5 transition-colors"
         style={{ animationDelay: "40ms" }}
         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
@@ -56,11 +56,11 @@ export default function SettingsPage() {
           className="flex h-10 w-10 items-center justify-center rounded-[10px]"
           style={{ backgroundColor: "var(--surface-sunken)" }}
         >
-          <MessageSquareText className="h-5 w-5" style={{ color: "var(--text-secondary)" }} />
+          <Activity className="h-5 w-5" style={{ color: "var(--text-secondary)" }} />
         </div>
         <div className="flex-1">
-          <p className="ds-heading-sm">Your voice</p>
-          <p className="ds-caption mt-0.5">How drafts learn from the way you write. Inspect and correct the patterns we found.</p>
+          <p className="ds-heading-sm">API usage</p>
+          <p className="ds-caption mt-0.5">Token spend across Claude, Voyage, and search APIs. Per-feature breakdown.</p>
         </div>
         <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
       </Link>

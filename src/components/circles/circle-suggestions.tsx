@@ -21,6 +21,8 @@ const reasonLabels: Record<string, string> = {
   education: "Education",
   work: "Work",
   frequent_interaction: "Friends",
+  company_overlap: "Same company",
+  geographic: "Same city",
 };
 
 interface SuggestionsResponse {
@@ -362,6 +364,8 @@ function suggestColor(reason: string): string {
     education: "#8B5CF6",
     work: "#3B82F6",
     frequent_interaction: "#10B981",
+    company_overlap: "#F59E0B",
+    geographic: "#EC4899",
   };
   return colors[reason] ?? "#6B7280";
 }

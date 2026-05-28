@@ -10,7 +10,7 @@ import { RELATIONSHIP_TYPES } from "@/lib/voice/relationship-classifier";
  * many emails have been indexed, when the index was last refreshed,
  * the date window covered, and counts by relationship type.
  *
- * Powers the header strip on /settings/voice and is the smoke test
+ * Powers the header strip on /voice and is the smoke test
  * for "the worker ran and wrote something."
  */
 export async function GET() {

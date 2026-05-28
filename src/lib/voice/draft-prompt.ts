@@ -41,7 +41,7 @@ export interface BuildVoicePromptParams {
   /** The full per-user learned snapshot from VoiceProfile.learned. */
   learnedProfile: LearnedProfile | null;
   /** M0.x.12 — Jennifer's free-form custom voice instructions from
-   *  /settings/voice. Rendered at the very top of the voice block as
+   *  /voice. Rendered at the very top of the voice block as
    *  the highest-priority guidance. Trimmed and ignored when empty. */
   userInstructions?: string | null;
   /** The few-shot examples for this draft, top-K from retrieval. */

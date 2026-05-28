@@ -2,7 +2,7 @@
  * VoiceProfile aggregation (M6.2).
  *
  * Reads all VoiceExample rows for a user and produces a structured
- * snapshot that the /settings/voice page renders. Manual overrides
+ * snapshot that the /voice page renders. Manual overrides
  * (removed phrases, asserted patterns) live alongside the learned
  * snapshot and are applied at render time.
  *

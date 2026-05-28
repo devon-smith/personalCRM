@@ -803,7 +803,7 @@ function ContextPanel({
         </p>
         {ctx.references.length === 0 ? (
           <Link
-            href="/settings/voice/references"
+            href="/voice/references"
             className="text-[11.5px] underline"
             style={{ color: "var(--text-tertiary)" }}
           >

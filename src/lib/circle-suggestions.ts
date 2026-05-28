@@ -30,7 +30,9 @@ export interface CircleSuggestion {
 export type SuggestionReason =
   | "education"
   | "work"
-  | "frequent_interaction";
+  | "frequent_interaction"
+  | "company_overlap"
+  | "geographic";
 
 interface ContactWithMeta {
   readonly id: string;
@@ -38,6 +40,9 @@ interface ContactWithMeta {
   readonly email: string | null;
   readonly company: string | null;
   readonly role: string | null;
+  readonly city: string | null;
+  readonly state: string | null;
+  readonly country: string | null;
   readonly source: string;
 }
 
@@ -81,6 +86,7 @@ export async function generateCircleSuggestions(
     select: {
       id: true, name: true, email: true, company: true,
       role: true, source: true,
+      city: true, state: true, country: true,
       circles: { select: { circleId: true } },
     },
   });
@@ -93,6 +99,9 @@ export async function generateCircleSuggestions(
       email: c.email,
       company: c.company,
       role: c.role,
+      city: c.city,
+      state: c.state,
+      country: c.country,
       source: c.source,
     }));
 
@@ -198,6 +207,90 @@ export async function generateCircleSuggestions(
     ids.forEach((id) => assignedIds.add(id));
   }
 
+  // ── Signal 2b: Company overlap (M0.x.14) ──
+  // Group remaining uncircled contacts by their `company` field. Catches
+  // contacts who don't share a work email domain (Google Contacts often
+  // has personal-email-plus-company-name from LinkedIn imports). Only
+  // surfaces companies with ≥3 contacts to avoid pollution from one-off
+  // company strings.
+  const companyGroups = new Map<string, ContactWithMeta[]>();
+  for (const c of uncircled) {
+    if (assignedIds.has(c.id)) continue;
+    const company = normalizeCompany(c.company);
+    if (!company) continue;
+    const existing = companyGroups.get(company) ?? [];
+    existing.push(c);
+    companyGroups.set(company, existing);
+  }
+
+  // Emit one suggestion per company with ≥3 contacts, sorted by size.
+  const companySuggestions = Array.from(companyGroups.entries())
+    .filter(([, group]) => group.length >= 3)
+    .sort(([, a], [, b]) => b.length - a.length)
+    .slice(0, 5); // cap at 5 to avoid drowning the UI
+
+  for (const [companyKey, group] of companySuggestions) {
+    const ids = group.map((c) => c.id);
+    // Use the display-cased version of the company from the first
+    // contact (avoids "stanford gsb" lowercase).
+    const displayName = group[0].company?.trim() ?? companyKey;
+    const matchingCircle = findMatchingCircle(displayName, circles);
+    suggestions.push({
+      id: `signal:company:${companyKey}`,
+      name: matchingCircle?.name ?? displayName,
+      reason: "company_overlap",
+      description: `${group.length} contacts share ${displayName}`,
+      contactIds: ids,
+      contactCount: group.length,
+      existingCircle: matchingCircle,
+      suggestedCadence: 30,
+      contacts: group.map((c) => ({
+        id: c.id, name: c.name, company: c.company,
+      })),
+    });
+    ids.forEach((id) => assignedIds.add(id));
+  }
+
+  // ── Signal 2c: Geographic clustering (M0.x.14) ──
+  // Group remaining uncircled contacts by city. Uses Contact.city
+  // (populated from Google Contacts sync). Only emits cities with ≥5
+  // contacts since cities are more general than companies and need a
+  // larger cluster to feel meaningful as a circle.
+  const cityGroups = new Map<string, ContactWithMeta[]>();
+  for (const c of uncircled) {
+    if (assignedIds.has(c.id)) continue;
+    const cityKey = normalizeCity(c.city);
+    if (!cityKey) continue;
+    const existing = cityGroups.get(cityKey) ?? [];
+    existing.push(c);
+    cityGroups.set(cityKey, existing);
+  }
+
+  const citySuggestions = Array.from(cityGroups.entries())
+    .filter(([, group]) => group.length >= 5)
+    .sort(([, a], [, b]) => b.length - a.length)
+    .slice(0, 5);
+
+  for (const [cityKey, group] of citySuggestions) {
+    const ids = group.map((c) => c.id);
+    const displayName = group[0].city?.trim() ?? cityKey;
+    const matchingCircle = findMatchingCircle(displayName, circles);
+    suggestions.push({
+      id: `signal:geo:${cityKey}`,
+      name: matchingCircle?.name ?? displayName,
+      reason: "geographic",
+      description: `${group.length} contacts in ${displayName}`,
+      contactIds: ids,
+      contactCount: group.length,
+      existingCircle: matchingCircle,
+      suggestedCadence: 60,
+      contacts: group.map((c) => ({
+        id: c.id, name: c.name, company: c.company,
+      })),
+    });
+    ids.forEach((id) => assignedIds.add(id));
+  }
+
   // ── Signal 3: Friends (frequent interactions, no circle) ──
   const frequentUncircled = uncircled.filter(
     (c) => !assignedIds.has(c.id) && (frequencyMap.get(c.id) ?? 0) >= 5,
@@ -237,4 +330,33 @@ function findMatchingCircle(
     const cn = c.name.toLowerCase();
     return cn.includes(norm) || norm.includes(cn);
   }) ?? null;
+}
+
+/**
+ * Normalize a company string for grouping (M0.x.14). Lowercases, trims,
+ * strips common suffixes ("Inc.", "LLC", "Ltd.") so "Anthropic" and
+ * "Anthropic Inc." cluster together. Returns null for empty / one-char
+ * inputs which are noise.
+ */
+export function normalizeCompany(company: string | null | undefined): string | null {
+  if (!company) return null;
+  let s = company.trim().toLowerCase();
+  s = s.replace(/[,]?\s+(inc|llc|ltd|co|corp|corporation|company|gmbh|sa|nv|plc|holdings|group)\.?\s*$/i, "");
+  s = s.replace(/\s+/g, " ").trim();
+  if (s.length < 2) return null;
+  return s;
+}
+
+/**
+ * Normalize a city string for grouping (M0.x.14). Lowercases, trims,
+ * collapses whitespace. Returns null for empty inputs. Doesn't try to
+ * be clever about "SF" vs "San Francisco" — Google Contacts is usually
+ * consistent within an account, and false negatives are cheap to fix
+ * after the user sees them.
+ */
+export function normalizeCity(city: string | null | undefined): string | null {
+  if (!city) return null;
+  const s = city.trim().toLowerCase().replace(/\s+/g, " ");
+  if (s.length < 2) return null;
+  return s;
 }

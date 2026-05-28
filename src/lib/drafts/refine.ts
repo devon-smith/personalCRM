@@ -37,7 +37,7 @@ export interface RefineContextSummary {
   /** Voice references to keep "in the room" across refinements. M0.x.5. */
   readonly references: ReadonlyArray<VoiceReferenceForPrompt>;
   /** M0.x.12 — Jennifer's free-form custom voice instructions from
-   *  /settings/voice. Threaded into refinement + variants prompts so
+   *  /voice. Threaded into refinement + variants prompts so
    *  iterative edits respect the same global voice rules drafts use. */
   readonly userInstructions: string | null;
 }

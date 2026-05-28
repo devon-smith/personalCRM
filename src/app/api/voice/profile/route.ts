@@ -7,7 +7,7 @@ import { applyOverrides, type LearnedProfile, type VoiceOverrides } from "@/lib/
  * GET /api/voice/profile
  *
  * Returns the learned voice fingerprint with manual overrides applied,
- * ready to render in the /settings/voice page. Empty `learned` + empty
+ * ready to render in the /voice page. Empty `learned` + empty
  * `overrides` is returned when no indexing pass has run yet — caller
  * shows the empty-state CTA.
  *

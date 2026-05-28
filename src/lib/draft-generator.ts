@@ -261,7 +261,7 @@ interface VoiceContext {
   learnedProfile: LearnedProfile | null;
   relationshipType: RelationshipType;
   /** M0.x.12 — Jennifer's free-form custom instructions from
-   *  /settings/voice. Highest-priority voice signal; rendered at
+   *  /voice. Highest-priority voice signal; rendered at
    *  the top of the voice block. */
   userInstructions: string | null;
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, X, Sparkles, Save } from "lucide-react";
+import { Loader2, X, Sparkles, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Surface, SectionLabel, Pill, Sparkline } from "@/components/ds";
 import type {
@@ -136,20 +136,6 @@ export default function VoiceSettingsPage() {
   return (
     <div className="crm-stagger space-y-8 pt-14">
       <div>
-        <Link
-          href="/settings"
-          className="inline-flex items-center gap-1 ds-body-sm mb-3 transition-colors"
-          style={{ color: "#8C8A82" }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = "#5A574F";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = "#8C8A82";
-          }}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to settings
-        </Link>
         <h1 className="ds-display-xl">Your voice</h1>
         <p
           className="ds-body-lg mt-3 max-w-[640px]"
@@ -214,7 +200,7 @@ export default function VoiceSettingsPage() {
           {/* M0.x.5: link to the reference uploads page. Refs
               dominate over learned email patterns at draft time. */}
           <Link
-            href="/settings/voice/references"
+            href="/voice/references"
             className="inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
             style={{
               border: "1px solid var(--border)",
