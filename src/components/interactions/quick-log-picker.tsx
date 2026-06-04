@@ -69,7 +69,7 @@ export function QuickLogPicker({ open, onOpenChange }: QuickLogPickerProps) {
         else onOpenChange(o);
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="ds-sheet sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Quick Log — Select Contact</DialogTitle>
         </DialogHeader>

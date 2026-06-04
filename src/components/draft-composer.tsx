@@ -311,7 +311,7 @@ export function DraftComposer() {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeComposer()}>
       <DialogContent
-        className="sm:max-w-[480px] p-0 gap-0 overflow-hidden"
+        className="ds-sheet sm:max-w-[480px] p-0 gap-0 overflow-hidden"
         style={{ backgroundColor: "var(--background)", border: "1px solid var(--border)" }}
       >
         {/* Header */}

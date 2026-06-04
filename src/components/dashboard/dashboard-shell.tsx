@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { RailNav } from "@/components/dashboard/rail-nav";
+import { RouteTransition } from "@/components/dashboard/route-transition";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { QuickLogPicker } from "@/components/interactions/quick-log-picker";
 import { DraftComposer } from "@/components/draft-composer";
@@ -62,10 +63,16 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
         {/* Mobile-only header: wordmark + search pill. Burger menu was
             retired in M0.x.16 — bottom nav + "More" sheet cover every
-            destination, so the burger was duplicative. */}
+            destination, so the burger was duplicative. The header pads
+            its top by the safe-area inset so it clears the notch in the
+            Capacitor shell (M0.x.17). */}
         <header
-          className="sticky top-0 z-40 flex h-14 items-center justify-between px-4 sm:hidden"
-          style={{ backgroundColor: "var(--background)" }}
+          className="sticky top-0 z-40 flex items-center justify-between px-4 sm:hidden"
+          style={{
+            backgroundColor: "var(--background)",
+            paddingTop: "var(--safe-top)",
+            height: "calc(3.5rem + var(--safe-top))",
+          }}
         >
           <span
             className="ds-display-md"
@@ -90,7 +97,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
         <main className="flex-1">
           <div className="mx-auto w-full max-w-[1280px] px-4 sm:px-8 lg:px-10 py-6 sm:py-10 pb-24 sm:pb-12">
-            {children}
+            <RouteTransition>{children}</RouteTransition>
           </div>
         </main>
 
@@ -145,11 +152,6 @@ const MORE_NAV: Array<{
 function MobileBottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-
-  // Close the sheet when the user navigates away.
-  useEffect(() => {
-    setMoreOpen(false);
-  }, [pathname]);
 
   // Highlight the "More" tab when we're on any of its destinations.
   const onMorePath = MORE_NAV.some((m) =>
@@ -266,6 +268,7 @@ function MobileBottomNav() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setMoreOpen(false)}
                     className="flex items-center gap-3 rounded-[10px] px-4 py-3"
                     style={{
                       color: isActive

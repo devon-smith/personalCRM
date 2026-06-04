@@ -17,6 +17,11 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // viewport-fit=cover is REQUIRED for env(safe-area-inset-*) to
+  // return non-zero values on notched iPhones. Without it the sticky
+  // header sits under the notch and content hides behind the home
+  // indicator. (M0.x.17)
+  viewportFit: "cover",
   themeColor: "#1A1A1A",
 };
 

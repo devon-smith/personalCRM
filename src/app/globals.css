@@ -156,6 +156,61 @@
   }
 }
 
+/* ─── iPhone / Capacitor native-shell polish (M0.x.17) ─────────
+   These rules make the web app stop feeling like a webpage in a box.
+   Scoped to touch / small-screen where they matter; desktop is
+   untouched. */
+
+:root {
+  /* Safe-area passthrough vars so components can reference a single
+     name instead of repeating env() everywhere. Fall back to 0 on
+     non-notched devices / browsers that don't expose the insets. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+@layer base {
+  /* Kill the grey tap-flash on every touchable element. We render
+     our own hover/active states. */
+  a,
+  button,
+  [role="button"],
+  input,
+  textarea,
+  select,
+  label {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Contain rubber-band scroll so dragging past the top/bottom in the
+     webview doesn't reveal a wrong-colored gutter behind the app. */
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  /* Momentum scrolling on any scroll container. */
+  body {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Touch-only base sizing. Pointer:coarse targets phones/tablets and
+   leaves desktop (with a fine pointer) on the existing 13–14px type. */
+@media (pointer: coarse) {
+  /* iOS zooms the whole page when a focused input has font-size < 16px.
+     Force 16px on every text-entry control on touch devices. The
+     visual size bump is acceptable on a phone and the anti-zoom win
+     is worth far more than the half-point of density. */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* ─── Typography utility classes ─── */
 .ds-display-xl {
   font-family: var(--font-instrument-serif), Georgia, serif;
@@ -369,6 +424,17 @@
   height: auto !important;
   padding: 4px 0 !important;
 }
+/* On touch devices the palette input must hit 16px or iOS zooms the
+   page when it's focused (M0.x.17). Also give the palette a side
+   gutter so it doesn't span edge-to-edge on a phone. */
+@media (max-width: 639px) {
+  .ds-command-palette [data-slot="command-input"] {
+    font-size: 16px !important;
+  }
+  .ds-command-palette {
+    max-width: calc(100vw - 24px) !important;
+  }
+}
 .ds-command-palette [cmdk-group-heading] {
   text-transform: uppercase !important;
   letter-spacing: 0.08em !important;
@@ -413,14 +479,88 @@
 .crm-stagger > :nth-child(14) { animation-delay: 520ms; }
 .crm-stagger > :nth-child(15) { animation-delay: 560ms; }
 
+/* ─── Bottom-sheet modal (M0.x.17) ────────────────────────────
+   Applied to a shadcn DialogContent via the `ds-sheet` class. On
+   desktop it's a no-op (the dialog stays a centered modal). On a
+   phone it re-anchors to the bottom of the viewport, full-width,
+   rounded top corners, sliding up from below — the native sheet
+   pattern. Internal content scrolls; the sheet caps at 92vh so the
+   backdrop always peeks above it. */
+@media (max-width: 639px) {
+  .ds-sheet {
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 20px 20px 0 0 !important;
+    border-bottom: none !important;
+    max-height: 92vh !important;
+    overflow-y: auto !important;
+    /* Lift the sheet's own bottom padding above the home indicator. */
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+    /* Replace the dialog's zoom-in with a slide-up. */
+    animation: ds-sheet-up 260ms var(--ease-out) both !important;
+  }
+  /* A grab-handle affordance at the top of every sheet. Absolute so
+     it never becomes a grid item in shadcn's `grid gap-4` content. */
+  .ds-sheet::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
+    z-index: 2;
+    pointer-events: none;
+  }
+}
+@keyframes ds-sheet-up {
+  from {
+    opacity: 0.6;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Route transition (M0.x.17) ──────────────────────────────
+   A subtle fade + lift applied to page content on tab change so
+   moving between tabs reads as a transition rather than a hard cut.
+   Keyed by pathname in RouteTransition; re-runs each navigation. */
+.ds-route-fade {
+  animation: ds-route-fade 240ms var(--ease-out) both;
+}
+@keyframes ds-route-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .crm-animate-enter,
   .crm-stagger > *,
-  .crm-cold-pulse {
+  .crm-cold-pulse,
+  .ds-route-fade {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+  .ds-sheet {
+    animation: none !important;
   }
   * {
     transition-duration: 0ms !important;
