@@ -124,8 +124,8 @@ export default function UsagePage() {
             {data.byFeature.length === 0 ? (
               <EmptyState />
             ) : (
-              <div className="crm-card overflow-hidden">
-                <table className="w-full text-[13px]">
+              <div className="crm-card overflow-x-auto">
+                <table className="w-full min-w-[480px] text-[13px]">
                   <thead>
                     <tr
                       className="text-left"
@@ -181,8 +181,8 @@ export default function UsagePage() {
             {data.byModel.length === 0 ? (
               <EmptyState />
             ) : (
-              <div className="crm-card overflow-hidden">
-                <table className="w-full text-[13px]">
+              <div className="crm-card overflow-x-auto">
+                <table className="w-full min-w-[480px] text-[13px]">
                   <thead>
                     <tr
                       className="text-left"
