@@ -343,7 +343,7 @@ export function NetworkQueryBox({
   }, [seedQuery, isStreaming, submit, onSeedConsumed]);
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -352,18 +352,17 @@ export function NetworkQueryBox({
         className="relative"
       >
         <div
-          className="flex items-center gap-2.5 rounded-2xl pl-3 pr-1.5 py-1.5 transition-all"
+          className="flex items-center gap-3 rounded-[16px] bg-white py-3 pl-5 pr-3 transition-all sm:py-4"
           style={{
-            backgroundColor: "#F4EFE3",
-            border: `1px solid ${focused ? "#C8B89A" : "#ECE7D9"}`,
+            border: `1px solid ${focused ? "#C8B89A" : "#E4DACB"}`,
             boxShadow: focused
-              ? "0 1px 3px rgba(122, 79, 60, 0.08)"
-              : "0 1px 0 rgba(0,0,0,0.02)",
+              ? "0 12px 32px rgba(40, 30, 20, 0.12)"
+              : "0 10px 28px rgba(40, 30, 20, 0.08)",
           }}
         >
           <Sparkles
-            className="h-4 w-4 shrink-0"
-            style={{ color: "#7A4F3C" }}
+            className="h-5 w-5 shrink-0"
+            style={{ color: "#B8613D" }}
           />
           <input
             ref={inputRef}
@@ -373,22 +372,22 @@ export function NetworkQueryBox({
             onBlur={() => setFocused(false)}
             disabled={isStreaming}
             placeholder={placeholder ?? EXAMPLE_QUERIES[placeholderIdx]}
-            className="flex-1 bg-transparent border-0 outline-none text-[14px] py-1.5 placeholder:text-[#8C8A82]"
+            className="min-w-0 flex-1 border-0 bg-transparent py-1 text-[17px] outline-none placeholder:text-[#6B6258] sm:text-[19px]"
             style={{ color: "#1B1A17" }}
           />
           <button
             type="submit"
             disabled={!query.trim() || isStreaming}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-[12px] font-medium disabled:opacity-40 transition-opacity"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] px-4 py-2.5 text-[14px] font-semibold disabled:opacity-40 transition-opacity"
             style={{
-              backgroundColor: "#7A4F3C",
+              backgroundColor: "#1B1A17",
               color: "white",
             }}
           >
             {isStreaming ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Search className="h-3 w-3" />
+              <Search className="h-3.5 w-3.5" />
             )}
             Ask
           </button>

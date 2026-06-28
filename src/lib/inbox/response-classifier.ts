@@ -60,21 +60,25 @@ export interface ClassifyResult {
 const SYSTEM_PROMPT_TEMPLATE = (name: string) =>
   `You are classifying whether an email or message needs a personal response from ${name}, a Stanford professor.
 
-Consider: does the sender ask a question, request action, or share information that warrants engagement? FYI emails, simple thanks, acknowledgments, and social pleasantries usually DON'T need a response.
+Classify only the latest inbound message. Use prior thread context only to understand whether the latest message is asking ${name} to do something next.
+
+needsResponse=true only when the latest inbound message clearly asks for a reply, action, decision, scheduling answer, review, confirmation, or relationship-maintaining follow-up from ${name}.
+
+needsResponse=false when the latest inbound message is informational only, automated, a newsletter, a receipt/notification, a simple thanks, an acknowledgment, or a social pleasantry with no clear next step.
 
 Categories that DO need a response (needsResponse=true):
 - "question" — sender asks a direct question
-- "request" — sender asks for something specific (an action, a meeting, a referral)
+- "request" — sender asks for something specific (action, meeting, referral, review, decision, confirmation)
 
 Categories that DON'T need a response (needsResponse=false):
 - "fyi" — informational forward, no engagement expected
 - "thanks" — gratitude with no question
 - "acknowledgment" — confirming receipt, short "got it"
-- "social" — casual pleasantry, "hope you're well", birthday wishes
+- "social" — casual pleasantry, birthday wishes, no next step
 - "newsletter" — mass mailing that slipped through the filter
 - "autoresponder" — out-of-office, calendar bot, automated notification
 
-Be conservative: when in doubt, lean toward needsResponse=true with lower confidence rather than skipping something important.
+Ambiguous personal notes: return needsResponse=true only when a reasonable person would reply to keep a commitment, scheduling thread, or important relationship moving. Otherwise return needsResponse=false with medium confidence.
 
 "reason" rules — STRICT:
 - Maximum 6 words. Title-case or sentence-case, no terminal period.
@@ -161,6 +165,101 @@ const VALID_CATEGORIES: ReadonlyArray<ResponseCategory> = [
   "autoresponder",
 ];
 
+const AUTOMATED_SUBJECT_RE =
+  /\b(out of office|automatic reply|auto(?:mated)? response|auto-reply|delivery status notification|undeliverable|mailer-daemon|do not reply|no[- ]reply|vacation responder)\b/i;
+
+const NEWSLETTER_RE =
+  /\b(unsubscribe|manage preferences|view (?:this )?(?:email )?in (?:your )?browser|newsletter|digest|weekly update|monthly update|mailing list)\b/i;
+
+const DIRECT_ASK_RE =
+  /(\?|(?:^|\b)(can|could|would|will|should|do|does|did|are|is)\s+(?:you|we)\b|(?:^|\b)(please|pls)\b|(?:^|\b)(let me know|send me|share with me|review|confirm|approve|sign|introduce|refer|schedule|meet|call|respond|reply)\b)/i;
+
+const THANKS_RE =
+  /^(thanks|thank you|many thanks|appreciate it|appreciated|thanks so much|thank you so much|thx)[!.\s,-]*(?:best|regards|cheers)?[!.\s,-]*$/i;
+
+const ACK_RE =
+  /^(got it|sounds good|looks good|okay|ok|received|confirmed|done|will do|perfect|great|awesome|makes sense|all set|noted)[!.\s,-]*$/i;
+
+const SOCIAL_RE =
+  /^(happy birthday|congratulations|congrats|thinking of you|hope you're well|hope you are well|great to see you|nice seeing you)[!.\s,-]*$/i;
+
+function normalizedBody(input: ClassifyInput): string {
+  return input.messageBody
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Deterministic pass for cases we can classify without spending model
+ * tokens. It only returns a result for high-confidence non-replies;
+ * ambiguous or relationship-sensitive messages fall through to Haiku.
+ */
+export function heuristicClassifyResponse(
+  input: ClassifyInput,
+): ClassifyResult | null {
+  const body = normalizedBody(input);
+  const subject = cleanSubject(input.subject);
+  const combined = `${subject}\n${body}`;
+  const hasDirectAsk = DIRECT_ASK_RE.test(body);
+
+  if (AUTOMATED_SUBJECT_RE.test(subject) || AUTOMATED_SUBJECT_RE.test(body)) {
+    return {
+      needsResponse: false,
+      confidence: 0.98,
+      reason: "Automated reply",
+      category: "autoresponder",
+    };
+  }
+
+  if (!hasDirectAsk && NEWSLETTER_RE.test(combined)) {
+    return {
+      needsResponse: false,
+      confidence: 0.94,
+      reason: "Newsletter",
+      category: "newsletter",
+    };
+  }
+
+  if (!hasDirectAsk && body.length <= 180 && THANKS_RE.test(body)) {
+    return {
+      needsResponse: false,
+      confidence: 0.92,
+      reason: "Brief thanks",
+      category: "thanks",
+    };
+  }
+
+  if (!hasDirectAsk && body.length <= 180 && ACK_RE.test(body)) {
+    return {
+      needsResponse: false,
+      confidence: 0.9,
+      reason: "Acknowledges receipt",
+      category: "acknowledgment",
+    };
+  }
+
+  if (!hasDirectAsk && body.length <= 180 && SOCIAL_RE.test(body)) {
+    return {
+      needsResponse: false,
+      confidence: 0.85,
+      reason: "Social pleasantry",
+      category: "social",
+    };
+  }
+
+  if (!hasDirectAsk && body.length <= 260 && /^fyi\b/i.test(body)) {
+    return {
+      needsResponse: false,
+      confidence: 0.82,
+      reason: "FYI only",
+      category: "fyi",
+    };
+  }
+
+  return null;
+}
+
 /** Cap classifier reasons at 6 words + 60 chars, strip a terminal
  *  period. Defensive — the system prompt asks for short phrases but
  *  Sonnet sometimes drifts into full sentences on long inbound mail. */
@@ -224,6 +323,9 @@ export function parseClassifyResponse(text: string): ClassifyResult {
 export async function classifyResponse(
   input: ClassifyInput,
 ): Promise<ClassifyResult> {
+  const heuristic = heuristicClassifyResponse(input);
+  if (heuristic) return heuristic;
+
   const name =
     input.userFirstName?.trim() ||
     getUserProfile().firstName ||

@@ -16,7 +16,7 @@ import {
   Users,
   Home,
   MessageCircleQuestion,
-  Sparkles,
+  Inbox as InboxIcon,
   CircleDot,
   MoreHorizontal,
   X,
@@ -119,10 +119,9 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 /**
  * M0.x.16 — Mobile bottom nav covers all 9 rail destinations via 4
  * primary items + a "More" sheet. Primary items are the highest-
- * traffic Generals (Home, Ask, People, Feed); the More sheet holds
+ * traffic Generals (Home, Replies, Ask, People); the More sheet holds
  * the rest (Circles, plus the Tools group: Voice, Merge, Admin,
- * Settings). Activity isn't in either by default — surfaced as a
- * link from Home / Feed.
+ * Settings). Activity is surfaced in More.
  */
 const PRIMARY_NAV: Array<{
   href: string;
@@ -131,9 +130,9 @@ const PRIMARY_NAV: Array<{
   matchExact?: boolean;
 }> = [
   { href: "/dashboard", icon: Home, label: "Home", matchExact: true },
+  { href: "/reply-queue", icon: InboxIcon, label: "Replies" },
   { href: "/ask", icon: MessageCircleQuestion, label: "Ask" },
   { href: "/people", icon: Users, label: "People" },
-  { href: "/feed", icon: Sparkles, label: "Feed" },
 ];
 
 const MORE_NAV: Array<{

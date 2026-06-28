@@ -28,6 +28,7 @@ export interface CircleSuggestion {
 }
 
 export type SuggestionReason =
+  | "communication_group"
   | "education"
   | "work"
   | "frequent_interaction"
@@ -127,6 +128,21 @@ export async function generateCircleSuggestions(
 
   const suggestions: CircleSuggestion[] = [];
   const assignedIds = new Set<string>();
+  const uncircledById = new Map(uncircled.map((c) => [c.id, c]));
+
+  // ── Signal 0: Communication groups ──
+  // Prefer people who repeatedly appear in the same recent thread.
+  // This is closer to how users think about relationship circles than
+  // static metadata like school, company, or city.
+  const communicationSuggestions = await buildCommunicationGroupSuggestions({
+    userId,
+    uncircledById,
+    circles,
+  });
+  for (const suggestion of communicationSuggestions) {
+    suggestions.push(suggestion);
+    suggestion.contactIds.forEach((id) => assignedIds.add(id));
+  }
 
   // ── Signal 1: Education circle ──
   // Contacts with .edu emails or education-related companies/roles
@@ -316,10 +332,148 @@ export async function generateCircleSuggestions(
     });
   }
 
-  return suggestions.sort((a, b) => b.contactCount - a.contactCount);
+  return suggestions.sort((a, b) => {
+    const priorityDelta = reasonPriority(b.reason) - reasonPriority(a.reason);
+    if (priorityDelta !== 0) return priorityDelta;
+    return b.contactCount - a.contactCount;
+  });
 }
 
 // ─── Helpers ────────────────────────────────────────────────
+
+async function buildCommunicationGroupSuggestions({
+  userId,
+  uncircledById,
+  circles,
+}: {
+  userId: string;
+  uncircledById: ReadonlyMap<string, ContactWithMeta>;
+  circles: readonly ExistingCircle[];
+}): Promise<CircleSuggestion[]> {
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setDate(sixMonthsAgo.getDate() - 180);
+
+  const rows = await prisma.interaction.findMany({
+    where: {
+      userId,
+      occurredAt: { gte: sixMonthsAgo },
+      OR: [
+        { threadId: { not: null } },
+        { chatId: { not: null }, isGroupChat: true },
+      ],
+    },
+    orderBy: { occurredAt: "desc" },
+    take: 1000,
+    select: {
+      contactId: true,
+      subject: true,
+      chatId: true,
+      chatName: true,
+      isGroupChat: true,
+      threadId: true,
+      occurredAt: true,
+      thread: { select: { displayName: true, source: true, isGroup: true } },
+    },
+  });
+
+  const groups = new Map<
+    string,
+    {
+      displayName: string | null;
+      source: string | null;
+      subjects: string[];
+      interactions: number;
+      latestAt: Date;
+      contacts: Map<string, ContactWithMeta>;
+    }
+  >();
+
+  for (const row of rows) {
+    const contact = uncircledById.get(row.contactId);
+    if (!contact) continue;
+
+    const key = row.threadId ?? (row.isGroupChat ? row.chatId : null);
+    if (!key) continue;
+
+    const existing = groups.get(key) ?? {
+      displayName: row.thread?.displayName ?? row.chatName ?? null,
+      source: row.thread?.source ?? null,
+      subjects: [],
+      interactions: 0,
+      latestAt: row.occurredAt,
+      contacts: new Map<string, ContactWithMeta>(),
+    };
+    existing.interactions += 1;
+    if (row.occurredAt > existing.latestAt) existing.latestAt = row.occurredAt;
+    if (row.subject) existing.subjects.push(row.subject);
+    existing.contacts.set(contact.id, contact);
+    groups.set(key, existing);
+  }
+
+  return Array.from(groups.entries())
+    .map(([key, group]) => {
+      const contacts = Array.from(group.contacts.values());
+      return { key, group, contacts };
+    })
+    .filter(({ contacts }) => contacts.length >= 2)
+    .sort((a, b) => {
+      const scoreA = a.contacts.length * 10 + a.group.interactions;
+      const scoreB = b.contacts.length * 10 + b.group.interactions;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return b.group.latestAt.getTime() - a.group.latestAt.getTime();
+    })
+    .slice(0, 3)
+    .map(({ key, group, contacts }) => {
+      const ids = contacts.map((c) => c.id);
+      const inferredName =
+        inferCommunicationGroupName(group.displayName, group.subjects) ??
+        "Recent conversation group";
+      const matchingCircle = findMatchingCircle(inferredName, circles);
+      return {
+        id: `signal:communication:${key}`,
+        name: matchingCircle?.name ?? inferredName,
+        reason: "communication_group" as const,
+        description: `${contacts.length} uncircled people appear in the same recent conversation`,
+        contactIds: ids,
+        contactCount: contacts.length,
+        existingCircle: matchingCircle,
+        suggestedCadence: 14,
+        contacts: contacts.map((c) => ({
+          id: c.id,
+          name: c.name,
+          company: c.company,
+        })),
+      };
+    });
+}
+
+function inferCommunicationGroupName(
+  displayName: string | null,
+  subjects: readonly string[],
+): string | null {
+  const display = cleanGroupName(displayName);
+  if (display) return display;
+
+  const subject = subjects.map(cleanGroupName).find(Boolean);
+  if (!subject) return null;
+  return subject.length > 48 ? `${subject.slice(0, 45)}...` : subject;
+}
+
+function cleanGroupName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = raw
+    .replace(/^(re|fwd?):\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length < 3) return null;
+  return cleaned;
+}
+
+function reasonPriority(reason: SuggestionReason): number {
+  if (reason === "communication_group") return 3;
+  if (reason === "frequent_interaction") return 2;
+  return 1;
+}
 
 function findMatchingCircle(
   name: string,

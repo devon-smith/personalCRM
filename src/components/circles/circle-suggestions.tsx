@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import type { CircleSuggestion } from "@/app/api/circles/suggestions/route";
 
 const reasonLabels: Record<string, string> = {
+  communication_group: "Conversation group",
   education: "Education",
   work: "Work",
   frequent_interaction: "Friends",
@@ -361,6 +362,7 @@ async function assignContacts(
 
 function suggestColor(reason: string): string {
   const colors: Record<string, string> = {
+    communication_group: "#B8613D",
     education: "#8B5CF6",
     work: "#3B82F6",
     frequent_interaction: "#10B981",

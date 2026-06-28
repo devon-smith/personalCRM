@@ -3,6 +3,7 @@ import {
   parseClassifyResponse,
   buildUserPrompt,
   trimToShortPhrase,
+  heuristicClassifyResponse,
 } from "@/lib/inbox/response-classifier";
 
 describe("trimToShortPhrase (M0.x.8)", () => {
@@ -99,6 +100,42 @@ describe("parseClassifyResponse", () => {
       '{"needsResponse": true, "confidence": 0.7, "category": "question"}',
     );
     expect(out.reason.length).toBeGreaterThan(0);
+  });
+});
+
+describe("heuristicClassifyResponse", () => {
+  it("filters automated replies without calling the model", () => {
+    const out = heuristicClassifyResponse({
+      subject: "Automatic reply: sabbatical timing",
+      messageBody: "I am out of office until Monday.",
+    });
+    expect(out?.needsResponse).toBe(false);
+    expect(out?.category).toBe("autoresponder");
+  });
+
+  it("filters newsletters and preference-managed mail", () => {
+    const out = heuristicClassifyResponse({
+      subject: "Weekly update",
+      messageBody: "View this email in your browser. Unsubscribe here.",
+    });
+    expect(out?.needsResponse).toBe(false);
+    expect(out?.category).toBe("newsletter");
+  });
+
+  it("filters short thanks and acknowledgments", () => {
+    expect(
+      heuristicClassifyResponse({ messageBody: "Thanks so much!" })?.category,
+    ).toBe("thanks");
+    expect(
+      heuristicClassifyResponse({ messageBody: "Got it." })?.category,
+    ).toBe("acknowledgment");
+  });
+
+  it("falls through when a short note includes a direct ask", () => {
+    const out = heuristicClassifyResponse({
+      messageBody: "Thanks. Could you send the deck?",
+    });
+    expect(out).toBeNull();
   });
 });
 
