@@ -328,6 +328,11 @@ export async function onInboundInteraction(
         triggerAt: newTriggerAt,
         priority: p.priority,
         priorityScore: p.score,
+        needsResponse: null,
+        responseConfidence: null,
+        responseReason: null,
+        responseCategory: null,
+        classifiedAt: null,
       },
     });
     // The latest inbound changed → reclassify. Fire-and-forget; the

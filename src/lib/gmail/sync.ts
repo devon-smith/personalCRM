@@ -4,6 +4,7 @@ import { autoResolveOnOutbound } from "@/lib/auto-resolve";
 import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
 import { recordGmailAddressFact } from "@/lib/person-facts";
 import { enqueue } from "../../../worker/queue-client";
+import { extractEmailAddresses, findUserRecipient } from "./recipient-filter";
 
 interface GmailMessage {
   id: string;
@@ -43,9 +44,8 @@ function getHeader(headers: Array<{ name: string; value: string }>, name: string
   return headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
 }
 
-function extractEmail(headerValue: string): string | null {
-  const match = headerValue.match(/<([^>]+)>/) ?? headerValue.match(/([^\s<,]+@[^\s>,]+)/);
-  return match?.[1]?.toLowerCase() ?? null;
+function extractEmail(headerValue: string | null | undefined): string | null {
+  return extractEmailAddresses(headerValue)[0] ?? null;
 }
 
 function extractDisplayName(headerValue: string): string | null {
@@ -427,7 +427,7 @@ async function fetchMessageDetail(
   messageId: string,
   token?: string,
 ): Promise<GmailMessageDetail | null> {
-  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=Precedence`;
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=Precedence`;
 
   const res = token ? await googleFetchWithToken(token, url) : await googleFetch(userId, url);
   if (!res.ok) return null;
@@ -444,18 +444,28 @@ async function processMessage(
 ): Promise<ProcessResult> {
   const fromHeader = getHeader(detail.payload.headers, "From");
   const toHeader = getHeader(detail.payload.headers, "To");
+  const ccHeader = getHeader(detail.payload.headers, "Cc");
   const subject = getHeader(detail.payload.headers, "Subject");
   const listUnsubscribe = getHeader(detail.payload.headers, "List-Unsubscribe");
   const precedence = getHeader(detail.payload.headers, "Precedence")?.toLowerCase();
 
-  if (!fromHeader || !toHeader) return { matched: false, unmatchedEmail: null };
+  if (!fromHeader) return { matched: false, unmatchedEmail: null };
 
   const fromEmail = extractEmail(fromHeader);
-  const toEmail = extractEmail(toHeader);
+  const toEmails = extractEmailAddresses(toHeader);
+  const ccEmails = extractEmailAddresses(ccHeader);
+  const directlyAddressedUserEmail = findUserRecipient([...toEmails, ...ccEmails], userEmails);
+  const firstToEmail = toEmails[0] ?? ccEmails[0] ?? null;
 
-  if (!fromEmail || !toEmail) return { matched: false, unmatchedEmail: null };
+  if (!fromEmail) return { matched: false, unmatchedEmail: null };
 
   const isOutbound = userEmails.has(fromEmail);
+  if (isOutbound && !firstToEmail) return { matched: false, unmatchedEmail: null };
+
+  const toEmail = isOutbound
+    ? firstToEmail!
+    : (directlyAddressedUserEmail ?? firstToEmail ?? "");
+  const shouldCreateInboundInboxItem = !isOutbound && directlyAddressedUserEmail != null;
   const contactEmail = isOutbound ? toEmail : fromEmail;
   const contactId = contactsByEmail.get(contactEmail) ?? null;
   const contactName = contactId ? (contactNames.get(contactId) ?? null) : null;
@@ -485,7 +495,19 @@ async function processMessage(
       contactName,
       isAutomated,
     },
-    update: {},
+    update: {
+      threadId: detail.threadId ?? null,
+      fromEmail: fromEmail,
+      fromName: isOutbound ? null : fromName,
+      toEmail: toEmail,
+      subject: subject?.slice(0, 255) ?? null,
+      snippet: detail.snippet ? decodeHtmlEntities(detail.snippet).slice(0, 500) : null,
+      direction: isOutbound ? "OUTBOUND" : "INBOUND",
+      occurredAt,
+      contactId,
+      contactName,
+      isAutomated,
+    },
     select: { id: true, lifeEventProcessedAt: true },
   });
 
@@ -575,17 +597,19 @@ async function processMessage(
       threadKey,
     });
   } else if (!isAutomated) {
-    // Automated messages (List-Unsubscribe, Precedence: bulk/list)
-    // still get recorded as Interactions for history, but never create InboxItems
-    await onInboundInteraction(userId, contactId, "gmail", {
-      id: createdIx.id,
-      summary: createdIx.summary,
-      occurredAt,
-      subject,
-    }, {
-      threadKey,
-      fromEmail,
-    });
+    // Messages where the user is not in To/Cc still get recorded as
+    // Interactions for history, but never create InboxItems.
+    if (shouldCreateInboundInboxItem) {
+      await onInboundInteraction(userId, contactId, "gmail", {
+        id: createdIx.id,
+        summary: createdIx.summary,
+        occurredAt,
+        subject,
+      }, {
+        threadKey,
+        fromEmail,
+      });
+    }
 
     // M0.x.3: extract life events from the inbound body so the /feed
     // page surfaces them. Fire-and-forget — the worker is idempotent
