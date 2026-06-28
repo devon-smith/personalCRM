@@ -26,6 +26,11 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
           circle: { select: { id: true, name: true, color: true } },
         },
       },
+      personFacts: {
+        where: { dismissedAt: null },
+        orderBy: [{ confirmedByUser: "desc" }, { observedAt: "desc" }],
+        take: 8,
+      },
     },
   });
 
