@@ -13,7 +13,6 @@ import {
   Merge,
   MessageSquareText,
   Search,
-  Wrench,
   Database,
   ChevronRight,
 } from "lucide-react";
@@ -41,7 +40,6 @@ const ITEMS: RailItem[] = [
   { href: "/voice",       label: "Voice",        icon: MessageSquareText, group: "tools" },
   { href: "/source-health", label: "Sources",    icon: Database, group: "tools" },
   { href: "/merge",       label: "Merge",        icon: Merge,    group: "tools" },
-  { href: "/admin/jobs",  label: "Admin",        icon: Wrench,   group: "tools" },
   { href: "/settings",    label: "Settings",     icon: Settings, group: "tools" },
 ];
 

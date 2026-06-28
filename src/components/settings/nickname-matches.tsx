@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Merge, X, Users } from "lucide-react";
+import { Loader2, Merge, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface MatchContact {
@@ -31,11 +32,12 @@ function Avatar({ contact }: { contact: MatchContact }) {
 
   if (contact.avatarUrl) {
     return (
-      <img
+      <Image
         src={contact.avatarUrl}
         alt={contact.name}
+        width={32}
+        height={32}
         className="shrink-0 rounded-full object-cover"
-        style={{ width: 32, height: 32 }}
       />
     );
   }

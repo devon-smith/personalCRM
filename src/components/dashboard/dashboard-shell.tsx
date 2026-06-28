@@ -22,7 +22,6 @@ import {
   X,
   MessageSquareText,
   Merge,
-  Wrench,
   Settings,
   CalendarDays,
 } from "lucide-react";
@@ -121,7 +120,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
  * primary items + a "More" sheet. Primary items are the highest-
  * traffic Generals (Home, Replies, Ask, People); the More sheet holds
  * the rest (Calendar, Circles, plus the Tools group: Voice, Merge,
- * Admin, Settings).
+ * Settings).
  */
 const PRIMARY_NAV: Array<{
   href: string;
@@ -144,7 +143,6 @@ const MORE_NAV: Array<{
   { href: "/circles", icon: CircleDot, label: "Circles" },
   { href: "/voice", icon: MessageSquareText, label: "Voice" },
   { href: "/merge", icon: Merge, label: "Merge" },
-  { href: "/admin/jobs", icon: Wrench, label: "Admin" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ];
 

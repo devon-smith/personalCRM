@@ -7,11 +7,9 @@ import {
   useDeleteCircle,
 } from "@/lib/hooks/use-circles";
 import { toast } from "sonner";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Plug, Activity, Merge } from "lucide-react";
 import { CircleIcon } from "@/components/ui/circle-icon";
 import Link from "next/link";
-import { Plug, Activity } from "lucide-react";
-import { NicknameMatches } from "@/components/settings/nickname-matches";
 
 export default function SettingsPage() {
   return (
@@ -44,11 +42,31 @@ export default function SettingsPage() {
         <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
       </Link>
 
+      <Link
+        href="/merge"
+        className="crm-animate-enter crm-card flex items-center gap-3 p-5 transition-colors"
+        style={{ animationDelay: "40ms" }}
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--surface)"; }}
+      >
+        <div
+          className="flex h-10 w-10 items-center justify-center rounded-[10px]"
+          style={{ backgroundColor: "var(--surface-sunken)" }}
+        >
+          <Merge className="h-5 w-5" style={{ color: "var(--text-secondary)" }} />
+        </div>
+        <div className="flex-1">
+          <p className="ds-heading-sm">Merge duplicates</p>
+          <p className="ds-caption mt-0.5">Review duplicate contacts, nickname matches, imports, and manual merges</p>
+        </div>
+        <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
+      </Link>
+
       {/* M0.x.14 — API usage / cost dashboard */}
       <Link
         href="/settings/usage"
         className="crm-animate-enter crm-card flex items-center gap-3 p-5 transition-colors"
-        style={{ animationDelay: "40ms" }}
+        style={{ animationDelay: "60ms" }}
         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--surface)"; }}
       >
@@ -64,11 +82,6 @@ export default function SettingsPage() {
         </div>
         <span className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>→</span>
       </Link>
-
-      {/* Nickname / Duplicate Detection */}
-      <section className="crm-animate-enter" style={{ animationDelay: "80ms" }}>
-        <NicknameMatches />
-      </section>
 
       <CirclesSection />
     </div>

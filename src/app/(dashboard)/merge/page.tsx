@@ -19,10 +19,6 @@ import {
   Search,
   ArrowDown,
   X,
-  MessageSquare,
-  Phone,
-  Mail,
-  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -31,6 +27,7 @@ import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { useContacts } from "@/lib/hooks/use-contacts";
 import type { DuplicateGroup } from "@/app/api/contacts/duplicates/route";
 import { formatDistanceToNow } from "@/lib/date-utils";
+import { NicknameMatches } from "@/components/settings/nickname-matches";
 
 const sourceLabels: Record<string, string> = {
   MANUAL: "Manual",
@@ -100,7 +97,7 @@ export default function MergePage() {
       }
       return res.json();
     },
-    onSuccess: (_data, _variables) => {
+    onSuccess: () => {
       toast("Contacts merged successfully");
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       queryClient.invalidateQueries({ queryKey: ["duplicates"] });
@@ -266,6 +263,9 @@ export default function MergePage() {
 
       {/* Manual Merge */}
       <ManualMerge />
+
+      {/* Nickname / partial-name duplicates */}
+      <NicknameMatches />
 
       {/* LinkedIn review banner */}
       {linkedInReview && linkedInReview.totalPending > 0 && (
