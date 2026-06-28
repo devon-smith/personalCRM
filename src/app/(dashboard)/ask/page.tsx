@@ -38,14 +38,18 @@ function AskPageContent() {
   const searchParams = useSearchParams();
   const seedParam = searchParams.get("seed");
 
-  // Monotonic counter for re-seed keying. Pure — increments only in
-  // click handlers + effects, never at render time.
+  // Monotonic counters for prop-triggered actions. Pure — increments
+  // only in click handlers + effects, never at render time.
   const seedCounter = useRef(0);
+  const draftCounter = useRef(0);
 
   // When Jennifer clicks "Re-run" in history we pass the query text
   // down to the box. The counter bumps on each new seed so identical
   // text re-runs still trigger the box's seedQuery effect.
   const [seed, setSeed] = useState<{ query: string; key: number } | null>(
+    null,
+  );
+  const [draft, setDraft] = useState<{ query: string; key: number } | null>(
     null,
   );
 
@@ -68,6 +72,18 @@ function AskPageContent() {
 
   const handleSeedConsumed = useCallback(() => {
     setSeed(null);
+  }, []);
+
+  const handleShortcutFill = useCallback((queryText: string) => {
+    draftCounter.current += 1;
+    setDraft({ query: queryText, key: draftCounter.current });
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
+
+  const handleDraftConsumed = useCallback(() => {
+    setDraft(null);
   }, []);
 
   return (
@@ -96,8 +112,11 @@ function AskPageContent() {
       <section className="space-y-4">
         <NetworkQueryBox
           seedQuery={seed?.query ?? null}
-          key={seed?.key ?? "initial"}
+          seedQueryKey={seed?.key ?? null}
           onSeedConsumed={handleSeedConsumed}
+          draftQuery={draft?.query ?? null}
+          draftQueryKey={draft?.key ?? null}
+          onDraftConsumed={handleDraftConsumed}
           placeholder="Who did I promise to follow up with?"
         />
         <div className="flex flex-wrap justify-center gap-2">
@@ -105,7 +124,7 @@ function AskPageContent() {
             <button
               key={prompt}
               type="button"
-              onClick={() => handleReRun(prompt)}
+              onClick={() => handleShortcutFill(prompt)}
               className="rounded-full border px-4 py-2 text-[14px] font-medium transition-colors hover:bg-white"
               style={{
                 borderColor: "#E4DACB",

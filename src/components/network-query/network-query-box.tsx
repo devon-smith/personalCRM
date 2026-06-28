@@ -83,7 +83,11 @@ const TOOL_LABELS: Record<string, string> = {
 
 export function NetworkQueryBox({
   seedQuery,
+  seedQueryKey,
   onSeedConsumed,
+  draftQuery,
+  draftQueryKey,
+  onDraftConsumed,
   parentQueryId,
   placeholder,
   onCompleteFollowUp,
@@ -92,9 +96,20 @@ export function NetworkQueryBox({
   /** When set (and non-empty), fill the input with this text and
    *  immediately submit. Used by /ask history's Re-run button. */
   seedQuery?: string | null;
+  /** Monotonic key that lets identical seed text trigger another
+   *  auto-submit without remounting the query box. */
+  seedQueryKey?: number | null;
   /** Called once the seedQuery has been consumed so the parent can
    *  clear its state — otherwise re-runs would loop. */
   onSeedConsumed?: () => void;
+  /** When set, fill the input with this text but do not submit.
+   *  Used by /ask shortcut chips. */
+  draftQuery?: string | null;
+  /** Monotonic key that lets identical shortcut text refill the
+   *  input on repeated clicks. */
+  draftQueryKey?: number | null;
+  /** Called once the draftQuery has been placed in the input. */
+  onDraftConsumed?: () => void;
   /** M0.x.9 — when set, every submit from this instance is sent as
    *  a follow-up to the given SavedQuery. /ask/[id] uses this to
    *  thread refinements under a parent. */
@@ -340,7 +355,19 @@ export function NetworkQueryBox({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     submit(seedQuery);
     if (onSeedConsumed) onSeedConsumed();
-  }, [seedQuery, isStreaming, submit, onSeedConsumed]);
+  }, [seedQuery, seedQueryKey, isStreaming, submit, onSeedConsumed]);
+
+  // /ask shortcut chips should stage the prompt for editing without
+  // spending API calls or replacing the current answer panel.
+  useEffect(() => {
+    if (!draftQuery) return;
+    if (isStreaming) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQuery(draftQuery);
+    setError(null);
+    inputRef.current?.focus();
+    if (onDraftConsumed) onDraftConsumed();
+  }, [draftQuery, draftQueryKey, isStreaming, onDraftConsumed]);
 
   return (
     <section className="space-y-4">
