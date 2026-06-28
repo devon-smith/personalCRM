@@ -38,6 +38,8 @@ interface Draft {
   readonly status: string;
   readonly createdAt: string;
   readonly inboxItemId: string | null;
+  readonly gmailDraftId: string | null;
+  readonly savedToGmailAt: string | null;
   readonly contact: DraftContact;
 }
 
@@ -93,22 +95,51 @@ export function DraftQueue() {
     onError: (err) => toast.error(err.message),
   });
 
+  const saveToGmail = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/drafts/${id}/save-to-gmail`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to save Gmail draft");
+      return body as { deepLinkUrl?: string };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+      toast.success("Saved to Gmail drafts");
+      if (data.deepLinkUrl) window.open(data.deepLinkUrl, "_blank", "noopener,noreferrer");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const sendGmail = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/drafts/${id}/send-gmail`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to send Gmail draft");
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Sent with Gmail");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const copyDraft = useCallback(async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
     setCopiedId(id);
     toast.success("Copied to clipboard");
     setTimeout(() => setCopiedId(null), 2000);
-  }, []);
-
-  const openEmail = useCallback((contact: DraftContact, content: string, subject: string | null) => {
-    if (!contact.email) {
-      toast.error("No email on file for this contact");
-      return;
-    }
-    const params = new URLSearchParams();
-    if (subject) params.set("subject", subject);
-    params.set("body", content);
-    window.open(`mailto:${contact.email}?${params.toString()}`);
   }, []);
 
   const startEditing = useCallback((draft: Draft) => {
@@ -305,13 +336,30 @@ export function DraftQueue() {
                           />
                           <ActionButton
                             icon={Mail}
-                            label="Email"
-                            onClick={() => openEmail(draft.contact, draft.content, draft.subjectLine)}
+                            label={draft.gmailDraftId ? "Open Gmail draft" : "Save to Gmail"}
+                            onClick={() => {
+                              if (draft.gmailDraftId) {
+                                window.open(
+                                  `https://mail.google.com/mail/u/0/#drafts/${draft.gmailDraftId}`,
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                );
+                                return;
+                              }
+                              saveToGmail.mutate(draft.id);
+                            }}
+                            disabled={saveToGmail.isPending}
                           />
                           <ActionButton
                             icon={FileEdit}
                             label="Edit"
                             onClick={() => startEditing(draft)}
+                          />
+                          <ActionButton
+                            icon={Send}
+                            label="Send Gmail"
+                            onClick={() => sendGmail.mutate(draft.id)}
+                            disabled={sendGmail.isPending}
                           />
                           <ActionButton
                             icon={Send}

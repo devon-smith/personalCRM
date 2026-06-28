@@ -39,6 +39,7 @@ model User {
   drafts               Draft[]
   extensionTokens      ExtensionToken[]
   inboxItems           InboxItem[]
+  personFacts          PersonFact[]
   threads              Thread[]
   voiceProfile         VoiceProfile?
   voiceExamples        VoiceExample[]
@@ -264,6 +265,7 @@ model Contact {
   feedItems           FeedItem[]
 
   inboxItems InboxItem[]
+  personFacts PersonFact[]
 
   dailyPriorityQueue        DailyPriorityQueue[]
   inboxPriorityItems        InboxPriorityItem[]
@@ -365,6 +367,34 @@ model ContactMemory {
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId])
+}
+
+// Source-backed facts about a person. Unlike ContactMemory, each row
+// preserves provenance so the UI and draft prompts can distinguish
+// "the system inferred this" from "Jennifer confirmed this" and show
+// where the fact came from.
+model PersonFact {
+  id          String   @id @default(uuid())
+  userId      String
+  contactId   String
+  type        String
+  value       String   @db.Text
+  confidence  Float    @default(0.6)
+  sourceSystem String
+  sourceRecordId String
+  excerpt     String?  @db.Text
+  observedAt  DateTime
+  confirmedByUser Boolean @default(false)
+  dismissedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId, type, value, sourceSystem, sourceRecordId])
+  @@index([userId, contactId, dismissedAt])
+  @@index([userId, type])
 }
 
 // Emergent relationships between contacts (M7.2). Edges are derived

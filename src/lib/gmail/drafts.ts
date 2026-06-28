@@ -48,6 +48,11 @@ export interface CreateGmailDraftResult {
   threadId: string;
 }
 
+export interface SendGmailDraftResult {
+  messageId: string;
+  threadId: string;
+}
+
 // ─── In-memory cache (2 min TTL) ────────────────────────────
 
 interface CacheEntry {
@@ -178,5 +183,38 @@ export async function createGmailDraft(
     draftId: data.id,
     messageId: data.message.id,
     threadId: data.message.threadId,
+  };
+}
+
+export async function sendGmailDraft(
+  userId: string,
+  draftId: string,
+): Promise<SendGmailDraftResult> {
+  const token = await getGoogleAccessToken(userId);
+  if (!token) {
+    throw new Error("No valid Google access token. Reconnect Google to send drafts.");
+  }
+
+  const res = await googleFetchWithToken(
+    token,
+    "https://gmail.googleapis.com/gmail/v1/users/me/drafts/send",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: draftId }),
+    },
+  );
+
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => "");
+    throw new Error(`Gmail drafts.send failed: ${res.status} ${errorBody}`);
+  }
+
+  const data = (await res.json()) as { id: string; threadId: string };
+  draftCache.delete(userId);
+
+  return {
+    messageId: data.id,
+    threadId: data.threadId,
   };
 }

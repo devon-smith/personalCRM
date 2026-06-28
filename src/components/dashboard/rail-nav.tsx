@@ -7,6 +7,7 @@ import {
   Users,
   CircleDot,
   Activity,
+  Inbox as InboxIcon,
   MessageCircleQuestion,
   Settings,
   Merge,
@@ -14,6 +15,7 @@ import {
   Search,
   Sparkles,
   Wrench,
+  Database,
   ChevronRight,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
@@ -32,12 +34,14 @@ interface RailItem {
 
 const ITEMS: RailItem[] = [
   { href: "/dashboard",   label: "Home",         icon: Home,     group: "general", matchExact: true },
+  { href: "/reply-queue", label: "Replies",      icon: InboxIcon, group: "general" },
   { href: "/ask",         label: "Ask",          icon: MessageCircleQuestion, group: "general" },
   { href: "/activity",    label: "Activity",     icon: Activity, group: "general" },
   { href: "/people",      label: "People",       icon: Users,    group: "general" },
   { href: "/feed",        label: "Feed",         icon: Sparkles, group: "general" },
   { href: "/circles",     label: "Circles",      icon: CircleDot, group: "general" },
   { href: "/voice",       label: "Voice",        icon: MessageSquareText, group: "tools" },
+  { href: "/source-health", label: "Sources",    icon: Database, group: "tools" },
   { href: "/merge",       label: "Merge",        icon: Merge,    group: "tools" },
   { href: "/admin/jobs",  label: "Admin",        icon: Wrench,   group: "tools" },
   { href: "/settings",    label: "Settings",     icon: Settings, group: "tools" },

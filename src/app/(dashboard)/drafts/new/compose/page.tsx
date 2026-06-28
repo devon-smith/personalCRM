@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
@@ -15,6 +15,14 @@ import { Loader2 } from "lucide-react";
  * the priority queue.
  */
 export default function NewWorkspaceRoute() {
+  return (
+    <Suspense fallback={<WorkspaceLoading />}>
+      <NewWorkspaceRouteContent />
+    </Suspense>
+  );
+}
+
+function NewWorkspaceRouteContent() {
   const router = useRouter();
   const params = useSearchParams();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -98,6 +106,30 @@ export default function NewWorkspaceRoute() {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+function WorkspaceLoading() {
+  return (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-4 text-center">
+      <Loader2
+        className="h-5 w-5 animate-spin"
+        style={{ color: "var(--text-tertiary)" }}
+      />
+      <p
+        className="text-[13px]"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        Setting up your draft workspace&hellip;
+      </p>
+      <p
+        className="text-[12px] max-w-xs"
+        style={{ color: "var(--text-tertiary)" }}
+      >
+        Pulling in the inbound message, voice references, and memory
+        for this contact.
+      </p>
     </div>
   );
 }

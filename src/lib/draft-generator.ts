@@ -19,6 +19,10 @@ import {
   buildReplyPromptBlock,
   type ReplyContext,
 } from "@/lib/draft-reply-context";
+import {
+  buildPersonFactsPromptBlock,
+  loadPersonFactsForPrompt,
+} from "@/lib/person-facts";
 
 const DRAFT_MODEL = "claude-sonnet-4-20250514";
 
@@ -132,6 +136,11 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     },
   });
 
+  const personFacts = await loadPersonFactsForPrompt(prisma, {
+    userId: params.userId,
+    contactId: params.contactId,
+  });
+
   // Get changelog entries (life updates)
   const lifeUpdates = await prisma.contactChangelog.findMany({
     where: { contactId: params.contactId, status: { in: ["PENDING", "SEEN"] } },
@@ -146,6 +155,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     ...journalEntries.map((j) => `journal:${j.id}`),
     ...lifeUpdates.map((u) => `changelog:${u.id}`),
     ...(memory ? [`memory:${params.contactId}`] : []),
+    ...personFacts.map((fact) => `personFact:${fact.id}`),
   ];
 
   const circleNames = contact.circles.map((c) => c.circle.name);
@@ -170,6 +180,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
   // block. Only render sections that have content so the prompt
   // doesn't pad with empty headers.
   const memorySummary = memory ? buildMemorySummary(memory) : "";
+  const personFactsSummary = buildPersonFactsPromptBlock(personFacts);
 
   // M0.x.4: reply mode must read the actual inbound message, not just
   // its 140-char snippet. Fetch when (a) caller asked for reply_email,
@@ -220,6 +231,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
         journalSummary,
         lifeUpdatesSummary,
         memorySummary,
+        personFactsSummary,
         replyContext,
         inputRefs: voiceContext
           ? [
@@ -274,6 +286,7 @@ async function generateWithAI(params: Omit<GenerateDraftParams, "replyContext"> 
   journalSummary: string;
   lifeUpdatesSummary: string;
   memorySummary: string;
+  personFactsSummary: string;
   inputRefs: string[];
   voiceContext: VoiceContext | null;
   replyContext: ReplyContext | null;
@@ -374,6 +387,7 @@ Return ONLY valid JSON with no markdown:
     recentInteractions: params.interactionsSummary || "None",
     journalNotes: params.journalSummary || "None",
     lifeUpdates: params.lifeUpdatesSummary || "None",
+    sourceBackedFacts: params.personFactsSummary || "None",
     // M8.3: ContactMemory injected as structured "What I know" text.
     // Empty string when the synthesis worker hasn't profiled this
     // contact yet — model just gets less context, no schema impact.

@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { NetworkQueryBox } from "@/components/network-query/network-query-box";
@@ -19,6 +20,14 @@ import { HistoryPanel } from "@/components/ask/history-panel";
  */
 
 export default function AskPage() {
+  return (
+    <Suspense fallback={<AskPageShell />}>
+      <AskPageContent />
+    </Suspense>
+  );
+}
+
+function AskPageContent() {
   const searchParams = useSearchParams();
   const seedParam = searchParams.get("seed");
 
@@ -86,6 +95,27 @@ export default function AskPage() {
       />
 
       <HistoryPanel onReRun={handleReRun} />
+    </div>
+  );
+}
+
+function AskPageShell() {
+  return (
+    <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6 sm:py-10 space-y-8">
+      <header>
+        <h1
+          className="ds-display-md"
+          style={{ color: "var(--text-primary)" }}
+        >
+          Ask anything about your network
+        </h1>
+        <p
+          className="mt-1 text-[13px]"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          Loading your query workspace...
+        </p>
+      </header>
     </div>
   );
 }

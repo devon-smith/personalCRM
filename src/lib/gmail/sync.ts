@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { googleFetch, googleFetchWithToken, getAllGoogleAccessTokens } from "./client";
 import { autoResolveOnOutbound } from "@/lib/auto-resolve";
 import { onInboundInteraction, onOutboundInteraction } from "@/lib/inbox";
+import { recordGmailAddressFact } from "@/lib/person-facts";
 import { enqueue } from "../../../worker/queue-client";
 
 interface GmailMessage {
@@ -491,6 +492,21 @@ async function processMessage(
   if (!contactId) {
     return { matched: false, unmatchedEmail: contactEmail };
   }
+
+  await recordGmailAddressFact(prisma, {
+    userId,
+    contactId,
+    email: contactEmail,
+    emailMessageId: emailRow.id,
+    subject,
+    snippet: detail.snippet ? decodeHtmlEntities(detail.snippet).slice(0, 500) : null,
+    observedAt: occurredAt,
+  }).catch((err) => {
+    console.warn(
+      `[gmail-sync] failed to record person fact for ${contactEmail}:`,
+      err instanceof Error ? err.message : err,
+    );
+  });
 
   // Check for duplicates by sourceId
   const existing = await prisma.interaction.findFirst({
