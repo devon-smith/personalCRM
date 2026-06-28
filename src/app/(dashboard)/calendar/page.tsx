@@ -30,6 +30,12 @@ function isToday(iso: string): boolean {
   return new Date(iso).toDateString() === new Date().toDateString();
 }
 
+function isTomorrow(iso: string): boolean {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return new Date(iso).toDateString() === tomorrow.toDateString();
+}
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -37,8 +43,10 @@ function formatTime(iso: string): string {
   });
 }
 
-function formatDateLabel(): string {
-  return new Date().toLocaleDateString("en-US", {
+function formatDayHeading(iso: string): string {
+  if (isToday(iso)) return "Today";
+  if (isTomorrow(iso)) return "Tomorrow";
+  return new Date(iso).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -60,6 +68,19 @@ function formatRelativeDay(iso: string | null): string | null {
   if (days === 0) return "today";
   if (days === 1) return "yesterday";
   return `${days}d ago`;
+}
+
+function groupEventsByDay(events: UpcomingEvent[]): Array<{ dayKey: string; label: string; events: UpcomingEvent[] }> {
+  const groups = new Map<string, UpcomingEvent[]>();
+  for (const event of events) {
+    const dayKey = new Date(event.startTime).toDateString();
+    groups.set(dayKey, [...(groups.get(dayKey) ?? []), event]);
+  }
+  return Array.from(groups.entries()).map(([dayKey, dayEvents]) => ({
+    dayKey,
+    label: formatDayHeading(dayEvents[0].startTime),
+    events: dayEvents,
+  }));
 }
 
 export default function CalendarPage() {
@@ -91,14 +112,20 @@ export default function CalendarPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const todayEvents = useMemo(
-    () => (data?.events ?? []).filter((event) => isToday(event.startTime)),
+  const upcomingEvents = useMemo(
+    () => data?.events ?? [],
     [data?.events],
   );
-  const selected = todayEvents.find((event) => event.id === selectedId) ?? todayEvents[0] ?? null;
-  const knownAttendees = todayEvents.reduce((sum, event) => sum + event.prep.knownAttendees, 0);
-  const openThreads = todayEvents.reduce((sum, event) => sum + event.prep.openThreads, 0);
-  const facts = todayEvents.reduce((sum, event) => sum + event.prep.facts, 0);
+  const groupedEvents = useMemo(() => groupEventsByDay(upcomingEvents), [upcomingEvents]);
+  const selected =
+    upcomingEvents.find((event) => event.id === selectedId) ??
+    upcomingEvents.find((event) => !event.allDay) ??
+    upcomingEvents[0] ??
+    null;
+  const knownAttendees = upcomingEvents.reduce((sum, event) => sum + event.prep.knownAttendees, 0);
+  const openThreads = upcomingEvents.reduce((sum, event) => sum + event.prep.openThreads, 0);
+  const facts = upcomingEvents.reduce((sum, event) => sum + event.prep.facts, 0);
+  const timedMeetings = upcomingEvents.filter((event) => !event.allDay).length;
 
   return (
     <div className="mx-auto max-w-[1180px] space-y-5">
@@ -106,13 +133,13 @@ export default function CalendarPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#B5613F]">
-              Daily meeting prep
+              Google Calendar
             </div>
             <h1 className="font-serif text-[34px] font-medium leading-tight text-[#1B1A17]">
               Calendar
             </h1>
             <p className="mt-2 max-w-[720px] text-[13px] leading-5 text-[#6A645A]">
-              {formatDateLabel()} schedule with relationship context, open threads, and prep links.
+              Upcoming events from Google Calendar with relationship context, open threads, and prep links.
             </p>
           </div>
           <button
@@ -131,8 +158,9 @@ export default function CalendarPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Metric label="Meetings today" value={todayEvents.length.toString()} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric label="Events loaded" value={upcomingEvents.length.toString()} />
+        <Metric label="Timed meetings" value={timedMeetings.toString()} />
         <Metric label="Known people" value={knownAttendees.toString()} />
         <Metric label="Prep signals" value={(openThreads + facts).toString()} />
       </div>
@@ -142,24 +170,36 @@ export default function CalendarPage() {
           {isLoading ? (
             <div className="flex items-center gap-2 rounded-[12px] border border-[#E9E1D5] bg-[#F6F2EC] px-4 py-8 text-[13px] text-[#8A8276]">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading today&apos;s meetings...
+              Loading Google Calendar events...
             </div>
           ) : data?.error ? (
             <EmptyState icon={AlertCircle} title="Calendar needs attention" body={data.error} />
-          ) : todayEvents.length === 0 ? (
+          ) : upcomingEvents.length === 0 ? (
             <EmptyState
               icon={CalendarDays}
-              title="No meetings today"
-              body="When meetings are on the calendar, prep links and attendee context will show here."
+              title="No upcoming events"
+              body="When Google Calendar has upcoming events, prep links and attendee context will show here."
             />
           ) : (
-            todayEvents.map((event) => (
-              <MeetingRow
-                key={event.id}
-                event={event}
-                selected={event.id === selected?.id}
-                onSelect={() => setSelectedId(event.id)}
-              />
+            groupedEvents.map((group) => (
+              <section key={group.dayKey} className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="font-serif text-[22px] font-medium text-[#1B1A17]">{group.label}</h2>
+                  <span className="text-[11.5px] font-semibold text-[#A89F90]">
+                    {group.events.length} event{group.events.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {group.events.map((event) => (
+                    <MeetingRow
+                      key={event.id}
+                      event={event}
+                      selected={event.id === selected?.id}
+                      onSelect={() => setSelectedId(event.id)}
+                    />
+                  ))}
+                </div>
+              </section>
             ))
           )}
         </main>
