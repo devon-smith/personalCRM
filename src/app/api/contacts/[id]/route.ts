@@ -31,6 +31,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         orderBy: [{ confirmedByUser: "desc" }, { observedAt: "desc" }],
         take: 8,
       },
+      profile: true,
+      memory: true,
     },
   });
 

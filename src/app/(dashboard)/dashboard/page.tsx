@@ -24,7 +24,6 @@ import { LifeUpdates } from "@/components/dashboard/life-updates";
 import { DraftQueue } from "@/components/dashboard/draft-queue";
 import { Inbox, ActionItemsCard } from "@/components/dashboard/inbox";
 import { SyncAlerts } from "@/components/dashboard/sync-alerts";
-import { MomentToConnect } from "@/components/dashboard/moment-to-connect";
 import { TravelCard } from "@/components/dashboard/travel-card";
 import { Surface, StatTile, Sparkline, CollapsibleSection } from "@/components/ds";
 import { MiniCalendar } from "@/components/dashboard/mini-calendar";
@@ -320,7 +319,7 @@ export default function DashboardPage() {
             }
           />
         </Link>
-        <Link href="/activity" className="block">
+        <Link href="/people" className="block">
           <StatTile
             tone="mist"
             label="This week"
@@ -338,15 +337,11 @@ export default function DashboardPage() {
       {/* Sync alerts */}
       <SyncAlerts />
 
-      {/* A single, gentle "reach out today" surface — hides itself on
-          packed days or when no qualifying contact exists. */}
-      <MomentToConnect />
-
       {/* "While you're in [city]" — surfaces only when a future trip is
           detected in the calendar AND there are matching contacts. */}
       <TravelCard />
 
-      {/* Unified Inbox + Activity */}
+      {/* Unified Inbox + relationship history */}
       <Inbox />
 
       {/* Action Items — separate from inbox */}

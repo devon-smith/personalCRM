@@ -1,6 +1,6 @@
 /**
  * Daily "morning brief" — assembles today's priorities, meetings,
- * moment-to-connect, and overnight signals into a single HTML email
+ * and overnight signals into a single HTML email
  * that lands in the user's inbox before their day starts.
  *
  * The CRM dashboard already shows all of this; the brief exists so
@@ -10,7 +10,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { getUpcomingEvents, type UpcomingEvent } from "@/lib/calendar";
-import { pickMomentSuggestion, type MomentSuggestion } from "@/lib/suggestions/moment";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -70,7 +69,6 @@ export interface MorningBriefData {
   appBaseUrl: string;
   priorities: BriefPriority[];
   meetings: BriefMeeting[];
-  moment: MomentSuggestion | null;
   overnightSignals: BriefSignal[];
   considered: BriefConsideredCounts;
 }
@@ -99,10 +97,9 @@ export async function gatherMorningBrief(
   const forDate = isoDate(now);
   const forDatePretty = prettyDate(now);
 
-  const [priorities, meetings, moment, signals, considered] = await Promise.all([
+  const [priorities, meetings, signals, considered] = await Promise.all([
     loadPriorities(userId, appBaseUrl).catch(() => []),
     loadTodaysMeetings(userId, appBaseUrl, now).catch(() => []),
-    loadMoment(userId, forDate, now).catch(() => null),
     loadOvernightSignals(userId, appBaseUrl, now).catch(() => []),
     loadConsideredCounts(userId, now).catch(
       () =>
@@ -124,7 +121,6 @@ export async function gatherMorningBrief(
     appBaseUrl,
     priorities,
     meetings,
-    moment,
     overnightSignals: signals,
     considered,
   };
@@ -233,19 +229,6 @@ function toBriefMeeting(e: UpcomingEvent, appBaseUrl: string): BriefMeeting {
   };
 }
 
-async function loadMoment(
-  userId: string,
-  forDate: string,
-  now: Date,
-): Promise<MomentSuggestion | null> {
-  const events = await getUpcomingEvents(userId, 1);
-  const today = isoDate(now);
-  const todaysEvents = events.filter(
-    (e) => isoDate(new Date(e.startTime)) === today,
-  );
-  return pickMomentSuggestion(userId, todaysEvents, forDate);
-}
-
 async function loadOvernightSignals(
   userId: string,
   appBaseUrl: string,
@@ -291,7 +274,6 @@ export function renderBriefHtml(d: MorningBriefData): string {
   if (preamble) sections.push(preamble);
   sections.push(renderPriorities(d));
   sections.push(renderMeetings(d));
-  if (d.moment) sections.push(renderMoment(d.moment, d.appBaseUrl));
   if (d.overnightSignals.length > 0) sections.push(renderSignals(d.overnightSignals));
   sections.push(renderFooter(d));
 
@@ -414,24 +396,6 @@ function renderMeetings(d: MorningBriefData): string {
   return sectionWrapper("Today's calendar", rows);
 }
 
-function renderMoment(m: MomentSuggestion, appBaseUrl: string): string {
-  const contactUrl = `${appBaseUrl}/people?contact=${m.contactId}`;
-  const occasion =
-    m.occasion === "light_day" ? "light day on the calendar" : "long gap between meetings";
-  const daysQuiet =
-    m.daysSinceLastInteraction !== null
-      ? `${m.daysSinceLastInteraction} days quiet`
-      : "no recent interaction";
-  return sectionWrapper(
-    "Moment to connect",
-    `<a href="${escape(contactUrl)}" style="display:block;padding:14px 16px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;text-decoration:none;color:inherit">
-  <div style="font-weight:600;font-size:15px">${escape(m.contactName)}</div>
-  ${m.role || m.company ? `<div style="font-size:13px;color:#78716c;margin-top:2px">${escape([m.role, m.company].filter(Boolean).join(" · "))}</div>` : ""}
-  <div style="font-size:13px;color:#57534e;margin-top:8px">${escape(daysQuiet)} · ${escape(occasion)}</div>
-</a>`,
-  );
-}
-
 function renderSignals(signals: BriefSignal[]): string {
   const rows = signals
     .map(
@@ -498,12 +462,6 @@ export function renderBriefText(d: MorningBriefData): string {
       }
       lines.push(`    Prep: ${m.prepUrl}`);
     }
-  }
-  if (d.moment) {
-    lines.push("");
-    lines.push("MOMENT TO CONNECT");
-    lines.push(`  ${d.moment.contactName}`);
-    lines.push(`  ${d.moment.reason}`);
   }
   if (d.overnightSignals.length > 0) {
     lines.push("");

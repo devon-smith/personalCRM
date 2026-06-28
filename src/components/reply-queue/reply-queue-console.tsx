@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpRight,
+  Ban,
   Check,
   CheckCircle2,
-  Clock3,
   Inbox,
   Loader2,
   Mail,
@@ -15,7 +15,6 @@ import {
   RotateCcw,
   Send,
   Sparkles,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
@@ -107,6 +106,20 @@ interface ContactDetail {
     observedAt: string;
     confirmedByUser: boolean;
   }[];
+  profile?: {
+    expertiseAreas: string[];
+    relationshipStage: string | null;
+    communicationStyle: unknown;
+    geographicContext: unknown;
+    personalitySignals: unknown;
+  } | null;
+  memory?: {
+    discussedTopics: unknown;
+    theyMentioned: unknown;
+    openThreads: unknown;
+    personalContext: unknown;
+    recurringThemes: string[];
+  } | null;
 }
 
 interface DataHealthResponse {
@@ -321,34 +334,18 @@ export function ReplyQueueConsole() {
     onError: (err) => toast.error(err.message),
   });
 
-  const dismissMutation = useMutation({
+  const markNoReplyMutation = useMutation({
     mutationFn: async (item: InboxItemData) => {
-      const res = await fetch(`/api/inbox-items/${encodeURIComponent(item.id)}/dismiss`, {
+      const res = await fetch(`/api/inbox-items/${encodeURIComponent(item.id)}/override`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel: item.channel }),
+        body: JSON.stringify({ needsResponse: false }),
       });
-      if (!res.ok) throw new Error("Failed to dismiss item");
+      if (!res.ok) throw new Error("Failed to label item");
     },
     onSuccess: () => {
       invalidateWorkflow();
-      toast("Dismissed");
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const snoozeMutation = useMutation({
-    mutationFn: async (item: InboxItemData) => {
-      const res = await fetch(`/api/inbox-items/${encodeURIComponent(item.id)}/snooze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel: item.channel, hours: 4 }),
-      });
-      if (!res.ok) throw new Error("Failed to snooze item");
-    },
-    onSuccess: () => {
-      invalidateWorkflow();
-      toast("Snoozed for 4 hours");
+      toast("Marked as no reply needed");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -539,16 +536,10 @@ export function ReplyQueueConsole() {
                   title="Regeneration still lives in the draft workspace."
                 />
                 <ActionButton
-                  icon={Clock3}
-                  label="Snooze"
-                  onClick={() => snoozeMutation.mutate(selected)}
-                  disabled={snoozeMutation.isPending}
-                />
-                <ActionButton
-                  icon={Trash2}
-                  label="Dismiss"
-                  onClick={() => dismissMutation.mutate(selected)}
-                  disabled={dismissMutation.isPending}
+                  icon={Ban}
+                  label="No reply needed"
+                  onClick={() => markNoReplyMutation.mutate(selected)}
+                  disabled={markNoReplyMutation.isPending}
                 />
                 <div className="ml-0 flex flex-wrap gap-2 sm:ml-auto">
                   {selectedDraft && (
@@ -827,6 +818,9 @@ function ContextDrawer({
   lastSyncedAt: string | null;
 }) {
   const facts = contact?.personFacts ?? [];
+  const contextHighlights = buildContextHighlights(contact);
+  const nonEmailFacts = facts.filter((fact) => fact.type !== "email_address");
+  const emailFacts = facts.filter((fact) => fact.type === "email_address");
   const interactions = contact?.interactions ?? [];
   const circle = contact?.circles?.[0]?.circle?.name ?? "Unassigned";
   const name = selected?.contactName ?? contact?.name ?? "No selection";
@@ -884,21 +878,32 @@ function ContextDrawer({
 
       <div className="border-b border-[#E9E1D5] px-5 py-4">
         <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#A89F90]">
-          Known facts
+          What we know
         </div>
-        {facts.length > 0 ? (
+        {contextHighlights.length > 0 || nonEmailFacts.length > 0 ? (
           <div className="space-y-2">
-            {facts.slice(0, 5).map((fact) => (
-              <div key={fact.id} className="flex items-start gap-2">
+            {contextHighlights.slice(0, 5).map((highlight) => (
+              <div key={highlight} className="flex items-start gap-2">
                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#9A6A4B]" />
+                <span className="text-[12px] leading-5 text-[#3D3A33]">{highlight}</span>
+              </div>
+            ))}
+            {nonEmailFacts.slice(0, Math.max(0, 5 - contextHighlights.length)).map((fact) => (
+              <div key={fact.id} className="flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#C2A27F]" />
                 <span className="text-[12px] leading-5 text-[#3D3A33]">{fact.value}</span>
               </div>
             ))}
           </div>
         ) : (
           <p className="text-[12px] leading-5 text-[#8A8276]">
-            No source-backed facts yet. Gmail ingestion will add facts as messages are processed.
+            No synthesized context yet. Recent interactions below are still used for drafting.
           </p>
+        )}
+        {emailFacts.length > 0 && (
+          <div className="mt-3 rounded-[8px] border border-[#E9E1D5] bg-[#FAF8F5] px-3 py-2 text-[11.5px] leading-5 text-[#8A8276]">
+            Email on file: {emailFacts[0].value}
+          </div>
         )}
       </div>
 
@@ -938,6 +943,85 @@ function ContextDrawer({
       </div>
     </div>
   );
+}
+
+function buildContextHighlights(contact: ContactDetail | null | undefined): string[] {
+  if (!contact) return [];
+  const highlights: string[] = [];
+
+  if (contact.memory?.recurringThemes?.length) {
+    highlights.push(`Recurring themes: ${contact.memory.recurringThemes.slice(0, 4).join(", ")}`);
+  }
+
+  const openThreads = asRecordArray(contact.memory?.openThreads);
+  for (const thread of openThreads.slice(0, 2)) {
+    const subject = stringValue(thread.subject) ?? stringValue(thread.topic) ?? stringValue(thread.context);
+    const status = stringValue(thread.status);
+    if (subject) highlights.push(`Open thread: ${subject}${status ? ` (${status})` : ""}`);
+  }
+
+  const mentioned = asRecordArray(contact.memory?.theyMentioned);
+  for (const item of mentioned.slice(0, 2)) {
+    const subject = stringValue(item.subject) ?? stringValue(item.topic);
+    const context = stringValue(item.context) ?? stringValue(item.detail);
+    if (subject && context) highlights.push(`${subject}: ${context}`);
+    else if (context) highlights.push(context);
+  }
+
+  const personalContext = asPlainRecord(contact.memory?.personalContext);
+  for (const [key, value] of Object.entries(personalContext).slice(0, 3)) {
+    const rendered = renderUnknownValue(value);
+    if (rendered) highlights.push(`${humanizeKey(key)}: ${rendered}`);
+  }
+
+  if (contact.profile?.expertiseAreas?.length) {
+    highlights.push(`Expertise: ${contact.profile.expertiseAreas.slice(0, 4).join(", ")}`);
+  }
+  if (contact.profile?.relationshipStage) {
+    highlights.push(`Relationship stage: ${humanizeKey(contact.profile.relationshipStage)}`);
+  }
+
+  return Array.from(new Set(highlights)).slice(0, 8);
+}
+
+function asRecordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => isPlainRecord(item))
+    : [];
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> {
+  return isPlainRecord(value) ? value : {};
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function renderUnknownValue(value: unknown): string | null {
+  if (typeof value === "string") return value.trim() || null;
+  if (Array.isArray(value)) {
+    const items = value.map(renderUnknownValue).filter((item): item is string => Boolean(item));
+    return items.length > 0 ? items.slice(0, 3).join(", ") : null;
+  }
+  if (isPlainRecord(value)) {
+    const parts = Object.entries(value)
+      .map(([key, nested]) => {
+        const rendered = renderUnknownValue(nested);
+        return rendered ? `${humanizeKey(key)}: ${rendered}` : null;
+      })
+      .filter((part): part is string => Boolean(part));
+    return parts.length > 0 ? parts.slice(0, 2).join("; ") : null;
+  }
+  return null;
+}
+
+function humanizeKey(value: string): string {
+  return value.replace(/[_-]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function ContextMetric({ label, value }: { label: string; value: string }) {

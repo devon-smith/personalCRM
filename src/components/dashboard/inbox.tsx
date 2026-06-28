@@ -659,7 +659,7 @@ export function Inbox() {
               letterSpacing: "-0.01em",
             }}
           >
-            Activity
+            History
           </button>
         </div>
 
@@ -1070,7 +1070,7 @@ function GroupsTab({
         className="text-[12px]"
         style={{ color: "var(--text-tertiary)", letterSpacing: "-0.01em" }}
       >
-        Group chats with recent inbound activity. Dismiss to hide.
+        Group chats with recent inbound messages. Dismiss to hide.
       </p>
 
       <div>
@@ -2230,7 +2230,7 @@ function ActivityTab({ items }: { items: ActivityItem[] }) {
           className="text-[14px] font-medium"
           style={{ color: "#1A1A1A", letterSpacing: "-0.01em" }}
         >
-          No recent activity
+          No recent history
         </p>
         <p className="text-[12px] mt-1" style={{ color: "#7B8189" }}>
           Interactions will show up here as they happen

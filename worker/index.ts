@@ -121,7 +121,7 @@ const crontab = `
 # INNER_CIRCLE contacts → NEWS_MENTION ContactChangelog rows.
 11 5 * * 1 signal-detection
 # Weekdays at 13:30 UTC (6:30am Pacific): assemble today's morning brief
-# (priorities + meetings + moment-to-connect + overnight signals) and
+# (priorities + meetings + overnight signals) and
 # save as a Gmail draft for the user to skim & send.
 30 13 * * 1-5 morning-brief
 # Weekly Sun 09:42 UTC: top up the voice corpus with recently-sent mail.

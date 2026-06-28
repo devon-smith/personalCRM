@@ -24,7 +24,7 @@ import {
   Merge,
   Wrench,
   Settings,
-  Activity,
+  CalendarDays,
 } from "lucide-react";
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
@@ -120,8 +120,8 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
  * M0.x.16 — Mobile bottom nav covers all 9 rail destinations via 4
  * primary items + a "More" sheet. Primary items are the highest-
  * traffic Generals (Home, Replies, Ask, People); the More sheet holds
- * the rest (Circles, plus the Tools group: Voice, Merge, Admin,
- * Settings). Activity is surfaced in More.
+ * the rest (Calendar, Circles, plus the Tools group: Voice, Merge,
+ * Admin, Settings).
  */
 const PRIMARY_NAV: Array<{
   href: string;
@@ -140,8 +140,8 @@ const MORE_NAV: Array<{
   icon: typeof Home;
   label: string;
 }> = [
+  { href: "/calendar", icon: CalendarDays, label: "Calendar" },
   { href: "/circles", icon: CircleDot, label: "Circles" },
-  { href: "/activity", icon: Activity, label: "Activity" },
   { href: "/voice", icon: MessageSquareText, label: "Voice" },
   { href: "/merge", icon: Merge, label: "Merge" },
   { href: "/admin/jobs", icon: Wrench, label: "Admin" },

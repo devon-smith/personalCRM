@@ -17,7 +17,6 @@ function makeData(overrides: Partial<MorningBriefData> = {}): MorningBriefData {
     appBaseUrl: "https://crm.example.com",
     priorities: [],
     meetings: [],
-    moment: null,
     overnightSignals: [],
     considered: {
       emailsScanned: 0,
@@ -90,32 +89,6 @@ describe("renderBriefHtml", () => {
     expect(html).toContain("Office hours");
     expect(html).toContain("Ava Lin");
     expect(html).toContain("/meetings/evt1/prep");
-  });
-
-  it("only includes the moment section when one is selected", () => {
-    expect(renderBriefHtml(makeData())).not.toContain("Moment to connect");
-    const html = renderBriefHtml(
-      makeData({
-        moment: {
-          contactId: "c2",
-          contactName: "Selina Tobaccowala",
-          company: "Gixo",
-          role: "Co-founder",
-          tier: "INNER_CIRCLE",
-          avatarUrl: null,
-          daysSinceLastInteraction: 47,
-          interactionCount: 12,
-          reason: "47 days quiet · light day on the calendar",
-          sourceSystem: "calendar",
-          sourceRecordIds: ["calendar:freebusy:2026-05-25", "contact:c2"],
-          occasion: "light_day",
-          forDate: "2026-05-25",
-        },
-      }),
-    );
-    expect(html).toContain("Moment to connect");
-    expect(html).toContain("Selina Tobaccowala");
-    expect(html).toContain("47 days quiet");
   });
 
   it("only includes overnight signals when present", () => {

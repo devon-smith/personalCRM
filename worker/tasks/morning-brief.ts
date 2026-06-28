@@ -1,6 +1,6 @@
 /**
  * Daily morning brief — assembles today's priorities, meetings,
- * moment-to-connect, and overnight signals into an HTML email and
+ * and overnight signals into an HTML email and
  * saves it as a Gmail draft for the user to skim & send.
  *
  * Why a draft rather than a sent email: zero risk of spam-trapping

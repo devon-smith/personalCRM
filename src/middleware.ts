@@ -76,9 +76,9 @@ function corsHeaders(req: NextRequest): Record<string, string> {
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/calendar/:path*",
     "/people/:path*",
     "/circles/:path*",
-    "/activity/:path*",
     "/settings/:path*",
     "/onboarding/:path*",
     "/api/extension/:path*",

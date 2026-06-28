@@ -7,7 +7,7 @@ import {
   Home,
   Users,
   CircleDot,
-  Activity,
+  CalendarDays,
   Settings,
   ClipboardPaste,
   Inbox,
@@ -26,7 +26,7 @@ import { useDebounce } from "@/lib/hooks/use-debounce";
 
 const pages = [
   { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/circles", label: "Circles", icon: CircleDot },
   { href: "/people", label: "People", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
