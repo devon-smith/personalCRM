@@ -11,6 +11,7 @@ interface UpcomingBirthday {
   readonly id: string;
   readonly name: string;
   readonly company: string | null;
+  readonly birthdayLabel: string;
   readonly daysUntil: number;
   readonly isToday: boolean;
 }
@@ -81,14 +82,12 @@ function BirthdayRow({ bday }: { bday: UpcomingBirthday }) {
         >
           {bday.name}
         </p>
-        {bday.company && (
-          <p
-            className="text-[11px] truncate"
-            style={{ color: "var(--text-tertiary)" }}
-          >
-            {bday.company}
-          </p>
-        )}
+        <p
+          className="text-[11px] truncate"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          {bday.birthdayLabel} birthday
+        </p>
       </div>
       <span
         className="text-[12px] font-medium"

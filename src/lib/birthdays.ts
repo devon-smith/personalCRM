@@ -6,6 +6,7 @@ export interface UpcomingBirthday {
   readonly company: string | null;
   readonly avatarUrl: string | null;
   readonly birthday: string; // ISO date string
+  readonly birthdayLabel: string;
   readonly daysUntil: number;
   readonly isToday: boolean;
 }
@@ -35,8 +36,8 @@ export async function getUpcomingBirthdays(
     if (!contact.birthday) continue;
 
     const bday = new Date(contact.birthday);
-    const bdayMonth = bday.getMonth();
-    const bdayDate = bday.getDate();
+    const bdayMonth = bday.getUTCMonth();
+    const bdayDate = bday.getUTCDate();
 
     // Calculate next occurrence
     let nextBirthday = new Date(now.getFullYear(), bdayMonth, bdayDate);
@@ -57,6 +58,7 @@ export async function getUpcomingBirthdays(
         company: contact.company,
         avatarUrl: contact.avatarUrl,
         birthday: contact.birthday.toISOString(),
+        birthdayLabel: formatBirthdayDate(contact.birthday),
         daysUntil,
         isToday: daysUntil === 0,
       });
@@ -64,4 +66,12 @@ export async function getUpcomingBirthdays(
   }
 
   return results.sort((a, b) => a.daysUntil - b.daysUntil);
+}
+
+function formatBirthdayDate(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }

@@ -95,6 +95,7 @@ interface Birthday {
   company: string | null;
   avatarUrl: string | null;
   birthday: string;
+  birthdayLabel: string;
   daysUntil: number;
   isToday: boolean;
 }
@@ -459,7 +460,7 @@ export default function DashboardPage() {
                     href={`/people?contact=${birthday.id}`}
                     name={birthday.name}
                     meta={formatBirthdayLabel(birthday)}
-                    detail={birthday.company ?? "Birthday"}
+                    detail={`${birthday.birthdayLabel} birthday`}
                   />
                 ))
               )}
