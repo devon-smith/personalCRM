@@ -10,6 +10,8 @@ import {
   Clock,
   Sparkles,
   Loader2,
+  MapPin,
+  MessageSquareText,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { AttendeePrep } from "@/lib/meeting-prep";
@@ -17,9 +19,20 @@ import { Surface, SectionLabel } from "@/components/ds";
 
 interface PrepResponse {
   eventTitle: string;
+  eventDescription: string | null;
+  eventLocation: string | null;
   eventStartTime: string;
   eventEndTime: string | null;
   eventHtmlLink: string | null;
+  eventPrep?: {
+    knownAttendees: number;
+    unknownAttendees: number;
+    openThreads: number;
+    facts: number;
+    recentInteractions: number;
+    lastMetAt: string | null;
+    summary: string;
+  };
   unknownAttendeeEmails: string[];
   attendees: AttendeePrep[];
   error?: string;
@@ -75,20 +88,45 @@ export default function MeetingPrepPage({
   }
 
   return (
-    <div className="mx-auto max-w-[760px] pt-14 pb-16">
+    <div className="mx-auto max-w-[980px] pt-8 pb-16">
       {/* Header */}
       <Link
-        href="/dashboard"
+        href="/calendar"
         className="inline-flex items-center gap-1 ds-body-sm mb-4"
         style={{ color: "var(--text-tertiary)" }}
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        Back to dashboard
+        Back to calendar
       </Link>
 
-      <div className="crm-animate-enter">
-        <h1 className="ds-display-xl">{data.eventTitle}</h1>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+      <section className="crm-animate-enter rounded-[14px] border border-[#EAE2D6] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(40,30,20,0.03)] sm:px-6">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#B5613F]">
+          Meeting dossier
+        </div>
+        <div className="mt-1 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="font-serif text-[34px] font-medium leading-tight text-[#1B1A17] sm:text-[42px]">
+              {data.eventTitle}
+            </h1>
+            {data.eventPrep?.summary && (
+              <p className="mt-2 max-w-[720px] text-[13px] leading-5 text-[#6A645A]">
+                {data.eventPrep.summary}
+              </p>
+            )}
+          </div>
+          {data.eventHtmlLink && (
+            <a
+              href={data.eventHtmlLink}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-9 w-fit items-center gap-1.5 rounded-[8px] border border-[#E2D9CB] bg-[#FAF8F5] px-3 text-[12px] font-semibold text-[#6F685D]"
+            >
+              Open in Calendar
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <MetaPill>{formatEventTime(data.eventStartTime)}</MetaPill>
           {data.eventEndTime && (
             <MetaPill>
@@ -99,31 +137,38 @@ export default function MeetingPrepPage({
               )}
             </MetaPill>
           )}
+          {data.eventLocation && (
+            <MetaPill>
+              <MapPin className="mr-1 h-3 w-3" />
+              {data.eventLocation}
+            </MetaPill>
+          )}
           {data.attendees.length > 0 && (
             <MetaPill>
               {data.attendees.length} attendee{data.attendees.length === 1 ? "" : "s"} on file
             </MetaPill>
           )}
-          {data.eventHtmlLink && (
-            <a
-              href={data.eventHtmlLink}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[12px] font-medium inline-flex items-center gap-1 transition-colors"
-              style={{ color: "var(--text-secondary)" }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "var(--text-primary)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "var(--text-secondary)";
-              }}
-            >
-              Open in Calendar
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
         </div>
+      </section>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <DossierMetric label="Known people" value={(data.eventPrep?.knownAttendees ?? data.attendees.length).toString()} />
+        <DossierMetric label="Open threads" value={(data.eventPrep?.openThreads ?? 0).toString()} />
+        <DossierMetric label="Saved facts" value={(data.eventPrep?.facts ?? 0).toString()} />
+        <DossierMetric label="Touchpoints" value={(data.eventPrep?.recentInteractions ?? 0).toString()} />
       </div>
+
+      {data.eventDescription && (
+        <Surface tone="sand" padded className="mt-5 p-5">
+          <div className="mb-2 flex items-center gap-2">
+            <MessageSquareText className="h-3.5 w-3.5" style={{ color: "var(--text-secondary)" }} />
+            <SectionLabel>Calendar agenda</SectionLabel>
+          </div>
+          <p className="ds-body-sm whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>
+            {data.eventDescription}
+          </p>
+        </Surface>
+      )}
 
       {/* Unknown attendees notice */}
       {data.unknownAttendeeEmails.length > 0 && (
@@ -367,6 +412,17 @@ function AttendeeCard({ attendee: a }: { attendee: AttendeePrep }) {
         )}
       </Section>
     </Surface>
+  );
+}
+
+function DossierMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[12px] border border-[#E2D9CB] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(40,30,20,0.03)]">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#A89F90]">
+        {label}
+      </div>
+      <div className="mt-1 font-serif text-[25px] leading-none text-[#1B1A17]">{value}</div>
+    </div>
   );
 }
 

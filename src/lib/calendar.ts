@@ -7,6 +7,7 @@ interface CalendarEvent {
   id: string;
   summary?: string;
   description?: string;
+  location?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: Array<{
@@ -28,13 +29,53 @@ interface CalendarListResponse {
 export interface UpcomingEvent {
   id: string;
   title: string;
+  description: string | null;
+  location: string | null;
   startTime: string;
   endTime: string | null;
+  organizer: {
+    email: string | null;
+    name: string | null;
+    self: boolean;
+  } | null;
   attendees: Array<{
     email: string;
     name: string | null;
     contactId: string | null;
+    responseStatus: string | null;
+    company: string | null;
+    role: string | null;
+    lastInteraction: string | null;
+    circles: Array<{ id: string; name: string; color: string }>;
+    facts: Array<{ id: string; type: string; value: string; observedAt: string }>;
+    memory: {
+      openThreads: Array<Record<string, unknown>>;
+      recurringThemes: string[];
+      personalContext: Record<string, unknown>;
+    } | null;
+    profile: {
+      expertiseAreas: string[];
+      relationshipStage: string | null;
+      communicationStyle: Record<string, unknown> | null;
+    } | null;
+    recentInteractions: Array<{
+      id: string;
+      type: string;
+      direction: string;
+      occurredAt: string;
+      subject: string | null;
+      summary: string | null;
+    }>;
   }>;
+  prep: {
+    knownAttendees: number;
+    unknownAttendees: number;
+    openThreads: number;
+    facts: number;
+    recentInteractions: number;
+    lastMetAt: string | null;
+    summary: string;
+  };
   htmlLink: string | null;
 }
 
@@ -207,17 +248,89 @@ export async function getUpcomingEvents(
 
   const events = await fetchCalendarEvents(userId, now, future, 50);
 
-  // Load contacts for attendee matching
-  const contacts = await prisma.contact.findMany({
-    where: { userId, email: { not: null } },
-    select: { id: true, email: true, name: true },
-  });
-  const contactByEmail = new Map(
-    contacts.map((c) => [c.email!.toLowerCase(), { id: c.id, name: c.name }]),
-  );
-
   // Build set of ALL user emails to exclude from attendees
   const userEmails = await getUserEmailSet(userId);
+
+  const attendeeEmails = Array.from(
+    new Set(
+      events.flatMap((event) =>
+        (event.attendees ?? [])
+          .filter((a) => !a.self && !userEmails.has(a.email.toLowerCase()))
+          .map((a) => a.email.toLowerCase()),
+      ),
+    ),
+  );
+
+  const contacts = attendeeEmails.length
+    ? await prisma.contact.findMany({
+        where: {
+          userId,
+          isNoise: false,
+          OR: [
+            { email: { in: attendeeEmails, mode: "insensitive" } },
+            { additionalEmails: { hasSome: attendeeEmails } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          additionalEmails: true,
+          company: true,
+          role: true,
+          lastInteraction: true,
+          circles: {
+            select: {
+              circle: { select: { id: true, name: true, color: true } },
+            },
+          },
+          personFacts: {
+            where: { dismissedAt: null },
+            orderBy: { observedAt: "desc" },
+            take: 4,
+            select: { id: true, type: true, value: true, observedAt: true },
+          },
+          interactions: {
+            where: { sourceId: { not: { startsWith: "manual-reply:" } } },
+            orderBy: { occurredAt: "desc" },
+            take: 3,
+            select: {
+              id: true,
+              type: true,
+              direction: true,
+              occurredAt: true,
+              subject: true,
+              summary: true,
+            },
+          },
+          memory: {
+            select: {
+              openThreads: true,
+              recurringThemes: true,
+              personalContext: true,
+            },
+          },
+          profile: {
+            select: {
+              expertiseAreas: true,
+              relationshipStage: true,
+              communicationStyle: true,
+            },
+          },
+        },
+      })
+    : [];
+
+  const contactByEmail = new Map<
+    string,
+    (typeof contacts)[number]
+  >();
+  for (const contact of contacts) {
+    if (contact.email) contactByEmail.set(contact.email.toLowerCase(), contact);
+    for (const email of contact.additionalEmails) {
+      contactByEmail.set(email.toLowerCase(), contact);
+    }
+  }
 
   const upcoming: UpcomingEvent[] = [];
 
@@ -229,7 +342,7 @@ export async function getUpcomingEvents(
 
     const endTime = getEventEndTime(event);
 
-    // Match attendees to contacts, excluding all user's own emails
+    // Match attendees to contacts, excluding all user's own emails.
     const attendees = (event.attendees ?? [])
       .filter((a) => !a.self && !userEmails.has(a.email.toLowerCase()))
       .map((a) => {
@@ -238,20 +351,148 @@ export async function getUpcomingEvents(
           email: a.email,
           name: a.displayName ?? contact?.name ?? null,
           contactId: contact?.id ?? null,
+          responseStatus: a.responseStatus ?? null,
+          company: contact?.company ?? null,
+          role: contact?.role ?? null,
+          lastInteraction: contact?.lastInteraction?.toISOString() ?? null,
+          circles:
+            contact?.circles.map((cc) => ({
+              id: cc.circle.id,
+              name: cc.circle.name,
+              color: cc.circle.color,
+            })) ?? [],
+          facts:
+            contact?.personFacts.map((fact) => ({
+              id: fact.id,
+              type: fact.type,
+              value: fact.value,
+              observedAt: fact.observedAt.toISOString(),
+            })) ?? [],
+          memory: contact?.memory
+            ? {
+                openThreads: asRecordArray(contact.memory.openThreads),
+                recurringThemes: contact.memory.recurringThemes,
+                personalContext: asRecord(contact.memory.personalContext),
+              }
+            : null,
+          profile: contact?.profile
+            ? {
+                expertiseAreas: contact.profile.expertiseAreas,
+                relationshipStage: contact.profile.relationshipStage,
+                communicationStyle: contact.profile.communicationStyle
+                  ? asRecord(contact.profile.communicationStyle)
+                  : null,
+              }
+            : null,
+          recentInteractions:
+            contact?.interactions.map((interaction) => ({
+              id: interaction.id,
+              type: interaction.type,
+              direction: interaction.direction,
+              occurredAt: interaction.occurredAt.toISOString(),
+              subject: interaction.subject,
+              summary: interaction.summary,
+            })) ?? [],
         };
       });
+
+    const prep = buildPrepSummary(attendees);
 
     upcoming.push({
       id: event.id,
       title: event.summary ?? "(No title)",
+      description: cleanCalendarDescription(event.description),
+      location: event.location ?? null,
       startTime: startTime.toISOString(),
       endTime: endTime?.toISOString() ?? null,
+      organizer: event.organizer
+        ? {
+            email: event.organizer.email ?? null,
+            name: event.organizer.displayName ?? null,
+            self: event.organizer.self ?? false,
+          }
+        : null,
       attendees,
+      prep,
       htmlLink: event.htmlLink ?? null,
     });
   }
 
   return upcoming;
+}
+
+function cleanCalendarDescription(description: string | undefined): string | null {
+  if (!description) return null;
+  const cleaned = description
+    .replace(/<[^>]*>/g, " ")
+    .replace(/https:\/\/meet\.google\.com\/[a-z-]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 500) : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function asRecordArray(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      !!item && typeof item === "object" && !Array.isArray(item),
+  );
+}
+
+function buildPrepSummary(attendees: UpcomingEvent["attendees"]): UpcomingEvent["prep"] {
+  const knownAttendees = attendees.filter((a) => a.contactId);
+  const facts = knownAttendees.reduce((sum, a) => sum + a.facts.length, 0);
+  const openThreads = knownAttendees.reduce(
+    (sum, a) => sum + (a.memory?.openThreads.length ?? 0),
+    0,
+  );
+  const recentInteractions = knownAttendees.reduce(
+    (sum, a) => sum + a.recentInteractions.length,
+    0,
+  );
+  const lastMetAt = knownAttendees
+    .flatMap((a) => a.recentInteractions)
+    .filter((interaction) => interaction.type === "MEETING")
+    .map((interaction) => interaction.occurredAt)
+    .sort()
+    .at(-1) ?? null;
+
+  const firstKnown = knownAttendees[0];
+  const parts: string[] = [];
+  if (knownAttendees.length > 0) {
+    parts.push(
+      `${knownAttendees.length} known ${knownAttendees.length === 1 ? "attendee" : "attendees"}`,
+    );
+  }
+  if (openThreads > 0) parts.push(`${openThreads} open thread${openThreads === 1 ? "" : "s"}`);
+  if (facts > 0) parts.push(`${facts} saved fact${facts === 1 ? "" : "s"}`);
+  if (recentInteractions > 0) {
+    parts.push(`${recentInteractions} recent interaction${recentInteractions === 1 ? "" : "s"}`);
+  }
+
+  const summary =
+    parts.length > 0
+      ? `Prep has ${parts.join(", ")}${firstKnown?.name ? `, led by ${firstKnown.name}` : ""}.`
+      : attendees.length > 0
+        ? "Attendees are not matched to CRM contacts yet."
+        : "No external attendees found on this event.";
+
+  return {
+    knownAttendees: knownAttendees.length,
+    unknownAttendees: attendees.length - knownAttendees.length,
+    openThreads,
+    facts,
+    recentInteractions,
+    lastMetAt,
+    summary,
+  };
 }
 
 // ─── Sync past events as interactions ───
@@ -342,7 +583,7 @@ export async function syncCalendarEvents(
           direction: isOrganizer ? "OUTBOUND" : "INBOUND",
           channel: "Google Calendar",
           subject: event.summary ?? null,
-          summary: buildMeetingSummary(event, email),
+          summary: buildMeetingSummary(event),
           occurredAt: eventTime,
           sourceId,
         },
@@ -372,10 +613,7 @@ export async function syncCalendarEvents(
 /**
  * Build a brief summary for a calendar meeting interaction.
  */
-function buildMeetingSummary(
-  event: CalendarEvent,
-  attendeeEmail: string,
-): string {
+function buildMeetingSummary(event: CalendarEvent): string {
   const parts: string[] = [];
 
   if (event.summary) {

@@ -9,9 +9,21 @@ function makeEvent(startHour: number, durationMin: number, title = "Meeting"): U
   return {
     id: `e-${startHour}-${durationMin}`,
     title,
+    description: null,
+    location: null,
     startTime: start.toISOString(),
     endTime: end.toISOString(),
+    organizer: null,
     attendees: [],
+    prep: {
+      knownAttendees: 0,
+      unknownAttendees: 0,
+      openThreads: 0,
+      facts: 0,
+      recentInteractions: 0,
+      lastMetAt: null,
+      summary: "No external attendees found on this event.",
+    },
     htmlLink: null,
   };
 }

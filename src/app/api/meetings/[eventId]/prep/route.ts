@@ -51,9 +51,12 @@ export async function GET(
 
     return NextResponse.json({
       eventTitle: event.title,
+      eventDescription: event.description,
+      eventLocation: event.location,
       eventStartTime: event.startTime,
       eventEndTime: event.endTime,
       eventHtmlLink: event.htmlLink,
+      eventPrep: event.prep,
       unknownAttendeeEmails: attendeeEmails.filter(
         (e) => !dossier.attendees.some((a) => a.email?.toLowerCase() === e.toLowerCase()),
       ),

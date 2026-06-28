@@ -1,116 +1,29 @@
 "use client";
 
-import { useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  MessageSquare,
-  Mail,
-  Phone,
-  StickyNote,
-  Users as MeetingIcon,
-  ChevronRight,
+  ArrowUpRight,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Search,
+  Sparkles,
+  Users,
 } from "lucide-react";
-import Link from "next/link";
+import type { UpcomingEvent } from "@/lib/calendar";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
-
-import { UpcomingMeetings } from "@/components/dashboard/upcoming-meetings";
-import { UpcomingBirthdays } from "@/components/dashboard/upcoming-birthdays";
-import { SmartScheduling } from "@/components/dashboard/smart-scheduling";
-import { LifeUpdates } from "@/components/dashboard/life-updates";
-import { DraftQueue } from "@/components/dashboard/draft-queue";
-import { Inbox, ActionItemsCard } from "@/components/dashboard/inbox";
-import { SyncAlerts } from "@/components/dashboard/sync-alerts";
-import { TravelCard } from "@/components/dashboard/travel-card";
-import { Surface, StatTile, Sparkline, CollapsibleSection } from "@/components/ds";
-import { MiniCalendar } from "@/components/dashboard/mini-calendar";
-import { TodayTimeline, AddEventPill } from "@/components/dashboard/today-timeline";
 import { NetworkQueryBox } from "@/components/network-query/network-query-box";
 import { AssistantObservations } from "@/components/dashboard/assistant-observations";
-
-// Tone hex map mirrors the one in Surface. Inline styles win over the
-// shadcn Card's `bg-card` utility by specificity, so this is the only
-// way to actually push tone backgrounds onto Card-wrapped surfaces
-// without rewriting their internal layout.
-const TONE_BG = {
-  sand:  "#F1ECDE",
-  mist:  "#E8E4DC",
-  olive: "#DCDCC9",
-  stone: "#DDE3E3",
-} as const;
-
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
-
-function getFirstName(name: string | null | undefined): string | null {
-  if (!name) return null;
-  return name.split(/\s+/)[0] ?? null;
-}
-
-function prettyDate(now: Date = new Date()): string {
-  return now.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function buildWeekSeries(total: number): number[] {
-  // Cheap visual proxy: distribute 7 stable values whose sum tracks `total`.
-  // We don't yet expose per-day counts; this gives the bar chart shape
-  // without inventing detail that isn't real. Returns a flat-ish series.
-  if (total <= 0) return [0.4, 0.5, 0.4, 0.6, 0.5, 0.5, 0.4];
-  const base = total / 7;
-  return [0.7, 1.1, 0.9, 1.3, 1.0, 1.2, 0.8].map((m) => Math.max(0.2, base * m));
-}
-
-function buildSubtitle(stats: DashboardStats): string {
-  // Calm, human, no fear-of-missing-out numbers.
-  const inboxAwaiting = stats.recentInteractions.length;
-  if (stats.interactionsThisWeek === 0 && inboxAwaiting === 0) {
-    return "All quiet. A good day to reach for someone you've been meaning to.";
-  }
-  if (inboxAwaiting > 0 && inboxAwaiting <= 3) {
-    return "A few people are waiting on you. Today feels manageable.";
-  }
-  if (inboxAwaiting > 3) {
-    return "A bit of catching up to do. Pick one and start there.";
-  }
-  return "Today's surfaces are below — pick what feels right.";
-}
-
-const typeIcons: Record<string, React.ElementType> = {
-  EMAIL: Mail,
-  MESSAGE: MessageSquare,
-  MEETING: MeetingIcon,
-  CALL: Phone,
-  NOTE: StickyNote,
-};
+import { SyncAlerts } from "@/components/dashboard/sync-alerts";
 
 interface CircleBadge {
   id: string;
   name: string;
   color: string;
-}
-
-interface RecentlyActiveContact {
-  id: string;
-  name: string;
-  company: string | null;
-  tier: string;
-  source: string;
-  interactionCount: number;
-  lastInteraction: string | null;
-  lastInteractionType: string | null;
-  lastInteractionSummary: string | null;
-  circles: CircleBadge[];
 }
 
 interface RecentInteraction {
@@ -132,32 +45,85 @@ interface RecentInteraction {
   };
 }
 
+interface RecentlyActiveContact {
+  id: string;
+  name: string;
+  company: string | null;
+  tier: string;
+  source: string;
+  interactionCount: number;
+  lastInteraction: string | null;
+  lastInteractionType: string | null;
+  lastInteractionSummary: string | null;
+  circles: CircleBadge[];
+}
+
 interface DashboardStats {
   tierCounts: Record<string, number>;
   contactsThisMonth: number;
   interactionsThisWeek: number;
   totalContacts: number;
   recentInteractions: RecentInteraction[];
-  overdueContacts: {
+  overdueContacts: Array<{
     id: string;
     name: string;
     company: string | null;
     daysOverdue: number;
     tier: string;
-  }[];
+  }>;
   overdueCount: number;
-  circles: {
+  circles: Array<{
     id: string;
     name: string;
     color: string;
     icon: string;
     contactCount: number;
-  }[];
+  }>;
   recentlyActive: RecentlyActiveContact[];
   sourceCounts: Record<string, number>;
 }
 
-const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+interface CalendarResponse {
+  events: UpcomingEvent[];
+  error?: string;
+}
+
+const SYNC_INTERVAL_MS = 10 * 60 * 1000;
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function getFirstName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  return name.split(/\s+/)[0] ?? null;
+}
+
+function prettyDate(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function isToday(iso: string): boolean {
+  return new Date(iso).toDateString() === new Date().toDateString();
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function compactLabel(value: number, label: string): string {
+  return `${value.toLocaleString()} ${label}${value === 1 ? "" : "s"}`;
+}
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -172,15 +138,14 @@ export default function DashboardPage() {
         fetch("/api/imessage", { method: "POST" }),
         fetch("/api/gmail/sync", { method: "POST" }),
       ]);
-      // Refresh inbox and dashboard data after sync completes
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["upcoming-meetings"] });
     } finally {
       syncInFlight.current = false;
     }
   }, [queryClient]);
 
-  // Initial sync (deferred 3s) + recurring every 10 minutes
   useEffect(() => {
     const initialTimer = setTimeout(runSync, 3000);
     const interval = setInterval(runSync, SYNC_INTERVAL_MS);
@@ -201,574 +166,354 @@ export default function DashboardPage() {
     refetchInterval: 60_000,
   });
 
+  const { data: calendar } = useQuery<CalendarResponse>({
+    queryKey: ["upcoming-meetings"],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar");
+      if (!res.ok) return { events: [], error: `Calendar unavailable (${res.status})` };
+      return res.json();
+    },
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+
   const firstName = getFirstName(session?.user?.name);
   const greetingHeadline = firstName
     ? `${getGreeting()}, ${firstName}.`
     : `${getGreeting()}.`;
 
+  const todayMeetings = useMemo(
+    () => (calendar?.events ?? []).filter((event) => isToday(event.startTime)),
+    [calendar?.events],
+  );
+
   if (isLoading || !stats) {
     return (
-      <div className="space-y-8">
-        <div>
-          <h1 className="ds-display-xl">{greetingHeadline}</h1>
-          <p className="ds-body-lg mt-3" style={{ color: "var(--text-tertiary)" }}>
-            Loading your dashboard\u2026
-          </p>
-        </div>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Surface key={i} tone="sand" padded>
-              <div className="h-24 animate-pulse rounded-2xl" style={{ backgroundColor: "var(--surface-sand-raised)" }} />
-            </Surface>
-          ))}
+      <div className="mx-auto max-w-[1120px] space-y-5">
+        <div className="rounded-[14px] border border-[#EAE2D6] bg-white px-6 py-6">
+          <div className="h-7 w-40 animate-pulse rounded bg-[#EFE8DC]" />
+          <div className="mt-4 h-12 w-72 animate-pulse rounded bg-[#EFE8DC]" />
         </div>
       </div>
     );
   }
 
-  // Synthetic 7-point series for the "This week" sparkline. Tracks how
-  // interactions distributed across the last 7 calendar days isn't on
-  // the dashboard payload yet \u2014 for now we proxy with a smooth ramp
-  // sized to the headline number so the viz isn't fake-detailed.
-  const weekSeries = buildWeekSeries(stats.interactionsThisWeek);
-  const circleSeries = stats.circles
-    .slice(0, 7)
-    .map((c) => c.contactCount || 1);
-  const organizedCount = stats.circles.reduce((sum, c) => sum + c.contactCount, 0);
+  const attention = [
+    ...stats.recentInteractions.slice(0, 4).map((interaction) => ({
+      key: interaction.id,
+      href: "/reply-queue",
+      name: interaction.contact.name,
+      initials: getInitials(interaction.contact.name),
+      body: interaction.subject ?? interaction.summary ?? "Recent inbound conversation",
+      tag: interaction.direction === "INBOUND" ? "Reply" : "Recent",
+      accent: interaction.direction === "INBOUND" ? "#B5613F" : "#5E7A93",
+      meta: formatDistanceToNow(new Date(interaction.occurredAt)),
+    })),
+    ...stats.overdueContacts.slice(0, 2).map((contact) => ({
+      key: contact.id,
+      href: `/people?contact=${contact.id}`,
+      name: contact.name,
+      initials: getInitials(contact.name),
+      body: `${contact.daysOverdue} days past your follow-up rhythm${contact.company ? ` · ${contact.company}` : ""}`,
+      tag: "Reconnect",
+      accent: "#8A8276",
+      meta: "stale",
+    })),
+  ].slice(0, 5);
+
+  const primaryMeeting = todayMeetings[0] ?? null;
+  const prepSignals = todayMeetings.reduce(
+    (sum, event) => sum + event.prep.openThreads + event.prep.facts,
+    0,
+  );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-8">
-      {/* Main column */}
-      <div className="crm-stagger min-w-0 space-y-6">
-      {/* Greeting */}
-      <div
-        className="rounded-[14px] border bg-white px-5 py-5 shadow-[0_1px_2px_rgba(40,30,20,0.03)] sm:px-6"
-        style={{ borderColor: "#EAE2D6" }}
-      >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-[1160px] space-y-5">
+      <section className="rounded-[16px] border border-[#EAE2D6] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(40,30,20,0.03)] sm:px-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div
-              className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
-              style={{ color: "#B5613F" }}
-            >
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#B5613F]">
               {prettyDate()}
             </div>
-            <h1
-              className="font-serif text-[30px] font-medium leading-tight"
-              style={{ color: "#1B1A17" }}
-            >
+            <h1 className="font-serif text-[34px] font-medium leading-tight text-[#1B1A17] sm:text-[40px]">
               {greetingHeadline}
             </h1>
-            <p className="mt-2 max-w-[640px] text-[13px]" style={{ color: "#6A645A" }}>
-              {buildSubtitle(stats)}
+            <p className="mt-2 max-w-[650px] text-[13px] leading-5 text-[#6A645A]">
+              Your replies, relationships, and meeting prep are gathered into one working surface.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="rounded-[6px] border px-2.5 py-1.5 text-[11px]"
-              style={{ borderColor: "#E6DDCF", color: "#9A9183" }}
-            >
-              ⌘K
-            </span>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[520px]">
+            <HomeStat label="Need reply" value={stats.recentInteractions.length.toString()} color="#B5613F" />
+            <HomeStat label="Meetings" value={todayMeetings.length.toString()} color="#5E7A93" />
+            <HomeStat label="People" value={stats.totalContacts.toLocaleString()} color="#6E7B53" />
+            <HomeStat label="Signals" value={prepSignals.toString()} color="#9A6A4B" />
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Network query — Phase 7 flagship (M7.3). Natural-language
-          question → Claude tool-use orchestrator → grounded answer.
-          Sits at the top because it's the most-used surface; rotating
-          placeholder shows what's possible without taking up real estate. */}
       <NetworkQueryBox />
-
-      {/* M9.2: unprompted observations from the assistant. Self-hides
-          when empty; daily worker generates 1-3 per user from recent
-          signals (unanswered inbound, stale threads, life events,
-          dormant inner-circle). */}
       <AssistantObservations />
-
-      {/* Stat tiles (Sand for people-shaped data) */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Link href="/reply-queue" className="block">
-          <StatTile
-            tone="sand"
-            label="Need a reply"
-            value={stats.recentInteractions.length.toString()}
-            description="Recent inbound items"
-            viz={<Sparkline data={weekSeries} variant="bars" />}
-          />
-        </Link>
-        <Link href="/people" className="block">
-          <StatTile
-            tone="sand"
-            label="People"
-            value={stats.totalContacts.toLocaleString()}
-            description={`${stats.contactsThisMonth} added this month`}
-            viz={<Sparkline data={[6, 8, 7, 10, 9, 12, 11]} variant="line" />}
-          />
-        </Link>
-        <Link href="/circles" className="block">
-          <StatTile
-            tone="olive"
-            label="Active circles"
-            value={stats.circles.length.toString()}
-            description={`${organizedCount} contacts organized`}
-            viz={
-              circleSeries.length > 1 ? (
-                <Sparkline data={circleSeries} variant="bars" />
-              ) : null
-            }
-          />
-        </Link>
-        <Link href="/people" className="block">
-          <StatTile
-            tone="mist"
-            label="This week"
-            value={stats.interactionsThisWeek.toString()}
-            description={
-              stats.interactionsThisWeek === 0
-                ? "Log your first interaction"
-                : `interaction${stats.interactionsThisWeek === 1 ? "" : "s"}`
-            }
-            viz={<Sparkline data={weekSeries} variant="bars" />}
-          />
-        </Link>
-      </div>
-
-      {/* Sync alerts */}
       <SyncAlerts />
 
-      {/* "While you're in [city]" — surfaces only when a future trip is
-          detected in the calendar AND there are matching contacts. */}
-      <TravelCard />
-
-      {/* Unified Inbox + relationship history */}
-      <Inbox />
-
-      {/* Action Items — separate from inbox */}
-      <ActionItemsCard />
-
-      {/* Main grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Recent Interactions */}
-        {stats.recentInteractions?.length > 0 && (
-          <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.mist }}>
-            <CardHeader className="px-6 pt-6 pb-0">
-              <CardTitle className="crm-section-label">Recent interactions</CardTitle>
-            </CardHeader>
-            <CardContent className="px-6 pb-6 pt-4">
-              <CollapsibleSection
-                storageKey="dashboard-recent-expanded"
-                previewCount={3}
-                items={stats.recentInteractions}
-                className="divide-y"
-                renderItem={(interaction) => (
-                  <RecentInteractionRow key={interaction.id} interaction={interaction} />
-                )}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Draft Queue */}
-        <DraftQueueCard />
-
-        {/* Smart Scheduling */}
-        <SmartSchedulingCard />
-
-        {/* Life Updates */}
-        <LifeUpdatesCard />
-
-        {/* Strongest relationships */}
-        {stats.recentlyActive.length > 0 && (
-          <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.olive }}>
-            <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
-              <CardTitle className="crm-section-label">
-                Strongest relationships
-              </CardTitle>
-              <span className="ds-caption">Last 30 days</span>
-            </CardHeader>
-            <CardContent className="px-6 pb-6 pt-4">
-              <CollapsibleSection
-                storageKey="dashboard-strongest-expanded"
-                previewCount={3}
-                items={stats.recentlyActive}
-                className="divide-y"
-                renderItem={(contact) => (
-                  <StrongestRelationshipRow key={contact.id} contact={contact} />
-                )}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Upcoming Meetings */}
-        <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.stone }}>
-          <CardContent className="px-6 py-6">
-            <UpcomingMeetings />
-          </CardContent>
-        </Card>
-
-        {/* Birthdays */}
-        <BirthdaysCard />
-
-        {/* Your Circles */}
-        <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.olive }}>
-          <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-0">
-            <CardTitle className="crm-section-label">Your circles</CardTitle>
-            <Link
-              href="/circles"
-              className="ds-caption font-medium transition-colors"
-              style={{ color: "var(--text-tertiary)" }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "var(--text-primary)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "var(--text-tertiary)";
-              }}
-            >
-              Manage
-            </Link>
-          </CardHeader>
-          <CardContent className="px-6 pb-6 pt-4">
-            {stats.circles.length === 0 ? (
-              <div className="flex flex-col items-center py-6 text-center">
-                <p
-                  className="ds-body-md"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
-                  No circles yet
-                </p>
-                <Link
-                  href="/circles"
-                  className="mt-1.5 ds-body-sm font-medium transition-colors"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  Set up your circles
-                </Link>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <main className="space-y-4">
+          <section className="rounded-[14px] border border-[#EAE2D6] bg-white shadow-[0_1px_2px_rgba(40,30,20,0.03)]">
+            <div className="flex items-center justify-between border-b border-[#F0EAE0] px-5 py-4">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#B5613F]">
+                  Needs attention
+                </div>
+                <h2 className="font-serif text-[24px] font-medium text-[#1B1A17]">Today&apos;s queue</h2>
               </div>
-            ) : (
+              <Link href="/reply-queue" className="inline-flex items-center gap-1.5 rounded-[8px] bg-[#1B1A17] px-3 py-2 text-[12px] font-semibold text-[#FAF8F5]">
+                Replies
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="divide-y divide-[#F0EAE0]">
+              {attention.length === 0 ? (
+                <div className="flex items-center gap-3 px-5 py-6 text-[13px] text-[#6A645A]">
+                  <CheckCircle2 className="h-5 w-5 text-[#6E7B53]" />
+                  Nothing urgent is waiting in the current queue.
+                </div>
+              ) : (
+                attention.map((item) => <AttentionRow key={item.key} item={item} />)
+              )}
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <WarmPanel
+              eyebrow="Relationship memory"
+              title="Strongest relationships"
+              href="/people"
+              icon={Users}
+            >
+              <div className="space-y-3">
+                {stats.recentlyActive.slice(0, 5).map((contact) => (
+                  <PersonLine
+                    key={contact.id}
+                    href={`/people?contact=${contact.id}`}
+                    name={contact.name}
+                    meta={`${compactLabel(contact.interactionCount, "interaction")} · ${contact.lastInteraction ? formatDistanceToNow(new Date(contact.lastInteraction)) : "recent"}`}
+                    detail={contact.lastInteractionSummary ?? contact.company ?? "Active relationship"}
+                  />
+                ))}
+                {stats.recentlyActive.length === 0 && (
+                  <p className="text-[13px] leading-5 text-[#8A8276]">Recent interactions will appear here after sync.</p>
+                )}
+              </div>
+            </WarmPanel>
+
+            <WarmPanel
+              eyebrow="Circles"
+              title="Communication groups"
+              href="/circles"
+              icon={Sparkles}
+            >
               <div className="space-y-2">
-                {stats.circles.map((circle) => (
+                {stats.circles.slice(0, 6).map((circle) => (
                   <Link
                     key={circle.id}
                     href={`/people?circle=${circle.id}`}
-                    className="group flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-colors"
-                    style={{
-                      transitionDuration: "var(--duration-fast)",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor =
-                        "var(--surface-sunken)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "";
-                    }}
+                    className="flex items-center gap-3 rounded-[10px] px-2 py-2 transition hover:bg-[#FAF8F5]"
                   >
-                    <div
-                      className="h-3 w-3 rounded-full shrink-0"
-                      style={{ backgroundColor: circle.color }}
-                    />
-                    <span
-                      className="flex-1 ds-body-md font-medium transition-colors"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {circle.name}
-                    </span>
-                    <span
-                      className="ds-body-sm font-semibold"
-                      style={{ color: "var(--text-tertiary)" }}
-                    >
-                      {circle.contactCount}
-                    </span>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: circle.color }} />
+                    <span className="flex-1 text-[13px] font-semibold text-[#1B1A17]">{circle.name}</span>
+                    <span className="text-[12px] text-[#8A8276]">{circle.contactCount}</span>
                   </Link>
                 ))}
               </div>
-            )}
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div
-                className="rounded-[10px] p-4 text-center"
-                style={{ backgroundColor: "var(--surface-sunken)" }}
-              >
-                <p className="ds-stat-md">{stats.contactsThisMonth}</p>
-                <p className="ds-caption mt-1">Added this month</p>
-              </div>
-              <div
-                className="rounded-[10px] p-4 text-center"
-                style={{ backgroundColor: "var(--surface-sunken)" }}
-              >
-                <p className="ds-stat-md">{stats.interactionsThisWeek}</p>
-                <p className="ds-caption mt-1">Interactions this week</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      </div>{/* end main column */}
+            </WarmPanel>
+          </section>
+        </main>
 
-      {/* Right rail — desktop only. Mini-calendar anchor, today's
-          chronological strip, single "Add event" CTA. Stays sticky
-          so it follows the scroll on long dashboards. */}
-      <aside className="hidden lg:block">
-        <div className="sticky top-6 space-y-5">
-          <div
-            className="rounded-3xl p-4"
-            style={{ backgroundColor: "#FFFFFF", boxShadow: "0 2px 8px rgba(27,26,23,0.04)" }}
-          >
-            <MiniCalendar />
-            <div className="mt-4">
-              <AddEventPill />
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <section className="rounded-[14px] border border-[#E2D9CB] bg-[#F3EEE6] p-4 shadow-[0_2px_8px_rgba(27,26,23,0.04)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#B5613F]">
+                  Meetings
+                </div>
+                <h2 className="font-serif text-[24px] font-medium text-[#1B1A17]">Today</h2>
+              </div>
+              <Link href="/calendar" className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#D8CBB9] bg-[#FAF8F5] px-2.5 text-[11.5px] font-semibold text-[#6F685D]">
+                Calendar
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
-          </div>
-          <TodayTimeline />
-        </div>
-      </aside>
+
+            {primaryMeeting ? (
+              <div className="mt-4 rounded-[12px] border border-[#E2D9CB] bg-white p-3">
+                <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[#8A8276]">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  {formatTime(primaryMeeting.startTime)}
+                </div>
+                <h3 className="mt-2 font-serif text-[21px] leading-tight text-[#1B1A17]">
+                  {primaryMeeting.title}
+                </h3>
+                <p className="mt-2 text-[12.5px] leading-5 text-[#6A645A]">{primaryMeeting.prep.summary}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <SignalPill label={`${primaryMeeting.prep.knownAttendees} known`} />
+                  <SignalPill label={`${primaryMeeting.prep.openThreads} threads`} />
+                  <SignalPill label={`${primaryMeeting.prep.facts} facts`} />
+                </div>
+                <Link
+                  href={`/meetings/${encodeURIComponent(primaryMeeting.id)}/prep`}
+                  className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-[8px] bg-[#1B1A17] px-3 text-[12px] font-semibold text-[#FAF8F5]"
+                >
+                  Open prep
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-[12px] border border-[#E2D9CB] bg-white p-4 text-[13px] leading-5 text-[#8A8276]">
+                No meetings today. Upcoming meeting prep will show here after calendar sync.
+              </p>
+            )}
+
+            <div className="mt-3 space-y-2">
+              {todayMeetings.slice(1, 4).map((meeting) => (
+                <Link key={meeting.id} href={`/calendar`} className="flex items-center gap-3 rounded-[10px] px-2 py-2 transition hover:bg-[#FAF8F5]">
+                  <CalendarDays className="h-4 w-4 text-[#8A8276]" />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-[#1B1A17]">{meeting.title}</span>
+                  <span className="text-[11.5px] text-[#8A8276]">{formatTime(meeting.startTime)}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[14px] border border-[#EAE2D6] bg-white p-4 shadow-[0_1px_2px_rgba(40,30,20,0.03)]">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#A89F90]">
+              <Search className="h-3.5 w-3.5" />
+              Ask shortcuts
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                "Who did I promise to follow up with?",
+                "Who has meetings today?",
+                "Which circles are stale?",
+                "What do I know before this meeting?",
+              ].map((query) => (
+                <Link key={query} href={`/ask?q=${encodeURIComponent(query)}`} className="rounded-full border border-[#E2D9CB] bg-[#FAF8F5] px-3 py-1.5 text-[12px] text-[#6A645A] transition hover:border-[#D2BEA3]">
+                  {query}
+                </Link>
+              ))}
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }
 
-// ─── Supporting cards ────────────────────────────────────────
-
-function RecentInteractionRow({
-  interaction,
-}: {
-  interaction: RecentInteraction;
-}) {
-  const Icon = typeIcons[interaction.type] ?? StickyNote;
-  const color = getAvatarColor(interaction.contact.name);
+function HomeStat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <Link
-      href={`/people?contact=${interaction.contact.id}`}
-      className="group flex items-start gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
-      style={{ transitionDuration: "var(--duration-fast)" }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = "";
-      }}
-    >
-      <Avatar className="h-8 w-8 shrink-0">
-        <AvatarFallback
-          className="text-[10px] font-semibold"
-          style={{ backgroundColor: color.bg, color: color.text }}
-        >
-          {getInitials(interaction.contact.name)}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className="ds-body-md font-medium truncate"
-            style={{ color: "var(--text-primary)" }}
-          >
-            {interaction.contact.name}
-          </span>
-          {interaction.contact.circles?.slice(0, 2).map((cc) => (
-            <span
-              key={cc.circle.id}
-              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
-              style={{
-                backgroundColor: `${cc.circle.color}15`,
-                color: cc.circle.color,
-              }}
-            >
-              {cc.circle.name}
-            </span>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--text-tertiary)" }} />
-          <p className="ds-caption truncate">
-            {interaction.subject ?? interaction.summary ?? interaction.type.toLowerCase()}
-          </p>
-        </div>
-        {interaction.contact.company && (
-          <p
-            className="text-[11px] truncate mt-0.5"
-            style={{ color: "var(--text-tertiary)" }}
-          >
-            {interaction.contact.company}
-          </p>
-        )}
-      </div>
+    <div className="rounded-[11px] border border-[#E8DED0] bg-[#FAF8F5] px-3 py-3">
+      <div className="font-serif text-[25px] leading-none" style={{ color }}>{value}</div>
+      <div className="mt-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#8A8276]">{label}</div>
+    </div>
+  );
+}
+
+function AttentionRow({
+  item,
+}: {
+  item: {
+    href: string;
+    name: string;
+    initials: string;
+    body: string;
+    tag: string;
+    accent: string;
+    meta: string;
+  };
+}) {
+  const color = getAvatarColor(item.name);
+  return (
+    <Link href={item.href} className="flex items-start gap-3 px-5 py-4 transition hover:bg-[#FAF8F5]">
       <span
-        className="shrink-0 text-[11px] mt-0.5"
-        style={{ color: "var(--text-tertiary)" }}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+        style={{ backgroundColor: color.bg, color: color.text }}
       >
-        {formatDistanceToNow(new Date(interaction.occurredAt))}
+        {item.initials}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold text-[#1B1A17]">{item.name}</span>
+          <span className="rounded-[6px] px-2 py-0.5 text-[10.5px] font-semibold" style={{ backgroundColor: `${item.accent}18`, color: item.accent }}>
+            {item.tag}
+          </span>
+        </span>
+        <span className="mt-1 block truncate text-[13px] text-[#5A574F]">{item.body}</span>
+      </span>
+      <span className="shrink-0 text-[11.5px] text-[#A89F90]">{item.meta}</span>
+    </Link>
+  );
+}
+
+function WarmPanel({
+  eyebrow,
+  title,
+  href,
+  icon: Icon,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  href: string;
+  icon: typeof Users;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#EAE2D6] bg-white p-4 shadow-[0_1px_2px_rgba(40,30,20,0.03)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#B5613F]">
+            <Icon className="h-3.5 w-3.5" />
+            {eyebrow}
+          </div>
+          <h2 className="mt-1 font-serif text-[23px] font-medium text-[#1B1A17]">{title}</h2>
+        </div>
+        <Link href={href} className="rounded-[8px] border border-[#E2D9CB] bg-[#FAF8F5] p-2 text-[#6F685D]">
+          <ArrowUpRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function PersonLine({
+  href,
+  name,
+  meta,
+  detail,
+}: {
+  href: string;
+  name: string;
+  meta: string;
+  detail: string;
+}) {
+  const color = getAvatarColor(name);
+  return (
+    <Link href={href} className="flex items-start gap-3 rounded-[10px] px-2 py-2 transition hover:bg-[#FAF8F5]">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold" style={{ backgroundColor: color.bg, color: color.text }}>
+        {getInitials(name)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-semibold text-[#1B1A17]">{name}</span>
+        <span className="block truncate text-[11.5px] text-[#8A8276]">{meta}</span>
+        <span className="mt-0.5 block truncate text-[12px] text-[#5A574F]">{detail}</span>
       </span>
     </Link>
   );
 }
 
-function StrongestRelationshipRow({
-  contact,
-}: {
-  contact: RecentlyActiveContact;
-}) {
-  const color = getAvatarColor(contact.name);
-  const Icon = contact.lastInteractionType
-    ? (typeIcons[contact.lastInteractionType] ?? StickyNote)
-    : MessageSquare;
+function SignalPill({ label }: { label: string }) {
   return (
-    <Link
-      href={`/people?contact=${contact.id}`}
-      className="group flex items-center gap-3 py-3 -mx-2 px-2 rounded-[10px] transition-colors"
-      style={{ transitionDuration: "var(--duration-fast)" }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = "";
-      }}
-    >
-      <Avatar className="h-9 w-9">
-        <AvatarFallback
-          className="text-[11px] font-semibold"
-          style={{ backgroundColor: color.bg, color: color.text }}
-        >
-          {getInitials(contact.name)}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className="ds-body-md font-medium truncate"
-            style={{ color: "var(--text-primary)" }}
-          >
-            {contact.name}
-          </span>
-          {contact.circles?.slice(0, 2).map((c) => (
-            <span
-              key={c.id}
-              className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-[9px] font-semibold"
-              style={{ backgroundColor: `${c.color}15`, color: c.color }}
-            >
-              {c.name}
-            </span>
-          ))}
-        </div>
-        {contact.company && (
-          <p className="ds-caption truncate">{contact.company}</p>
-        )}
-        {contact.lastInteractionSummary && (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <Icon
-              className="h-3 w-3 shrink-0"
-              style={{ color: "var(--text-tertiary)" }}
-            />
-            <p
-              className="text-[11px] truncate"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              {contact.lastInteractionSummary}
-            </p>
-          </div>
-        )}
-      </div>
-      <div className="shrink-0 text-right">
-        <p
-          className="ds-heading-sm"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          {contact.interactionCount}
-        </p>
-        <p className="ds-caption">
-          {contact.interactionCount === 1 ? "interaction" : "interactions"}
-        </p>
-      </div>
-      <ChevronRight
-        className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-        style={{ color: "var(--text-tertiary)" }}
-      />
-    </Link>
-  );
-}
-
-function SmartSchedulingCard() {
-  const { data } = useQuery<{ suggestions: { contactId: string }[] }>({
-    queryKey: ["scheduling-suggestions"],
-    queryFn: async () => {
-      const res = await fetch("/api/scheduling");
-      if (!res.ok) return { suggestions: [] };
-      return res.json();
-    },
-    staleTime: 10 * 60 * 1000,
-  });
-
-  if (!data?.suggestions.length) return null;
-
-  return (
-    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.stone }}>
-      <CardContent className="px-6 py-6">
-        <SmartScheduling />
-      </CardContent>
-    </Card>
-  );
-}
-
-function LifeUpdatesCard() {
-  const { data } = useQuery<{ entries: { id: string }[] }>({
-    queryKey: ["changelog"],
-    queryFn: async () => {
-      const res = await fetch("/api/changelog");
-      if (!res.ok) return { entries: [] };
-      return res.json();
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  if (!data?.entries.length) return null;
-
-  return (
-    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.mist }}>
-      <CardContent className="px-6 py-6">
-        <LifeUpdates />
-      </CardContent>
-    </Card>
-  );
-}
-
-function DraftQueueCard() {
-  const { data } = useQuery<{ drafts: { id: string }[] }>({
-    queryKey: ["drafts", "DRAFT"],
-    queryFn: async () => {
-      const res = await fetch("/api/drafts?status=DRAFT");
-      if (!res.ok) return { drafts: [] };
-      return res.json();
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  if (!data?.drafts.length) return null;
-
-  return (
-    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.mist }}>
-      <CardContent className="px-6 py-6">
-        <DraftQueue />
-      </CardContent>
-    </Card>
-  );
-}
-
-function BirthdaysCard() {
-  const { data } = useQuery<{ birthdays: { id: string }[] }>({
-    queryKey: ["birthdays"],
-    queryFn: async () => {
-      const res = await fetch("/api/birthdays?days=14");
-      if (!res.ok) return { birthdays: [] };
-      return res.json();
-    },
-    staleTime: 10 * 60 * 1000,
-  });
-
-  if (!data?.birthdays.length) return null;
-
-  return (
-    <Card className="crm-card border-0 shadow-none" style={{ backgroundColor: TONE_BG.stone }}>
-      <CardContent className="px-6 py-6">
-        <UpcomingBirthdays />
-      </CardContent>
-    </Card>
+    <span className="rounded-full border border-[#E2D9CB] bg-[#FAF8F5] px-2.5 py-1 text-[11.5px] text-[#6A645A]">
+      {label}
+    </span>
   );
 }
