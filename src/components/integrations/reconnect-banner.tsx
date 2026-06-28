@@ -8,8 +8,8 @@ import type { DataHealthResponse } from "@/app/api/data-health/route";
 /**
  * A calm "needs reconnect" row. Terracotta on warm-paper, not a red
  * full-bleed klaxon. Sync paused until reconnected; the rail nav also
- * shows a small terracotta dot on the Integrations item so the status
- * is visible from anywhere even when the banner isn't on screen.
+ * shows a small terracotta dot on Settings so the status is visible
+ * from anywhere even when the banner isn't on screen.
  */
 export function ReconnectBanner() {
   const { data } = useQuery<DataHealthResponse>({

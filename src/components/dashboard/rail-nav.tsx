@@ -13,7 +13,6 @@ import {
   Merge,
   MessageSquareText,
   Search,
-  Database,
   ChevronRight,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
@@ -38,7 +37,6 @@ const ITEMS: RailItem[] = [
   { href: "/people",      label: "People",       icon: Users,    group: "general" },
   { href: "/circles",     label: "Circles",      icon: CircleDot, group: "general" },
   { href: "/voice",       label: "Voice",        icon: MessageSquareText, group: "tools" },
-  { href: "/source-health", label: "Sources",    icon: Database, group: "tools" },
   { href: "/merge",       label: "Merge",        icon: Merge,    group: "tools" },
   { href: "/settings",    label: "Settings",     icon: Settings, group: "tools" },
 ];
@@ -54,7 +52,7 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const general = ITEMS.filter((i) => i.group === "general");
   const tools = ITEMS.filter((i) => i.group === "tools");
 
-  // Integrations now lives inside Settings, so the terracotta reconnect
+  // Sources now lives inside Settings, so the terracotta reconnect
   // dot rides the Settings item. Same query the banner uses; React Query
   // dedups the network hit.
   const { data: dataHealth } = useQuery<DataHealthResponse>({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import {
   RefreshCw,
@@ -15,7 +16,6 @@ import {
   Plus,
   ChevronDown,
   ChevronRight,
-  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LinkedInImport } from "@/components/settings/linkedin-import";
@@ -35,7 +35,7 @@ function formatRelativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
-export default function IntegrationsPage() {
+export default function SourcesPage() {
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<DataHealthResponse>({
@@ -169,7 +169,7 @@ export default function IntegrationsPage() {
   if (isLoading || !data) {
     return (
       <div className="mx-auto max-w-[600px] pt-14">
-        <h1 className="ds-display-lg">Integrations</h1>
+        <h1 className="ds-display-lg">Sources</h1>
         <div className="mt-8 flex items-center gap-2 ds-body-sm">
           <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--text-tertiary)" }} />
           <span style={{ color: "var(--text-tertiary)" }}>Loading...</span>
@@ -184,7 +184,7 @@ export default function IntegrationsPage() {
     <div className="mx-auto max-w-[600px] pt-14 pb-16">
       {/* Header */}
       <div className="crm-animate-enter flex items-center justify-between">
-        <h1 className="ds-display-lg">Integrations</h1>
+        <h1 className="ds-display-lg">Sources</h1>
         <button
           onClick={handleSyncAll}
           disabled={isSyncing}
@@ -221,7 +221,7 @@ export default function IntegrationsPage() {
               />
             ))}
 
-            <a
+            <Link
               href="/api/auth/add-google-account"
               className="flex items-center gap-2 rounded-[14px] px-5 py-3.5 w-full transition-colors"
               style={{
@@ -233,7 +233,7 @@ export default function IntegrationsPage() {
             >
               <Plus className="h-4 w-4" />
               <span className="text-[13px] font-medium">Add another Google account</span>
-            </a>
+            </Link>
           </>
         ) : (
           <div
@@ -444,7 +444,6 @@ function GoogleAccountCard({
               name="Gmail"
               detail={gmailSource?.captured ?? "Not synced"}
               lastSync={gmailSource?.lastSync}
-              canSync={true}
               isSyncing={syncGmail.isPending}
               onSync={() => syncGmail.mutate()}
             />
@@ -455,7 +454,6 @@ function GoogleAccountCard({
               name="Calendar"
               detail={calendarSource?.captured ?? "Not synced"}
               lastSync={calendarSource?.lastSync}
-              canSync={true}
               isSyncing={syncCalendar.isPending}
               onSync={() => syncCalendar.mutate()}
             />
@@ -466,7 +464,6 @@ function GoogleAccountCard({
               name="Contacts"
               detail={contactsSource?.captured ?? "Not imported"}
               lastSync={contactsSource?.lastSync}
-              canSync={true}
               isSyncing={importContacts.isPending}
               onSync={() => importContacts.mutate()}
               actionLabel="Enrich"
@@ -547,7 +544,6 @@ function SubService({
   name,
   detail,
   lastSync,
-  canSync,
   isSyncing,
   onSync,
   actionLabel = "Sync",
@@ -556,7 +552,6 @@ function SubService({
   name: string;
   detail: string;
   lastSync?: string | null;
-  canSync: boolean;
   isSyncing: boolean;
   onSync: () => void;
   actionLabel?: string;
