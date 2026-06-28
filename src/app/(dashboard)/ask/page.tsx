@@ -42,6 +42,7 @@ function AskPageContent() {
   // only in click handlers + effects, never at render time.
   const seedCounter = useRef(0);
   const draftCounter = useRef(0);
+  const consumedSeedParam = useRef<string | null>(null);
 
   // When Jennifer clicks "Re-run" in history we pass the query text
   // down to the box. The counter bumps on each new seed so identical
@@ -56,7 +57,8 @@ function AskPageContent() {
   // If the user navigates from /ask/[id] with ?seed=..., honor it once.
   // Subsequent visits without the param shouldn't re-seed.
   useEffect(() => {
-    if (seedParam && !seed) {
+    if (seedParam && !seed && consumedSeedParam.current !== seedParam) {
+      consumedSeedParam.current = seedParam;
       seedCounter.current += 1;
       setSeed({ query: seedParam, key: seedCounter.current });
     }

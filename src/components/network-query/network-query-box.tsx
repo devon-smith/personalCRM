@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -92,6 +93,7 @@ export function NetworkQueryBox({
   placeholder,
   onCompleteFollowUp,
   compact,
+  submitTarget = "inline",
 }: {
   /** When set (and non-empty), fill the input with this text and
    *  immediately submit. Used by /ask history's Re-run button. */
@@ -126,7 +128,11 @@ export function NetworkQueryBox({
    *  thread refresh shows the new follow-up; the embedded box
    *  doesn't double-render it). */
   compact?: boolean;
+  /** Inline streams/results on /ask. Dashboard uses ask-page so Home
+   *  acts as a launcher and detailed answers stay on /ask. */
+  submitTarget?: "inline" | "ask-page";
 } = {}) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
@@ -142,10 +148,10 @@ export function NetworkQueryBox({
   // M0.9 fix: "I did a query on the ai but then the results went away
   // very quickly."
   const [result, setResult] = useState<QueryResult | null>(() =>
-    readPersistedResult(),
+    submitTarget === "ask-page" ? null : readPersistedResult(),
   );
   const [submittedQuery, setSubmittedQuery] = useState<string | null>(() =>
-    readPersistedQuery(),
+    submitTarget === "ask-page" ? null : readPersistedQuery(),
   );
   const [error, setError] = useState<string | null>(null);
   const [showTrace, setShowTrace] = useState(false);
@@ -189,8 +195,9 @@ export function NetworkQueryBox({
   // Hydration runs in useState initializers above; this effect keeps
   // storage in sync going forward.
   useEffect(() => {
+    if (submitTarget === "ask-page") return;
     persistResult(result, submittedQuery);
-  }, [result, submittedQuery]);
+  }, [result, submittedQuery, submitTarget]);
 
   // Explicit dismiss handler — the "navigates away / new query" cases
   // are handled by unmount + the submit reset.
@@ -374,6 +381,12 @@ export function NetworkQueryBox({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          const trimmed = query.trim();
+          if (submitTarget === "ask-page") {
+            if (!trimmed) return;
+            router.push(`/ask?seed=${encodeURIComponent(trimmed)}`);
+            return;
+          }
           submit(query);
         }}
         className="relative"

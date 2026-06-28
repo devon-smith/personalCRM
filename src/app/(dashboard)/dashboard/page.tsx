@@ -304,7 +304,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <NetworkQueryBox />
+      <NetworkQueryBox submitTarget="ask-page" />
       <AssistantObservations />
       <SyncAlerts />
 
@@ -479,7 +479,7 @@ export default function DashboardPage() {
                 "Which circles are stale?",
                 "What do I know before this meeting?",
               ].map((query) => (
-                <Link key={query} href={`/ask?q=${encodeURIComponent(query)}`} className="rounded-full border border-[#E2D9CB] bg-[#FAF8F5] px-3 py-1.5 text-[12px] text-[#6A645A] transition hover:border-[#D2BEA3]">
+                <Link key={query} href={`/ask?seed=${encodeURIComponent(query)}`} className="rounded-full border border-[#E2D9CB] bg-[#FAF8F5] px-3 py-1.5 text-[12px] text-[#6A645A] transition hover:border-[#D2BEA3]">
                   {query}
                 </Link>
               ))}
