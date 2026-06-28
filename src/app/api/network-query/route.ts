@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  NETWORK_QUERY_MODEL,
   runNetworkQuery,
   runNetworkQueryStream,
 } from "@/lib/intelligence/network-query";
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     await logAIGeneration({
       userId: session.user.id,
       feature: "network_query",
-      model: "claude-sonnet-4-20250514",
+      model: NETWORK_QUERY_MODEL,
       inputRefs: result.suggestedContacts.map((s) => `contact:${s.contactId}`),
       outputId: saved.id,
       tokensIn: result.usage.inputTokens,
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
     await logAIGeneration({
       userId: session.user.id,
       feature: "network_query",
-      model: "claude-sonnet-4-20250514",
+      model: NETWORK_QUERY_MODEL,
       inputRefs: [],
       error: message,
       latencyMs: Date.now() - startedAt,
@@ -156,7 +157,7 @@ function streamResponse(
             await logAIGeneration({
               userId,
               feature: "network_query",
-              model: "claude-sonnet-4-20250514",
+              model: NETWORK_QUERY_MODEL,
               inputRefs: ev.result.suggestedContacts.map(
                 (s) => `contact:${s.contactId}`,
               ),
@@ -171,7 +172,7 @@ function streamResponse(
             await logAIGeneration({
               userId,
               feature: "network_query",
-              model: "claude-sonnet-4-20250514",
+              model: NETWORK_QUERY_MODEL,
               inputRefs: [],
               error: ev.message,
               latencyMs: Date.now() - startedAt,

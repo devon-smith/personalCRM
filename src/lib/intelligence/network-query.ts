@@ -37,7 +37,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { findNeighbors } from "./graph-traverse";
 import { searchContacts as fuzzyContactSearch } from "@/lib/search/contacts";
 
-const NETWORK_QUERY_MODEL = "claude-sonnet-4-20250514";
+export const NETWORK_QUERY_MODEL = "claude-sonnet-4-5";
 const MAX_ITERATIONS = 8;
 const MAX_TOKENS = 2500;
 

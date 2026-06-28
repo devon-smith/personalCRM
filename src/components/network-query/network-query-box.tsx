@@ -252,7 +252,7 @@ export function NetworkQueryBox({
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "Stream failed");
+      setError(cleanAskError(err instanceof Error ? err.message : "Stream failed"));
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
@@ -323,7 +323,7 @@ export function NetworkQueryBox({
           break;
         }
         case "error":
-          setError(String(data.message ?? "Unknown error"));
+          setError(cleanAskError(String(data.message ?? "Unknown error")));
           break;
       }
     }
@@ -846,6 +846,23 @@ function QueryResultPanel({
       )}
     </article>
   );
+}
+
+function cleanAskError(message: string): string {
+  const modelMatch = message.match(/"message":"model:\s*([^"]+)"/);
+  if (modelMatch) {
+    return `The Ask model is unavailable (${modelMatch[1]}). Please refresh and try again.`;
+  }
+
+  if (/not_found_error/i.test(message) && /model:/i.test(message)) {
+    return "The Ask model is unavailable. Please refresh and try again.";
+  }
+
+  if (message.startsWith("404 {")) {
+    return "The Ask provider returned a model error. Please refresh and try again.";
+  }
+
+  return message;
 }
 
 /**
