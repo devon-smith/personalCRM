@@ -3,6 +3,16 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOverdueContacts } from "@/lib/followups";
 
+const EXCLUDED_MESSAGE_CHANNELS = ["iMessage", "SMS"];
+
+const dashboardInteractionWhere = {
+  NOT: [
+    { channel: { in: EXCLUDED_MESSAGE_CHANNELS } },
+    { sourceId: { startsWith: "imsg" } },
+    { sourceId: { startsWith: "manual-reply:" } },
+  ],
+};
+
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -38,16 +48,20 @@ export async function GET() {
       where: { userId, createdAt: { gte: startOfMonth } },
     }),
     prisma.interaction.count({
-      where: { userId, occurredAt: { gte: startOfWeek } },
+      where: {
+        userId,
+        occurredAt: { gte: startOfWeek },
+        ...dashboardInteractionWhere,
+      },
     }),
     // Recent interactions — one per contact, showing latest
     prisma.contact.findMany({
       where: {
         userId,
-        lastInteraction: { not: null },
+        interactions: { some: dashboardInteractionWhere },
       },
       orderBy: { lastInteraction: "desc" },
-      take: 8,
+      take: 40,
       select: {
         id: true,
         name: true,
@@ -61,9 +75,7 @@ export async function GET() {
           },
         },
         interactions: {
-          where: {
-            sourceId: { not: { startsWith: "manual-reply:" } },
-          },
+          where: dashboardInteractionWhere,
           orderBy: { occurredAt: "desc" },
           take: 1,
           select: {
@@ -78,9 +90,7 @@ export async function GET() {
         },
         _count: {
           select: {
-            interactions: {
-              where: { sourceId: { not: { startsWith: "manual-reply:" } } },
-            },
+            interactions: { where: dashboardInteractionWhere },
           },
         },
       },
@@ -95,10 +105,15 @@ export async function GET() {
     prisma.contact.findMany({
       where: {
         userId,
-        lastInteraction: { gte: thirtyDaysAgo },
+        interactions: {
+          some: {
+            occurredAt: { gte: thirtyDaysAgo },
+            ...dashboardInteractionWhere,
+          },
+        },
       },
       orderBy: { lastInteraction: "desc" },
-      take: 20,
+      take: 40,
       select: {
         id: true,
         name: true,
@@ -106,8 +121,9 @@ export async function GET() {
         tier: true,
         source: true,
         lastInteraction: true,
-        _count: { select: { interactions: true } },
+        _count: { select: { interactions: { where: dashboardInteractionWhere } } },
         interactions: {
+          where: dashboardInteractionWhere,
           orderBy: { occurredAt: "desc" },
           take: 1,
           select: { type: true, summary: true, occurredAt: true },
@@ -154,7 +170,7 @@ export async function GET() {
         tier: c.tier,
         source: c.source,
         interactionCount: c._count.interactions,
-        lastInteraction: c.lastInteraction?.toISOString() ?? null,
+        lastInteraction: lastInt?.occurredAt.toISOString() ?? null,
         lastInteractionType: lastInt?.type ?? null,
         lastInteractionSummary: lastInt?.summary ?? null,
         circles: c.circles.map((cc) => ({
@@ -195,7 +211,9 @@ export async function GET() {
           circles: c.circles,
         },
       };
-    });
+    })
+    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+    .slice(0, 8);
 
   return NextResponse.json({
     tierCounts,

@@ -9,6 +9,16 @@ const DEFAULT_CADENCE: Record<string, number> = {
   ACQUAINTANCE: 90,
 };
 
+const EXCLUDED_MESSAGE_CHANNELS = ["iMessage", "SMS"];
+
+const cleanInteractionWhere = {
+  NOT: [
+    { channel: { in: EXCLUDED_MESSAGE_CHANNELS } },
+    { sourceId: { startsWith: "imsg" } },
+    { sourceId: { startsWith: "manual-reply:" } },
+  ],
+};
+
 function getCadence(tier: string, followUpDays: number | null): number {
   return followUpDays ?? DEFAULT_CADENCE[tier] ?? 30;
 }
@@ -32,16 +42,17 @@ function toFollowUpContact(
     lastInteraction: Date | null;
     followUpDays: number | null;
     importedAt: Date | null;
-    interactions: { summary: string | null; type: string }[];
+    interactions: { summary: string | null; type: string; occurredAt: Date }[];
   },
   now: Date,
 ): FollowUpContact {
+  const lastInt = c.interactions[0] ?? null;
+  const lastInteraction = lastInt?.occurredAt ?? null;
   const cadenceDays = getCadence(c.tier, c.followUpDays);
-  const dueDate = getDueDate(c.lastInteraction, cadenceDays);
+  const dueDate = getDueDate(lastInteraction, cadenceDays);
   const daysOverdue = Math.floor(
     (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
   );
-  const lastInt = c.interactions[0] ?? null;
 
   return {
     id: c.id,
@@ -51,7 +62,7 @@ function toFollowUpContact(
     role: c.role,
     tier: c.tier,
     avatarUrl: c.avatarUrl,
-    lastInteraction: c.lastInteraction,
+    lastInteraction,
     followUpDays: c.followUpDays,
     cadenceDays,
     daysOverdue,
@@ -77,10 +88,18 @@ export async function getOverdueContacts(
     where: {
       userId,
       OR: [
-        // Contacts with old interactions (potentially overdue)
-        { lastInteraction: { lt: maxCadenceCutoff } },
-        // Contacts with no interactions and no import date (always overdue)
-        { lastInteraction: null, importedAt: null },
+        {
+          interactions: {
+            some: {
+              occurredAt: { lt: maxCadenceCutoff },
+              ...cleanInteractionWhere,
+            },
+          },
+        },
+        {
+          importedAt: null,
+          interactions: { none: cleanInteractionWhere },
+        },
       ],
     },
     select: {
@@ -95,9 +114,10 @@ export async function getOverdueContacts(
       followUpDays: true,
       importedAt: true,
       interactions: {
+        where: cleanInteractionWhere,
         orderBy: { occurredAt: "desc" },
         take: 1,
-        select: { summary: true, type: true },
+        select: { summary: true, type: true, occurredAt: true },
       },
     },
   });
@@ -129,7 +149,12 @@ export async function getUpcomingFollowUps(
   const contacts = await prisma.contact.findMany({
     where: {
       userId,
-      lastInteraction: { gte: lookbackCutoff },
+      interactions: {
+        some: {
+          occurredAt: { gte: lookbackCutoff },
+          ...cleanInteractionWhere,
+        },
+      },
     },
     select: {
       id: true,
@@ -143,9 +168,10 @@ export async function getUpcomingFollowUps(
       followUpDays: true,
       importedAt: true,
       interactions: {
+        where: cleanInteractionWhere,
         orderBy: { occurredAt: "desc" },
         take: 1,
-        select: { summary: true, type: true },
+        select: { summary: true, type: true, occurredAt: true },
       },
     },
   });

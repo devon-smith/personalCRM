@@ -20,7 +20,7 @@
  *   for manual review/merge instead of deletion.
  */
 import "dotenv/config";
-import { PrismaClient } from "../src/generated/prisma/client";
+import { ContactSource, PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 const CONFIRM_VALUE = "jennifer-cleanup";
@@ -60,7 +60,7 @@ function messageInteractionWhere(userId: string) {
       { channel: { in: ["iMessage", "SMS"] } },
       { sourceId: { startsWith: "imsg" } },
     ],
-  } as const;
+  };
 }
 
 function appleContactDeleteWhere(userId: string) {
@@ -71,7 +71,7 @@ function appleContactDeleteWhere(userId: string) {
 
   return {
     userId,
-    source: "APPLE_CONTACTS",
+    source: ContactSource.APPLE_CONTACTS,
     interactions: {
       none: {
         NOT: {
@@ -79,7 +79,7 @@ function appleContactDeleteWhere(userId: string) {
         },
       },
     },
-  } as const;
+  };
 }
 
 async function collectPlan(userId: string) {
@@ -116,12 +116,12 @@ async function collectPlan(userId: string) {
     }),
     prisma.thread.count({ where: { userId, source: "imessage" } }),
     prisma.iMessageSyncState.count({ where: { userId } }),
-    prisma.contact.count({ where: { userId, source: "APPLE_CONTACTS" } }),
+    prisma.contact.count({ where: { userId, source: ContactSource.APPLE_CONTACTS } }),
     prisma.contact.count({ where: appleDeleteWhere }),
     prisma.contact.findMany({
       where: {
         userId,
-        source: "APPLE_CONTACTS",
+        source: ContactSource.APPLE_CONTACTS,
         NOT: appleDeleteWhere,
       },
       select: {
