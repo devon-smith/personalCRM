@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getConversations } from "@/lib/imessage";
 import { syncIMessages } from "@/lib/imessage-sync";
+import { getUserProfile } from "@/lib/user-profile";
 
 // Re-export for consumers that import the type from this route
 export type { IMessageSyncResult } from "@/lib/imessage-sync";
@@ -12,6 +13,15 @@ export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!getUserProfile().imessageAvailable) {
+    return NextResponse.json({
+      conversations: [],
+      total: 0,
+      disabled: true,
+      error: "iMessage sync is disabled for this profile.",
+    });
   }
 
   try {
@@ -39,6 +49,20 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!getUserProfile().imessageAvailable) {
+    return NextResponse.json({
+      chatsScanned: 0,
+      chatsMerged: 0,
+      messagesCreated: 0,
+      messagesSkipped: 0,
+      chatIdsCorrected: 0,
+      contactsMatched: 0,
+      unmatchedChats: 0,
+      errors: ["iMessage sync is disabled for this profile."],
+      disabled: true,
+    });
   }
 
   const url = new URL(request.url);

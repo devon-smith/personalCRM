@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getUserProfile } from "@/lib/user-profile";
 
 export interface GoogleAccountInfo {
   id: string;
@@ -57,6 +58,7 @@ export async function GET() {
   }
 
   const userId = session.user.id;
+  const profile = getUserProfile();
 
   // Check ALL linked Google accounts for tokens and scopes
   const googleAccounts = await prisma.account.findMany({
@@ -276,12 +278,16 @@ export async function GET() {
     {
       name: "iMessage",
       key: "imessage",
-      status: imessageInteractionCount > 0 ? "connected" : "available",
+      status: profile.imessageAvailable
+        ? imessageInteractionCount > 0 ? "connected" : "available"
+        : "coming_soon",
       lastSync: lastImessageSync?.createdAt?.toISOString() ?? null,
-      captured: imessageInteractionCount > 0
-        ? `${imessageInteractionCount} conversations synced`
-        : "Not synced yet",
-      canSync: true,
+      captured: profile.imessageAvailable
+        ? imessageInteractionCount > 0
+          ? `${imessageInteractionCount} conversations synced`
+          : "Not synced yet"
+        : "Disabled for this profile",
+      canSync: profile.imessageAvailable,
     },
     {
       name: "LinkedIn",

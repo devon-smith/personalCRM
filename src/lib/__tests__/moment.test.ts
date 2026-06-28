@@ -11,6 +11,7 @@ function makeEvent(startHour: number, durationMin: number, title = "Meeting"): U
     title,
     description: null,
     location: null,
+    allDay: false,
     startTime: start.toISOString(),
     endTime: end.toISOString(),
     organizer: null,

@@ -9,6 +9,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Gift,
   Search,
   Sparkles,
   Users,
@@ -88,6 +89,20 @@ interface CalendarResponse {
   error?: string;
 }
 
+interface Birthday {
+  id: string;
+  name: string;
+  company: string | null;
+  avatarUrl: string | null;
+  birthday: string;
+  daysUntil: number;
+  isToday: boolean;
+}
+
+interface BirthdaysResponse {
+  birthdays: Birthday[];
+}
+
 const SYNC_INTERVAL_MS = 10 * 60 * 1000;
 
 function getGreeting(): string {
@@ -121,6 +136,27 @@ function formatTime(iso: string): string {
   });
 }
 
+function formatMeetingStamp(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  if (date.toDateString() === today.toDateString()) return formatTime(iso);
+  if (date.toDateString() === tomorrow.toDateString()) return `Tomorrow ${formatTime(iso)}`;
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatBirthdayLabel(birthday: Birthday): string {
+  if (birthday.isToday) return "Today";
+  if (birthday.daysUntil === 1) return "Tomorrow";
+  return `In ${birthday.daysUntil} days`;
+}
+
 function compactLabel(value: number, label: string): string {
   return `${value.toLocaleString()} ${label}${value === 1 ? "" : "s"}`;
 }
@@ -134,10 +170,7 @@ export default function DashboardPage() {
     if (syncInFlight.current) return;
     syncInFlight.current = true;
     try {
-      await Promise.allSettled([
-        fetch("/api/imessage", { method: "POST" }),
-        fetch("/api/gmail/sync", { method: "POST" }),
-      ]);
+      await fetch("/api/gmail/sync", { method: "POST" });
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["upcoming-meetings"] });
@@ -177,15 +210,30 @@ export default function DashboardPage() {
     staleTime: 5 * 60_000,
   });
 
+  const { data: birthdayData } = useQuery<BirthdaysResponse>({
+    queryKey: ["birthdays", 30],
+    queryFn: async () => {
+      const res = await fetch("/api/birthdays?days=30");
+      if (!res.ok) return { birthdays: [] };
+      return res.json();
+    },
+    retry: false,
+    staleTime: 10 * 60_000,
+  });
+
   const firstName = getFirstName(session?.user?.name);
   const greetingHeadline = firstName
     ? `${getGreeting()}, ${firstName}.`
     : `${getGreeting()}.`;
 
   const todayMeetings = useMemo(
-    () => (calendar?.events ?? []).filter((event) => isToday(event.startTime)),
+    () => (calendar?.events ?? []).filter((event) => !event.allDay && isToday(event.startTime)),
     [calendar?.events],
   );
+  const upcomingMeetings = (calendar?.events ?? []).filter((event) => !event.allDay);
+  const visibleMeetings = todayMeetings.length > 0 ? todayMeetings : upcomingMeetings.slice(0, 4);
+  const meetingSectionLabel = todayMeetings.length > 0 ? "Today" : "Upcoming";
+  const birthdays = birthdayData?.birthdays ?? [];
 
   if (isLoading || !stats) {
     return (
@@ -221,8 +269,8 @@ export default function DashboardPage() {
     })),
   ].slice(0, 5);
 
-  const primaryMeeting = todayMeetings[0] ?? null;
-  const prepSignals = todayMeetings.reduce(
+  const primaryMeeting = visibleMeetings[0] ?? null;
+  const prepSignals = visibleMeetings.reduce(
     (sum, event) => sum + event.prep.openThreads + event.prep.facts,
     0,
   );
@@ -244,7 +292,11 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[520px]">
             <HomeStat label="Need reply" value={stats.recentInteractions.length.toString()} color="#B5613F" />
-            <HomeStat label="Meetings" value={todayMeetings.length.toString()} color="#5E7A93" />
+            <HomeStat
+              label={todayMeetings.length > 0 ? "Today meetings" : "Upcoming"}
+              value={(todayMeetings.length || upcomingMeetings.length).toString()}
+              color="#5E7A93"
+            />
             <HomeStat label="People" value={stats.totalContacts.toLocaleString()} color="#6E7B53" />
             <HomeStat label="Signals" value={prepSignals.toString()} color="#9A6A4B" />
           </div>
@@ -335,7 +387,7 @@ export default function DashboardPage() {
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#B5613F]">
                   Meetings
                 </div>
-                <h2 className="font-serif text-[24px] font-medium text-[#1B1A17]">Today</h2>
+                <h2 className="font-serif text-[24px] font-medium text-[#1B1A17]">{meetingSectionLabel}</h2>
               </div>
               <Link href="/calendar" className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#D8CBB9] bg-[#FAF8F5] px-2.5 text-[11.5px] font-semibold text-[#6F685D]">
                 Calendar
@@ -368,18 +420,49 @@ export default function DashboardPage() {
               </div>
             ) : (
               <p className="mt-4 rounded-[12px] border border-[#E2D9CB] bg-white p-4 text-[13px] leading-5 text-[#8A8276]">
-                No meetings today. Upcoming meeting prep will show here after calendar sync.
+                No meetings found in the current calendar window. Sync calendar from the Calendar page if this looks stale.
               </p>
             )}
 
             <div className="mt-3 space-y-2">
-              {todayMeetings.slice(1, 4).map((meeting) => (
+              {visibleMeetings.slice(1, 4).map((meeting) => (
                 <Link key={meeting.id} href={`/calendar`} className="flex items-center gap-3 rounded-[10px] px-2 py-2 transition hover:bg-[#FAF8F5]">
                   <CalendarDays className="h-4 w-4 text-[#8A8276]" />
                   <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-[#1B1A17]">{meeting.title}</span>
-                  <span className="text-[11.5px] text-[#8A8276]">{formatTime(meeting.startTime)}</span>
+                  <span className="text-[11.5px] text-[#8A8276]">{formatMeetingStamp(meeting.startTime)}</span>
                 </Link>
               ))}
+            </div>
+          </section>
+
+          <section className="rounded-[14px] border border-[#EAE2D6] bg-white p-4 shadow-[0_1px_2px_rgba(40,30,20,0.03)]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#B5613F]">
+                  <Gift className="h-3.5 w-3.5" />
+                  Birthdays
+                </div>
+                <h2 className="mt-1 font-serif text-[23px] font-medium text-[#1B1A17]">
+                  Next 30 days
+                </h2>
+              </div>
+            </div>
+            <div className="mt-3 space-y-2">
+              {birthdays.length === 0 ? (
+                <p className="rounded-[10px] bg-[#FAF8F5] px-3 py-3 text-[12.5px] leading-5 text-[#8A8276]">
+                  No birthdays found in the next 30 days.
+                </p>
+              ) : (
+                birthdays.slice(0, 5).map((birthday) => (
+                  <PersonLine
+                    key={birthday.id}
+                    href={`/people?contact=${birthday.id}`}
+                    name={birthday.name}
+                    meta={formatBirthdayLabel(birthday)}
+                    detail={birthday.company ?? "Birthday"}
+                  />
+                ))
+              )}
             </div>
           </section>
 

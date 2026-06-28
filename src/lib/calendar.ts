@@ -31,6 +31,7 @@ export interface UpcomingEvent {
   title: string;
   description: string | null;
   location: string | null;
+  allDay: boolean;
   startTime: string;
   endTime: string | null;
   organizer: {
@@ -403,6 +404,7 @@ export async function getUpcomingEvents(
       title: event.summary ?? "(No title)",
       description: cleanCalendarDescription(event.description),
       location: event.location ?? null,
+      allDay: Boolean(event.start?.date && !event.start.dateTime),
       startTime: startTime.toISOString(),
       endTime: endTime?.toISOString() ?? null,
       organizer: event.organizer

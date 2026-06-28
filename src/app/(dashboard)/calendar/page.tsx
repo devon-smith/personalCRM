@@ -198,10 +198,11 @@ function MeetingRow({
           <div className="flex flex-wrap items-center gap-2 text-[11.5px] font-semibold text-[#8A8276]">
             <span className="inline-flex items-center gap-1.5">
               <Clock3 className="h-3.5 w-3.5" />
-              {formatTime(event.startTime)}
-              {event.endTime ? ` - ${formatTime(event.endTime)}` : ""}
+              {event.allDay
+                ? "All day"
+                : `${formatTime(event.startTime)}${event.endTime ? ` - ${formatTime(event.endTime)}` : ""}`}
             </span>
-            {event.endTime && <span>{formatDuration(event.startTime, event.endTime)}</span>}
+            {!event.allDay && event.endTime && <span>{formatDuration(event.startTime, event.endTime)}</span>}
             {event.location && (
               <span className="inline-flex min-w-0 items-center gap-1.5">
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
@@ -273,8 +274,8 @@ function MeetingDeepDive({ event, loading }: { event: UpcomingEvent | null; load
         {event.title}
       </h2>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[#8A8276]">
-        <span>{formatTime(event.startTime)}</span>
-        {event.endTime && <span>{formatDuration(event.startTime, event.endTime)}</span>}
+        <span>{event.allDay ? "All day" : formatTime(event.startTime)}</span>
+        {!event.allDay && event.endTime && <span>{formatDuration(event.startTime, event.endTime)}</span>}
         {event.prep.lastMetAt && <span>last met {formatRelativeDay(event.prep.lastMetAt)}</span>}
       </div>
 
