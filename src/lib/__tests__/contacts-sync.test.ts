@@ -145,6 +145,58 @@ describe("fetchGoogleContacts — sync token lifecycle", () => {
     expect(upsertCall.update.lastFullSyncAt).toBeInstanceOf(Date);
   });
 
+  it("on 400 EXPIRED_SYNC_TOKEN, wipes cursor and re-runs full sync", async () => {
+    vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue({
+      id: "cur-1",
+      userId: "user-1",
+      accountId: "acct-1",
+      nextSyncToken: "TOKEN-DEAD",
+      lastSyncAt: new Date(),
+      lastFullSyncAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+    vi.mocked(prisma.contactsSyncCursor.upsert).mockResolvedValue({} as never);
+
+    let callIndex = 0;
+    globalThis.fetch = vi.fn(async (url: string) => {
+      calls.push({ url });
+      callIndex++;
+      if (callIndex === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 400,
+              message: "Sync token is expired. Clear local cache and retry call without the sync token.",
+              status: "FAILED_PRECONDITION",
+              details: [{ reason: "EXPIRED_SYNC_TOKEN" }],
+            },
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          connections: [
+            { names: [{ displayName: "Recovered" }], emailAddresses: [{ value: "r@x.com" }] },
+          ],
+          nextSyncToken: "TOKEN-RECOVERED",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as never;
+
+    const result = await fetchGoogleContacts("user-1");
+
+    expect(result.map((c) => c.name)).toEqual(["Recovered"]);
+    expect(calls[0].url).toContain("syncToken=TOKEN-DEAD");
+    expect(calls[1].url).toContain("requestSyncToken=true");
+
+    const upsertCall = vi.mocked(prisma.contactsSyncCursor.upsert).mock.calls[0][0];
+    expect(upsertCall.update.nextSyncToken).toBe("TOKEN-RECOVERED");
+    expect(upsertCall.update.lastFullSyncAt).toBeInstanceOf(Date);
+  });
+
   it("paginates to the last page to capture nextSyncToken even past maxContacts", async () => {
     // Regression: previously the loop exited at maxContacts and never saw
     // the final page where Google emits nextSyncToken. For accounts with

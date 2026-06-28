@@ -223,11 +223,19 @@ async function callPeopleApi(url: URL, token: string): Promise<PeopleApiResponse
 
   if (!res.ok) {
     const errorText = await res.text();
+    if (res.status === 400 && isExpiredSyncTokenError(errorText)) {
+      throw new TokenExpiredError();
+    }
     console.error("People API error:", res.status, errorText);
     throw new Error(`Google Contacts API error: ${res.status}`);
   }
 
   return (await res.json()) as PeopleApiResponse;
+}
+
+function isExpiredSyncTokenError(errorText: string): boolean {
+  return errorText.includes("EXPIRED_SYNC_TOKEN") ||
+    /sync token is expired/i.test(errorText);
 }
 
 async function saveCursor(
