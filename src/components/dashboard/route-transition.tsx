@@ -3,14 +3,34 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
+const ROUTE_ORDER = [
+  "/dashboard",
+  "/reply-queue",
+  "/ask",
+  "/people",
+  "/calendar",
+  "/circles",
+  "/voice",
+  "/merge",
+  "/settings",
+];
+
+function routeIndex(pathname: string): number {
+  const index = ROUTE_ORDER.findIndex((path) =>
+    path === "/dashboard"
+      ? pathname === path
+      : pathname === path || pathname.startsWith(`${path}/`),
+  );
+  return index >= 0 ? index : ROUTE_ORDER.length;
+}
+
 /**
  * RouteTransition (M0.x.17)
  *
- * Wraps the dashboard content and replays a short fade+lift each time
- * the pathname changes, so moving between tabs in the mobile shell
- * reads as a transition rather than an instant swap. The wrapper
- * `<div key={pathname}>` remounts on navigation, which re-triggers the
- * CSS animation exactly once per route change.
+ * Wraps dashboard content and replays a short directional fade/slide on
+ * pathname changes. The direction follows the mobile tab order so the
+ * shell reads closer to native iOS tab movement instead of a hard web
+ * page swap.
  *
  * Desktop gets the same gentle fade; it's subtle enough not to feel
  * heavy with a mouse, and keeps the two surfaces consistent.
@@ -25,7 +45,20 @@ import { usePathname } from "next/navigation";
  */
 export function RouteTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const previousPathname = useRef(pathname);
   const scrollPositions = useRef<Map<string, number>>(new Map());
+  const previousIndex = routeIndex(previousPathname.current);
+  const currentIndex = routeIndex(pathname);
+  const direction =
+    previousPathname.current === pathname
+      ? "neutral"
+      : currentIndex > previousIndex
+        ? "forward"
+        : "back";
+
+  useEffect(() => {
+    previousPathname.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     // Restore the incoming path's saved scroll (back-nav) or start at
@@ -48,7 +81,11 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   return (
-    <div key={pathname} className="ds-route-fade">
+    <div
+      key={pathname}
+      className="ds-route-transition"
+      data-route-direction={direction}
+    >
       {children}
     </div>
   );

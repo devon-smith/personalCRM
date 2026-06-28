@@ -95,7 +95,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1">
-          <div className="mx-auto w-full max-w-[1280px] px-4 sm:px-8 lg:px-10 py-6 sm:py-10 pb-24 sm:pb-12">
+          <div className="crm-mobile-content mx-auto w-full max-w-[1280px] px-4 sm:px-8 lg:px-10 py-6 sm:py-10 pb-24 sm:pb-12">
             <RouteTransition>{children}</RouteTransition>
           </div>
         </main>
@@ -149,6 +149,25 @@ const MORE_NAV: Array<{
 function MobileBottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [moreClosing, setMoreClosing] = useState(false);
+
+  useEffect(() => {
+    if (!moreClosing) return;
+    const timer = window.setTimeout(() => {
+      setMoreOpen(false);
+      setMoreClosing(false);
+    }, 190);
+    return () => window.clearTimeout(timer);
+  }, [moreClosing]);
+
+  function openMore() {
+    setMoreClosing(false);
+    setMoreOpen(true);
+  }
+
+  function closeMore() {
+    setMoreClosing(true);
+  }
 
   // Highlight the "More" tab when we're on any of its destinations.
   const onMorePath = MORE_NAV.some((m) =>
@@ -160,10 +179,12 @@ function MobileBottomNav() {
       <nav
         className="fixed bottom-0 left-0 right-0 z-40 flex sm:hidden"
         style={{
-          height: 56,
+          height: "calc(58px + var(--safe-bottom))",
           backgroundColor: "var(--background)",
           borderTop: "1px solid var(--border-subtle, #E8E6E1)",
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          paddingBottom: "var(--safe-bottom)",
+          paddingLeft: "var(--safe-left)",
+          paddingRight: "var(--safe-right)",
         }}
       >
         {PRIMARY_NAV.map((item) => {
@@ -175,17 +196,20 @@ function MobileBottomNav() {
             <Link
               key={item.label}
               href={item.href}
-              className="flex flex-1 flex-col items-center justify-center gap-0.5"
+              aria-current={isActive ? "page" : undefined}
+              className="crm-mobile-tab flex flex-1 flex-col items-center justify-center gap-0.5"
+              data-active={isActive ? "true" : "false"}
               style={{
                 color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
-                transition: "color 0.15s",
                 minHeight: 44,
               }}
             >
-              <Icon
-                className="h-5 w-5"
-                style={{ strokeWidth: isActive ? 2.5 : 1.5 }}
-              />
+              <span className="crm-mobile-tab-icon">
+                <Icon
+                  className="h-5 w-5"
+                  style={{ strokeWidth: isActive ? 2.35 : 1.65 }}
+                />
+              </span>
               <span
                 style={{
                   fontSize: 10,
@@ -199,23 +223,26 @@ function MobileBottomNav() {
           );
         })}
         <button
-          onClick={() => setMoreOpen(true)}
-          className="flex flex-1 flex-col items-center justify-center gap-0.5"
+          onClick={openMore}
+          className="crm-mobile-tab flex flex-1 flex-col items-center justify-center gap-0.5"
+          data-active={onMorePath || moreOpen ? "true" : "false"}
           style={{
-            color: onMorePath ? "var(--text-primary)" : "var(--text-tertiary)",
-            transition: "color 0.15s",
+            color: onMorePath || moreOpen ? "var(--text-primary)" : "var(--text-tertiary)",
             minHeight: 44,
           }}
           aria-label="More navigation"
+          aria-expanded={moreOpen}
         >
-          <MoreHorizontal
-            className="h-5 w-5"
-            style={{ strokeWidth: onMorePath ? 2.5 : 1.5 }}
-          />
+          <span className="crm-mobile-tab-icon">
+            <MoreHorizontal
+              className="h-5 w-5"
+              style={{ strokeWidth: onMorePath || moreOpen ? 2.35 : 1.65 }}
+            />
+          </span>
           <span
             style={{
               fontSize: 10,
-              fontWeight: onMorePath ? 600 : 500,
+              fontWeight: onMorePath || moreOpen ? 600 : 500,
               letterSpacing: "-0.01em",
             }}
           >
@@ -229,14 +256,15 @@ function MobileBottomNav() {
       {moreOpen && (
         <div
           className="fixed inset-0 z-50 sm:hidden"
-          onClick={() => setMoreOpen(false)}
+          data-state={moreClosing ? "closing" : "open"}
+          onClick={closeMore}
         >
           <div
-            className="absolute inset-0"
+            className="crm-more-backdrop absolute inset-0"
             style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
           />
           <div
-            className="absolute bottom-0 left-0 right-0 rounded-t-[20px] pt-2 pb-6"
+            className="crm-more-sheet absolute bottom-0 left-0 right-0 rounded-t-[20px] pt-2 pb-6"
             style={{
               backgroundColor: "var(--background)",
               paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
@@ -248,8 +276,8 @@ function MobileBottomNav() {
             <div className="flex items-center justify-between px-5 pb-3">
               <span className="ds-heading-md">More</span>
               <button
-                onClick={() => setMoreOpen(false)}
-                className="rounded-full p-1.5"
+                onClick={closeMore}
+                className="rounded-full p-1.5 transition-colors active:scale-95"
                 style={{ color: "var(--text-tertiary)" }}
                 aria-label="Close"
               >
@@ -265,8 +293,10 @@ function MobileBottomNav() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={() => setMoreOpen(false)}
-                    className="flex items-center gap-3 rounded-[10px] px-4 py-3"
+                    onClick={closeMore}
+                    aria-current={isActive ? "page" : undefined}
+                    className="crm-more-link flex items-center gap-3 rounded-[10px] px-4 py-3"
+                    data-active={isActive ? "true" : "false"}
                     style={{
                       color: isActive
                         ? "var(--text-primary)"

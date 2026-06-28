@@ -531,21 +531,137 @@
   }
 }
 
-/* ─── Route transition (M0.x.17) ──────────────────────────────
-   A subtle fade + lift applied to page content on tab change so
-   moving between tabs reads as a transition rather than a hard cut.
-   Keyed by pathname in RouteTransition; re-runs each navigation. */
-.ds-route-fade {
-  animation: ds-route-fade 240ms var(--ease-out) both;
+/* ─── Mobile shell transitions ────────────────────────────────
+   RouteTransition keys content by pathname and writes a direction.
+   On phones, tab switches pick up a small horizontal slide like an
+   iOS view stack. Desktop keeps a quieter vertical lift. */
+.ds-route-transition {
+  --route-x: 0px;
+  --route-y: 6px;
+  animation: ds-route-in 260ms var(--ease-out) both;
+  transform-origin: 50% 24px;
+  will-change: opacity, transform;
 }
-@keyframes ds-route-fade {
+
+@media (max-width: 639px) {
+  .ds-route-transition {
+    --route-y: 2px;
+  }
+  .ds-route-transition[data-route-direction="forward"] {
+    --route-x: 18px;
+  }
+  .ds-route-transition[data-route-direction="back"] {
+    --route-x: -18px;
+  }
+}
+
+@keyframes ds-route-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translate3d(var(--route-x), var(--route-y), 0) scale(0.992);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (max-width: 639px) {
+  .crm-mobile-content {
+    padding-bottom: calc(6rem + var(--safe-bottom)) !important;
+  }
+
+  .crm-mobile-tab {
+    position: relative;
+    touch-action: manipulation;
+    transition:
+      color 180ms var(--ease-out),
+      transform 160ms var(--ease-out);
+  }
+
+  .crm-mobile-tab:active {
+    transform: scale(0.96);
+  }
+
+  .crm-mobile-tab-icon {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 24px;
+    border-radius: 999px;
+    transition:
+      background-color 190ms var(--ease-out),
+      transform 190ms var(--ease-out);
+  }
+
+  .crm-mobile-tab[data-active="true"] .crm-mobile-tab-icon {
+    background-color: var(--surface-sunken);
+    transform: translateY(-1px);
+  }
+
+  .crm-more-backdrop {
+    animation: crm-more-backdrop-in 180ms var(--ease-out) both;
+  }
+
+  .crm-more-sheet {
+    animation: crm-more-sheet-in 260ms var(--ease-out) both;
+    box-shadow: 0 -18px 48px rgba(27, 26, 23, 0.14);
+    will-change: transform, opacity;
+  }
+
+  [data-state="closing"] .crm-more-backdrop {
+    animation: crm-more-backdrop-out 180ms var(--ease-in) both;
+  }
+
+  [data-state="closing"] .crm-more-sheet {
+    animation: crm-more-sheet-out 180ms var(--ease-in) both;
+  }
+
+  .crm-more-link {
+    transition:
+      background-color 170ms var(--ease-out),
+      transform 150ms var(--ease-out);
+  }
+
+  .crm-more-link:active {
+    transform: scale(0.985);
+  }
+
+  .crm-more-link[data-active="true"] {
+    box-shadow: inset 3px 0 0 var(--status-urgent);
+  }
+}
+
+@keyframes crm-more-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes crm-more-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes crm-more-sheet-in {
+  from {
+    opacity: 0.86;
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes crm-more-sheet-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0.86;
+    transform: translate3d(0, 100%, 0);
   }
 }
 
@@ -554,7 +670,9 @@
   .crm-animate-enter,
   .crm-stagger > *,
   .crm-cold-pulse,
-  .ds-route-fade {
+  .ds-route-transition,
+  .crm-more-backdrop,
+  .crm-more-sheet {
     animation: none;
     opacity: 1;
     transform: none;
