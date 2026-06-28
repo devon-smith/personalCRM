@@ -12,7 +12,6 @@ import {
   Loader2,
   Mail,
   RefreshCw,
-  RotateCcw,
   Send,
   Sparkles,
 } from "lucide-react";
@@ -350,9 +349,44 @@ export function ReplyQueueConsole() {
     onError: (err) => toast.error(err.message),
   });
 
+  const createDraftMutation = useMutation({
+    mutationFn: async (item: InboxItemData) => {
+      const res = await fetch("/api/drafts/workspace/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          inboxItemId: item.id,
+          context: "reply_email",
+          tone: "warm",
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to generate draft");
+      return body as { id: string; existing?: boolean };
+    },
+    onSuccess: (data) => {
+      invalidateWorkflow();
+      toast.success(
+        data.existing
+          ? "Existing draft loaded"
+          : "Draft generated from the full thread context",
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const status = statusFor(selectedDraft, googleBlocked);
   const selectedColor = getAvatarColor(selected?.contactName ?? contact?.name ?? "Unknown");
   const isLoading = inboxLoading || draftsLoading;
+  const selectedCanGenerateDraft = selected
+    ? ["email", "gmail"].includes(selected.channel.toLowerCase())
+    : false;
+  const generateDisabled =
+    !selected ||
+    !!selectedDraft ||
+    !selectedCanGenerateDraft ||
+    googleBlocked ||
+    createDraftMutation.isPending;
 
   return (
     <div className="reply-console -mx-4 -my-6 min-h-[calc(100vh-6rem)] overflow-hidden border-y sm:-mx-8 sm:-my-10 lg:-mx-10">
@@ -519,8 +553,27 @@ export function ReplyQueueConsole() {
                             No draft is attached to this inbox item yet.
                           </p>
                           <p className="mt-1 max-w-sm text-[12px] leading-5 text-[#8A8276]">
-                            Run the draft prepopulation worker or open the composer to create one.
+                            Generate an email draft from the full Gmail thread, contact context, and voice profile.
                           </p>
+                          <ActionButton
+                            icon={createDraftMutation.isPending ? Loader2 : Sparkles}
+                            label={
+                              createDraftMutation.isPending
+                                ? "Generating..."
+                                : "Generate email draft"
+                            }
+                            emphasis="warm"
+                            spinning={createDraftMutation.isPending}
+                            disabled={generateDisabled}
+                            title={
+                              selectedCanGenerateDraft
+                                ? "Generate a reply draft from the full conversation"
+                                : "Only Gmail/email reply items can generate email drafts"
+                            }
+                            onClick={() => {
+                              if (selected) createDraftMutation.mutate(selected);
+                            }}
+                          />
                         </div>
                       )}
                     </div>
@@ -530,10 +583,28 @@ export function ReplyQueueConsole() {
 
               <footer className="flex flex-wrap items-center gap-2 border-t border-[#E9E1D5] bg-[#F6F2EC] px-4 pb-[calc(4.75rem+var(--safe-bottom))] pt-3 sm:px-6 sm:pb-3">
                 <ActionButton
-                  icon={RotateCcw}
-                  label="Regenerate"
-                  disabled
-                  title="Regeneration still lives in the draft workspace."
+                  icon={selectedDraft ? ArrowUpRight : createDraftMutation.isPending ? Loader2 : Sparkles}
+                  label={
+                    selectedDraft
+                      ? "Open workspace"
+                      : createDraftMutation.isPending
+                        ? "Generating..."
+                        : "Generate draft"
+                  }
+                  spinning={!selectedDraft && createDraftMutation.isPending}
+                  disabled={!selectedDraft && generateDisabled}
+                  title={
+                    selectedDraft
+                      ? "Open the full draft workspace"
+                      : "Generate a reply draft from the full Gmail conversation"
+                  }
+                  onClick={() => {
+                    if (selectedDraft) {
+                      window.location.href = `/drafts/${selectedDraft.id}/compose`;
+                      return;
+                    }
+                    if (selected) createDraftMutation.mutate(selected);
+                  }}
                 />
                 <ActionButton
                   icon={Ban}
@@ -758,6 +829,7 @@ function ActionButton({
   disabled,
   title,
   emphasis = "plain",
+  spinning = false,
 }: {
   icon: React.ElementType;
   label: string;
@@ -765,6 +837,7 @@ function ActionButton({
   disabled?: boolean;
   title?: string;
   emphasis?: "plain" | "warm" | "dark";
+  spinning?: boolean;
 }) {
   const style =
     emphasis === "dark"
@@ -784,7 +857,7 @@ function ActionButton({
         style,
       )}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className={cn("h-3.5 w-3.5", spinning && "animate-spin")} />
       {label}
     </button>
   );

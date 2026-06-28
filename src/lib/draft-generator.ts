@@ -305,6 +305,7 @@ Also generate a subject line if this is an email (not for texts).
 
 IMPORTANT:
 - If a "YOU ARE REPLYING TO THIS MESSAGE" block is present, the draft MUST be a direct reply to that message — answer questions asked, acknowledge specific points, match its tone. Do NOT write a generic catch-up email. Pull subject + recipient from the inbound, not invented context.
+- When the inbound asks a factual/scheduling/logistics question, look across the prior thread context, recent interactions, source-backed facts, and memory before asking the recipient to repeat themselves. If the answer is known, answer it directly. If it is unknown, be clear and concise about what still needs confirmation.
 - If replying to an email, acknowledge the delay if it's been more than 3 days. Don't be overly apologetic, just briefly.
 - Reference specific things from past interactions when possible.
 - If the contact is at a specific company, you can reference it naturally.

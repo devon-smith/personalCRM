@@ -47,6 +47,8 @@ describe("buildReplyPromptBlock", () => {
           fromName: "Jennifer Aaker",
           subject: "paper draft",
           snippet: "Marcus, sending over the draft — let me know your thoughts.",
+          body: "Marcus, sending over the draft — let me know your thoughts. Section 3 is where I most want your read.",
+          bodyIsFull: true,
           occurredAt: new Date(Date.now() - 5 * 86400000),
         },
         {
@@ -56,6 +58,8 @@ describe("buildReplyPromptBlock", () => {
           subject: "Re: paper draft",
           snippet:
             "Hey Jennifer, Quick question — can you review section 3 by Friday?",
+          body: "Hey Jennifer,\n\nQuick question — can you review section 3 by Friday? Specifically the framing on intrinsic motivation.",
+          bodyIsFull: true,
           occurredAt: new Date(Date.now() - 2 * 86400000),
         },
       ],
@@ -103,6 +107,7 @@ describe("buildReplyPromptBlock", () => {
     expect(out).toContain("PRIOR THREAD CONTEXT");
     expect(out).toContain("You");
     expect(out).toContain("sending over the draft");
+    expect(out).toContain("Section 3 is where I most want your read");
     // The latest inbound is rendered in full, not as a history line —
     // so this excerpt should NOT appear in the history block.
     const historyBlock = out.split("THE MESSAGE TO REPLY TO:")[0];

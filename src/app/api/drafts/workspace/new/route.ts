@@ -15,6 +15,8 @@ import type { WorkspaceVersion } from "@/lib/drafts/workspace-types";
  * /drafts/new/compose page can redirect to /drafts/[id]/compose.
  *
  * Body: { contactId, tone?, context?, threadKey?, inboxItemId? }
+ * If inboxItemId already has a draft, returns that draft id instead
+ * of generating a duplicate.
  */
 const CONTEXT_TO_TYPE: Record<DraftContext, DraftType> = {
   reply_email: "REPLY_EMAIL",
@@ -67,6 +69,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (body.inboxItemId) {
+      const existing = await prisma.draft.findFirst({
+        where: { userId, inboxItemId: body.inboxItemId },
+        select: { id: true },
+      });
+      if (existing) {
+        return NextResponse.json({ id: existing.id, existing: true });
+      }
+    }
+
     const tone: DraftTone = body.tone ?? "warm";
     const context: DraftContext =
       body.context ?? (threadKey ? "reply_email" : "catching_up");
@@ -108,7 +120,7 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
 
-    return NextResponse.json({ id: draft.id });
+    return NextResponse.json({ id: draft.id, existing: false });
   } catch (error) {
     console.error("[POST /api/drafts/workspace/new]", error);
     return NextResponse.json(

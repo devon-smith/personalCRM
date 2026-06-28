@@ -24,7 +24,8 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { fetchMessageBody } from "@/lib/gmail/fetch-body";
 
-const THREAD_HISTORY_DEPTH = 5;
+const THREAD_HISTORY_DEPTH = 30;
+const FULL_BODY_FETCH_DEPTH = 10;
 
 export interface ReplyContextMessage {
   /** "INBOUND" | "OUTBOUND" */
@@ -33,6 +34,9 @@ export interface ReplyContextMessage {
   readonly fromName: string | null;
   readonly subject: string | null;
   readonly snippet: string | null;
+  /** Full body when cached/fetched, otherwise the best snippet. */
+  readonly body: string;
+  readonly bodyIsFull: boolean;
   readonly occurredAt: Date;
 }
 
@@ -83,6 +87,7 @@ export async function loadReplyContext(
     take: THREAD_HISTORY_DEPTH,
     select: {
       id: true,
+      gmailId: true,
       direction: true,
       fromEmail: true,
       fromName: true,
@@ -95,56 +100,31 @@ export async function loadReplyContext(
 
   if (recent.length === 0) return null;
 
-  const latestInbound = recent.find((m) => m.direction === "INBOUND");
+  const hydratedRecent = [];
+  for (const [index, message] of recent.entries()) {
+    hydratedRecent.push({
+      ...message,
+      ...(await resolveBody({
+        prisma: args.prisma,
+        userId: args.userId,
+        message,
+        allowFetch: index < FULL_BODY_FETCH_DEPTH,
+      })),
+    });
+  }
+
+  const latestInbound = hydratedRecent.find((m) => m.direction === "INBOUND");
   if (!latestInbound) return null;
 
-  // Decide which body to surface. Prefer cached fullBody; otherwise
-  // try Gmail; otherwise fall back to snippet.
-  let body = latestInbound.fullBody ?? "";
-  let bodyIsFull = body.length > 0;
-
-  if (!bodyIsFull) {
-    // Fetch from Gmail. EmailMessage.id is a CRM cuid; we need the
-    // gmailId for the API call. Look it up cheaply (one row).
-    const withGmailId = await args.prisma.emailMessage.findUnique({
-      where: { id: latestInbound.id },
-      select: { gmailId: true },
-    });
-    if (withGmailId?.gmailId) {
-      try {
-        const fetched = await fetchMessageBody(args.userId, withGmailId.gmailId);
-        if (fetched?.body) {
-          body = fetched.body;
-          bodyIsFull = true;
-          // Persist for next time — same cache pattern as M6.1.
-          // Best-effort; never blocks the response on failure.
-          await args.prisma.emailMessage
-            .update({
-              where: { id: latestInbound.id },
-              data: { fullBody: fetched.body },
-            })
-            .catch(() => {
-              // Ignore — the in-memory result is still good.
-            });
-        }
-      } catch {
-        // Gmail unavailable / token issue / message deleted — fall
-        // back to snippet.
-      }
-    }
-  }
-
-  if (!bodyIsFull) {
-    body = latestInbound.snippet ?? "";
-  }
-
   // Reverse so oldest is first (chronological for the prompt).
-  const history = [...recent].reverse().map((m) => ({
+  const history = [...hydratedRecent].reverse().map((m) => ({
     direction: m.direction,
     fromEmail: m.fromEmail,
     fromName: m.fromName,
     subject: m.subject,
     snippet: m.snippet,
+    body: m.body,
+    bodyIsFull: m.bodyIsFull,
     occurredAt: m.occurredAt,
   }));
 
@@ -153,12 +133,64 @@ export async function loadReplyContext(
       fromEmail: latestInbound.fromEmail,
       fromName: latestInbound.fromName,
       subject: latestInbound.subject,
-      body,
-      bodyIsFull,
+      body: latestInbound.body,
+      bodyIsFull: latestInbound.bodyIsFull,
       occurredAt: latestInbound.occurredAt,
     },
     threadHistory: history,
   };
+}
+
+async function resolveBody(args: {
+  readonly prisma: PrismaClient;
+  readonly userId: string;
+  readonly message: {
+    readonly id: string;
+    readonly gmailId?: string | null;
+    readonly snippet: string | null;
+    readonly fullBody: string | null;
+  };
+  readonly allowFetch: boolean;
+}): Promise<{ body: string; bodyIsFull: boolean }> {
+  if (args.message.fullBody?.trim()) {
+    return { body: args.message.fullBody, bodyIsFull: true };
+  }
+
+  if (!args.allowFetch) {
+    return { body: args.message.snippet ?? "", bodyIsFull: false };
+  }
+
+  const gmailId =
+    args.message.gmailId ??
+    (await args.prisma.emailMessage
+      .findUnique({
+        where: { id: args.message.id },
+        select: { gmailId: true },
+      })
+      .then((row) => row?.gmailId)
+      .catch(() => null));
+
+  if (gmailId) {
+    try {
+      const fetched = await fetchMessageBody(args.userId, gmailId);
+      if (fetched?.body) {
+        await args.prisma.emailMessage
+          .update({
+            where: { id: args.message.id },
+            data: { fullBody: fetched.body },
+          })
+          .catch(() => {
+            // Ignore — the in-memory result is still good.
+          });
+        return { body: fetched.body, bodyIsFull: true };
+      }
+    } catch {
+      // Gmail unavailable / token issue / message deleted — fall back
+      // to the snippet already stored locally.
+    }
+  }
+
+  return { body: args.message.snippet ?? "", bodyIsFull: false };
 }
 
 /**
@@ -180,13 +212,14 @@ export function buildReplyPromptBlock(ctx: ReplyContext): string {
         m.direction === "OUTBOUND" ? "You" : m.fromName ?? m.fromEmail;
       const date = m.occurredAt.toISOString().slice(0, 10);
       const subj = m.subject ? ` [${m.subject}]` : "";
-      const snip = (m.snippet ?? "").slice(0, 200);
-      return `  - ${date} ${who}${subj}: ${snip}`;
+      const body = (m.body || m.snippet || "").slice(0, 900);
+      const source = m.bodyIsFull ? "full body" : "snippet";
+      return `  - ${date} ${who}${subj} (${source}):\n${indent(body)}`;
     });
 
   const historyBlock =
     historyLines.length > 0
-      ? `PRIOR THREAD CONTEXT (oldest first):\n${historyLines.join("\n")}\n\n`
+      ? `PRIOR THREAD CONTEXT (oldest first; use it to answer questions in the latest message when the answer is already available):\n${historyLines.join("\n")}\n\n`
       : "";
 
   const bodyTag = inbound.bodyIsFull
@@ -195,12 +228,23 @@ export function buildReplyPromptBlock(ctx: ReplyContext): string {
 
   return `YOU ARE REPLYING TO THIS MESSAGE. Read it carefully and write a reply that directly addresses what was said. Reference specific points from their message — do NOT write a generic catch-up email.
 
+If the latest message asks questions, first look for answers in the prior thread context and the draft metadata. Answer from known context when possible. If the answer is not available, ask a concise clarifying question instead of inventing.
+
 ${historyBlock}THE MESSAGE TO REPLY TO:
 From: ${fromLine}
 Subject: ${inbound.subject ?? "(no subject)"}
 Sent: ${sentLabel}
 
 ${inbound.body}${bodyTag}`;
+}
+
+function indent(value: string): string {
+  const text = value.trim();
+  if (!text) return "    (no body available)";
+  return text
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
 }
 
 function formatRelativeDate(d: Date): string {
