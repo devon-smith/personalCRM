@@ -25,7 +25,6 @@ import {
   useRemoveContactsFromCircle,
 } from "@/lib/hooks/use-circles";
 import type { CircleWithContacts, CircleContact } from "@/lib/hooks/use-circles";
-import { useContacts } from "@/lib/hooks/use-contacts";
 import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -213,14 +212,13 @@ function CircleCard({
   return (
     <div
       ref={setNodeRef}
-      className="overflow-hidden rounded-[14px] transition-all"
+      className="overflow-hidden rounded-[14px] bg-white shadow-[0_1px_2px_rgba(40,30,20,0.03)] transition-all"
       style={{
-        backgroundColor: "var(--surface)",
         border: isOver
           ? `2px solid ${circle.color}`
           : isExpanded
-            ? `1px solid ${circle.color}22`
-            : "1px solid transparent",
+            ? `1px solid ${circle.color}55`
+            : "1px solid #EAE2D6",
         boxShadow: isOver ? `0 0 20px ${circle.color}15` : undefined,
       }}
     >
@@ -240,8 +238,12 @@ function CircleCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <span className="ds-heading-sm">{circle.name}</span>
-            <span className="ds-caption">{circle.contacts.length}</span>
+            <span className="font-serif text-[19px] font-medium" style={{ color: "#1B1A17" }}>
+              {circle.name}
+            </span>
+            <span className="text-[11px]" style={{ color: "#8A8276" }}>
+              {circle.contacts.length}
+            </span>
           </div>
           <div className="mt-[5px] max-w-[160px]">
             <MiniBar good={circle.health.good} mid={circle.health.mid} cold={circle.health.cold} />
@@ -279,7 +281,9 @@ function CircleCard({
           </div>
         )}
 
-        <span className="ds-caption">{circle.followUpDays}d</span>
+        <span className="text-[11px]" style={{ color: "#8A8276" }}>
+          {circle.followUpDays}d
+        </span>
 
         <ChevronRight
           className="h-3.5 w-3.5 transition-transform"
@@ -389,7 +393,6 @@ function CircleCard({
 // ─── Main page ───────────────────────────────────────────────────────
 export default function CirclesPage() {
   const { data: circles, isLoading } = useCircles();
-  const { data: contactsData } = useContacts();
   const createCircle = useCreateCircle();
   const updateCircle = useUpdateCircle();
   const deleteCircle = useDeleteCircle();
@@ -426,11 +429,6 @@ export default function CirclesPage() {
     },
     onError: (err) => toast.error(err.message),
   });
-
-  const allContacts = useMemo(
-    () => (contactsData ?? []).map((c) => ({ id: c.id, name: c.name })),
-    [contactsData],
-  );
 
   const totals = useMemo(() => {
     if (!circles) return { people: 0, good: 0, mid: 0, cold: 0 };
@@ -540,10 +538,32 @@ export default function CirclesPage() {
   }
 
   return (
-    <div className="pt-14">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="crm-animate-enter flex items-center justify-between">
-        <h1 className="ds-display-lg">Circles</h1>
+      <div
+        className="crm-animate-enter rounded-[14px] border bg-white px-5 py-4 shadow-[0_1px_2px_rgba(40,30,20,0.03)] sm:px-7"
+        style={{ borderColor: "#EAE2D6" }}
+      >
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div
+              className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+              style={{ color: "#B5613F" }}
+            >
+              Network Organization
+            </div>
+            <div className="flex items-end gap-3">
+              <h1
+                className="font-serif text-[29px] font-medium leading-none"
+                style={{ color: "#1B1A17" }}
+              >
+                Circles
+              </h1>
+              <span className="pb-0.5 text-[11.5px]" style={{ color: "#8A8276" }}>
+                {(circles?.length ?? 0).toLocaleString()} circles · {totals.people.toLocaleString()} people
+              </span>
+            </div>
+          </div>
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
@@ -563,12 +583,13 @@ export default function CirclesPage() {
             {totals.people} people
           </span>
         </div>
+        </div>
       </div>
 
       {/* Auto-categorize result */}
       {categorizeResult && categorizeResult.contactsAssigned > 0 && (
         <div
-          className="crm-animate-enter mt-3 rounded-[14px] p-3 space-y-1.5"
+          className="crm-animate-enter rounded-[14px] p-3 space-y-1.5"
           style={{ backgroundColor: "var(--status-success-bg)" }}
         >
           <p className="ds-caption font-medium" style={{ color: "var(--status-success)" }}>
@@ -605,7 +626,7 @@ export default function CirclesPage() {
       {/* Health summary */}
       {(totals.good > 0 || totals.mid > 0 || totals.cold > 0) && (
         <div
-          className="crm-animate-enter mt-4 flex items-center gap-3.5"
+          className="crm-animate-enter flex items-center gap-3.5"
           style={{ animationDelay: "40ms" }}
         >
           <div className="max-w-[280px] flex-1">
@@ -627,7 +648,7 @@ export default function CirclesPage() {
 
       {/* Drag hint */}
       <p
-        className="mt-4 ds-caption"
+        className="ds-caption"
         style={{ color: "var(--text-tertiary)" }}
       >
         Drag contacts between circles to reorganize
@@ -639,7 +660,7 @@ export default function CirclesPage() {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="crm-stagger mt-3 flex flex-col gap-1">
+        <div className="crm-stagger grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {circles?.map((circle) => (
             <CircleCard
               key={circle.id}
@@ -652,8 +673,11 @@ export default function CirclesPage() {
 
           {/* New circle button */}
           <button
-            className="flex items-center gap-3 rounded-[14px] px-4 py-[13px] transition-colors"
-            style={{ transitionDuration: "var(--duration-fast)" }}
+            className="flex min-h-[92px] items-center gap-3 rounded-[14px] border bg-white px-4 py-[13px] transition-colors"
+            style={{
+              borderColor: "#EAE2D6",
+              transitionDuration: "var(--duration-fast)",
+            }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
             }}

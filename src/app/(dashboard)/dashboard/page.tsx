@@ -235,18 +235,44 @@ export default function DashboardPage() {
   const circleSeries = stats.circles
     .slice(0, 7)
     .map((c) => c.contactCount || 1);
+  const organizedCount = stats.circles.reduce((sum, c) => sum + c.contactCount, 0);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] lg:gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-8">
       {/* Main column */}
-      <div className="crm-stagger space-y-8 min-w-0">
+      <div className="crm-stagger min-w-0 space-y-6">
       {/* Greeting */}
-      <div>
-        <div className="ds-caption mb-2">{prettyDate()}</div>
-        <h1 className="ds-display-xl">{greetingHeadline}</h1>
-        <p className="ds-body-lg mt-3 max-w-[640px]" style={{ color: "var(--text-secondary)" }}>
-          {buildSubtitle(stats)}
-        </p>
+      <div
+        className="rounded-[14px] border bg-white px-5 py-5 shadow-[0_1px_2px_rgba(40,30,20,0.03)] sm:px-6"
+        style={{ borderColor: "#EAE2D6" }}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div
+              className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+              style={{ color: "#B5613F" }}
+            >
+              {prettyDate()}
+            </div>
+            <h1
+              className="font-serif text-[30px] font-medium leading-tight"
+              style={{ color: "#1B1A17" }}
+            >
+              {greetingHeadline}
+            </h1>
+            <p className="mt-2 max-w-[640px] text-[13px]" style={{ color: "#6A645A" }}>
+              {buildSubtitle(stats)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className="rounded-[6px] border px-2.5 py-1.5 text-[11px]"
+              style={{ borderColor: "#E6DDCF", color: "#9A9183" }}
+            >
+              ⌘K
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Network query — Phase 7 flagship (M7.3). Natural-language
@@ -262,7 +288,16 @@ export default function DashboardPage() {
       <AssistantObservations />
 
       {/* Stat tiles (Sand for people-shaped data) */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Link href="/reply-queue" className="block">
+          <StatTile
+            tone="sand"
+            label="Need a reply"
+            value={stats.recentInteractions.length.toString()}
+            description="Recent inbound items"
+            viz={<Sparkline data={weekSeries} variant="bars" />}
+          />
+        </Link>
         <Link href="/people" className="block">
           <StatTile
             tone="sand"
@@ -277,7 +312,7 @@ export default function DashboardPage() {
             tone="olive"
             label="Active circles"
             value={stats.circles.length.toString()}
-            description={`${stats.circles.reduce((sum, c) => sum + c.contactCount, 0)} contacts organized`}
+            description={`${organizedCount} contacts organized`}
             viz={
               circleSeries.length > 1 ? (
                 <Sparkline data={circleSeries} variant="bars" />

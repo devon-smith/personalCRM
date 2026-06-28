@@ -126,13 +126,39 @@ function ContactsPageInner() {
     setFormOpen(true);
   }
 
+  const contactCount = contacts?.length ?? 0;
+
   return (
-    <div className="relative flex h-[calc(100vh-theme(spacing.14))] gap-0">
+    <div
+      className="relative flex h-[calc(100vh-7rem)] gap-0 overflow-hidden rounded-[14px] border bg-white shadow-[0_1px_2px_rgba(40,30,20,0.03)]"
+      style={{ borderColor: "#EAE2D6" }}
+    >
       {/* Main column */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
-          <h1 className="ds-display-xl">People</h1>
+        <div
+          className="flex flex-wrap items-end justify-between gap-3 border-b px-5 py-4 sm:px-7"
+          style={{ borderColor: "#EAE2D6" }}
+        >
+          <div>
+            <div
+              className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+              style={{ color: "#B5613F" }}
+            >
+              Relationship Graph
+            </div>
+            <div className="flex items-end gap-3">
+              <h1
+                className="font-serif text-[29px] font-medium leading-none"
+                style={{ color: "#1B1A17" }}
+              >
+                People
+              </h1>
+              <span className="pb-0.5 text-[11.5px]" style={{ color: "#8A8276" }}>
+                {contactCount.toLocaleString()} contacts
+              </span>
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             {duplicateCount > 0 && (
               <Link
@@ -165,7 +191,7 @@ function ContactsPageInner() {
         </div>
 
         {/* Filter row — pill-shaped */}
-        <div className="flex flex-wrap items-center gap-2 pb-4">
+        <div className="flex flex-wrap items-center gap-2 px-5 py-3 sm:px-7">
           <div className="relative flex-1 min-w-[220px] max-w-[420px]">
             <Search
               className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
