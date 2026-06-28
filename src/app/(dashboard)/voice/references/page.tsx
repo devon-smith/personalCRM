@@ -15,6 +15,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Surface, SectionLabel } from "@/components/ds";
+import type {
+  LearnedProfile,
+  LearnedRelationshipBucket,
+  PatternFreq,
+} from "@/lib/voice/profile";
+import type { RelationshipType } from "@/lib/voice/relationship-classifier";
 
 /**
  * /voice/references — voice reference materials (M0.x.5).
@@ -42,6 +48,12 @@ interface VoiceReferenceRow {
   addedAt: string;
 }
 
+interface VoiceProfileResponse {
+  learned: LearnedProfile;
+  indexedEmailCount: number;
+  lastIndexedAt: string | null;
+}
+
 interface UploadOutcome {
   status: "imported" | "duplicate" | "failed";
   filename: string;
@@ -58,6 +70,46 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 };
 
 const ACCEPTED_EXT = ".txt,.md,.markdown,.pdf,.docx";
+const PRIORITY_RELATIONSHIPS: RelationshipType[] = [
+  "casual",
+  "unknown",
+  "peer_faculty",
+];
+
+const RELATIONSHIP_LABELS: Record<RelationshipType, string> = {
+  former_student: "Former students",
+  peer_faculty: "Peer faculty",
+  industry_exec: "Industry execs",
+  media: "Media",
+  family: "Family",
+  board: "Board / advisors",
+  casual: "Friends + casual",
+  unknown: "Unclassified",
+};
+
+const OPENING_LABELS: Record<string, string> = {
+  first_name: "First name",
+  hi: "Hi,",
+  hey: "Hey,",
+  hello: "Hello,",
+  dear: "Dear,",
+  none: "(no greeting)",
+  other: "Other",
+};
+
+const CLOSING_LABELS: Record<string, string> = {
+  warmly: "Warmly,",
+  best: "Best,",
+  cheers: "Cheers,",
+  thanks: "Thanks,",
+  thank_you: "Thank you,",
+  sincerely: "Sincerely,",
+  regards: "Regards,",
+  talk_soon: "Talk soon,",
+  xo: "xo",
+  none: "(no closing)",
+  other: "Other",
+};
 
 export default function VoiceReferencesPage() {
   const qc = useQueryClient();
@@ -71,6 +123,15 @@ export default function VoiceReferencesPage() {
     queryFn: async () => {
       const res = await fetch("/api/voice/references");
       if (!res.ok) throw new Error("Failed to load references");
+      return res.json();
+    },
+  });
+
+  const { data: profile, isLoading: profileLoading } = useQuery<VoiceProfileResponse>({
+    queryKey: ["voice", "profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/voice/profile");
+      if (!res.ok) throw new Error("Failed to load voice profile");
       return res.json();
     },
   });
@@ -159,15 +220,30 @@ export default function VoiceReferencesPage() {
           className="ds-display-md mt-2"
           style={{ color: "var(--text-primary)" }}
         >
-          Reference materials
+          Response patterns
         </h1>
         <p
           className="mt-1 text-[13px]"
           style={{ color: "var(--text-tertiary)" }}
         >
-          Upload knowledge-base exports, style guides, or any writing samples
-          that capture how you <em>want</em> to write. These dominate over
-          your sent-mail patterns when drafts are generated.
+          Relationship-specific tables showing how you tend to respond to
+          friends, unclassified contacts, and peer faculty. Reference uploads
+          still live below and override learned patterns when drafts are
+          generated.
+        </p>
+      </div>
+
+      <RelationshipResponseTables
+        learned={profile?.learned ?? null}
+        isLoading={profileLoading}
+        indexedEmailCount={profile?.indexedEmailCount ?? 0}
+      />
+
+      <div>
+        <SectionLabel>Reference uploads</SectionLabel>
+        <p className="mt-1 text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+          Upload knowledge-base exports, style guides, or writing samples that
+          capture how you want to write.
         </p>
       </div>
 
@@ -364,6 +440,177 @@ export default function VoiceReferencesPage() {
   );
 }
 
+function RelationshipResponseTables({
+  learned,
+  isLoading,
+  indexedEmailCount,
+}: {
+  learned: LearnedProfile | null;
+  isLoading: boolean;
+  indexedEmailCount: number;
+}) {
+  if (isLoading) {
+    return (
+      <Surface tone="stone" padded>
+        <div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading response patterns...
+        </div>
+      </Surface>
+    );
+  }
+
+  if (!learned || indexedEmailCount === 0) {
+    return (
+      <Surface tone="sand" padded>
+        <SectionLabel>Response tables</SectionLabel>
+        <p className="mt-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
+          No voice corpus has been indexed yet. Run the voice re-index from
+          Voice settings to populate relationship-specific response tables.
+        </p>
+      </Surface>
+    );
+  }
+
+  const rows = PRIORITY_RELATIONSHIPS.map((type) => ({
+    type,
+    bucket: learned.byRelationship[type],
+  }));
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <SectionLabel>How you respond</SectionLabel>
+          <p className="mt-1 text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+            Based on {indexedEmailCount.toLocaleString()} indexed sent emails.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        {rows.map(({ type, bucket }) => (
+          <RelationshipResponseTable
+            key={type}
+            type={type}
+            bucket={bucket}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RelationshipResponseTable({
+  type,
+  bucket,
+}: {
+  type: RelationshipType;
+  bucket: LearnedRelationshipBucket;
+}) {
+  const hasData = bucket.count > 0;
+
+  return (
+    <Surface tone="mist" padded className="p-5">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="ds-heading-sm" style={{ color: "var(--text-primary)" }}>
+          {RELATIONSHIP_LABELS[type]}
+        </h2>
+        <span className="text-[11.5px] tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+          {bucket.count.toLocaleString()} email{bucket.count === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {!hasData ? (
+        <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+          No indexed examples for this relationship group yet.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] border-separate border-spacing-0 text-left">
+            <thead>
+              <tr className="text-[10.5px] uppercase tracking-[0.14em]" style={{ color: "var(--text-tertiary)" }}>
+                <th className="border-b pb-2 pr-4 font-semibold" style={{ borderColor: "var(--border)" }}>Part</th>
+                <th className="border-b pb-2 pr-4 font-semibold" style={{ borderColor: "var(--border)" }}>Most common</th>
+                <th className="border-b pb-2 pr-4 font-semibold" style={{ borderColor: "var(--border)" }}>Alternates</th>
+                <th className="border-b pb-2 font-semibold" style={{ borderColor: "var(--border)" }}>What this means</th>
+              </tr>
+            </thead>
+            <tbody className="text-[13px]" style={{ color: "var(--text-primary)" }}>
+              <PatternRow
+                label="Greeting"
+                patterns={bucket.greetings}
+                labels={OPENING_LABELS}
+                interpretation={openingInterpretation(bucket.greetings[0]?.value)}
+              />
+              <PatternRow
+                label="Closing"
+                patterns={bucket.closings}
+                labels={CLOSING_LABELS}
+                interpretation={closingInterpretation(bucket.closings[0]?.value)}
+              />
+              <tr>
+                <td className="border-b py-3 pr-4 font-medium" style={{ borderColor: "var(--border)" }}>Length</td>
+                <td className="border-b py-3 pr-4 tabular-nums" style={{ borderColor: "var(--border)" }}>
+                  {bucket.wordCountMedian} words
+                </td>
+                <td className="border-b py-3 pr-4 tabular-nums" style={{ borderColor: "var(--border)" }}>
+                  {bucket.avgSentenceLen} words / sentence
+                </td>
+                <td className="border-b py-3" style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                  {lengthInterpretation(bucket.wordCountMedian, bucket.avgSentenceLen)}
+                </td>
+              </tr>
+              <tr>
+                <td className="py-3 pr-4 font-medium">Signature phrases</td>
+                <td className="py-3 pr-4">
+                  {bucket.signaturePhrases[0]
+                    ? quotePattern(bucket.signaturePhrases[0])
+                    : "None recurring"}
+                </td>
+                <td className="py-3 pr-4">
+                  {formatPatternAlternates(bucket.signaturePhrases.slice(1, 4))}
+                </td>
+                <td className="py-3" style={{ color: "var(--text-secondary)" }}>
+                  Reuse sparingly when the message needs to sound more personal.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Surface>
+  );
+}
+
+function PatternRow({
+  label,
+  patterns,
+  labels,
+  interpretation,
+}: {
+  label: string;
+  patterns: PatternFreq<string>[];
+  labels: Record<string, string>;
+  interpretation: string;
+}) {
+  const primary = patterns[0];
+  return (
+    <tr>
+      <td className="border-b py-3 pr-4 font-medium" style={{ borderColor: "var(--border)" }}>{label}</td>
+      <td className="border-b py-3 pr-4" style={{ borderColor: "var(--border)" }}>
+        {primary ? `${labels[primary.value] ?? primary.value} (${primary.pct}%)` : "No data"}
+      </td>
+      <td className="border-b py-3 pr-4" style={{ borderColor: "var(--border)" }}>
+        {formatPatternAlternates(patterns.slice(1, 4), labels)}
+      </td>
+      <td className="border-b py-3" style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+        {interpretation}
+      </td>
+    </tr>
+  );
+}
+
 function ReferenceRow({
   row,
   onRemove,
@@ -495,4 +742,66 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function quotePattern(pattern: PatternFreq<string>): string {
+  return `"${pattern.value}" x${pattern.count}`;
+}
+
+function formatPatternAlternates(
+  patterns: PatternFreq<string>[],
+  labels?: Record<string, string>,
+): string {
+  if (patterns.length === 0) return "None detected";
+  return patterns
+    .map((p) => {
+      const value = labels?.[p.value] ?? p.value;
+      return `${value} (${p.pct}%)`;
+    })
+    .join(", ");
+}
+
+function openingInterpretation(value: string | undefined): string {
+  switch (value) {
+    case "first_name":
+      return "Lead with the person directly, without extra ceremony.";
+    case "hey":
+      return "Casual and familiar; works best for warm relationships.";
+    case "hi":
+    case "hello":
+      return "Simple and direct; good default when unsure.";
+    case "dear":
+      return "More formal; reserve for structured or institutional notes.";
+    case "none":
+      return "Often skips the greeting and starts with substance.";
+    default:
+      return "Use the relationship context to choose the greeting.";
+  }
+}
+
+function closingInterpretation(value: string | undefined): string {
+  switch (value) {
+    case "warmly":
+      return "Warm, personal, and still professional.";
+    case "best":
+      return "Neutral, efficient, and broadly safe.";
+    case "thanks":
+    case "thank_you":
+      return "Useful when asking for or acknowledging help.";
+    case "cheers":
+    case "talk_soon":
+    case "xo":
+      return "More familiar; use when the relationship is clearly warm.";
+    case "none":
+      return "Often ends cleanly without a signoff.";
+    default:
+      return "Match the closing to the ask and relationship warmth.";
+  }
+}
+
+function lengthInterpretation(wordCountMedian: number, avgSentenceLen: number): string {
+  if (wordCountMedian <= 45) return "Keep replies short and purposeful.";
+  if (wordCountMedian >= 120) return "This group gets more context and explanation.";
+  if (avgSentenceLen <= 12) return "Use crisp sentences and avoid long build-up.";
+  return "Moderate length; include context without over-explaining.";
 }

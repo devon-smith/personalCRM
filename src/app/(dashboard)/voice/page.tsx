@@ -197,8 +197,8 @@ export default function VoiceSettingsPage() {
           >
             {reindex.isPending ? "Queuing…" : "Re-index now"}
           </Pill>
-          {/* M0.x.5: link to the reference uploads page. Refs
-              dominate over learned email patterns at draft time. */}
+          {/* M0.x.5: link to relationship response tables + reference uploads.
+              Refs dominate over learned email patterns at draft time. */}
           <Link
             href="/voice/references"
             className="inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
@@ -213,7 +213,7 @@ export default function VoiceSettingsPage() {
               e.currentTarget.style.backgroundColor = "transparent";
             }}
           >
-            Reference materials →
+            Response patterns →
           </Link>
         </div>
       </Surface>
