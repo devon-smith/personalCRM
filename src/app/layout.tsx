@@ -26,13 +26,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Personal CRM",
-  description: "Your personal relationship manager",
+  title: "Professor CRM",
+  description: "Jennifer's relationship intelligence workspace",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "CRM",
+    title: "Professor CRM",
   },
   icons: {
     apple: "/icon-192.png",

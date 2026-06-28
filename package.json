@@ -2,8 +2,12 @@
   "name": "personal-crm",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "NODE_OPTIONS='--max-http-header-size=32768' next dev --port 3003",
+    "dev:mobile": "NODE_OPTIONS='--max-http-header-size=32768' next dev --port 3003 --hostname 0.0.0.0",
     "build": "prisma generate && next build",
     "postinstall": "prisma generate",
     "start": "next start",
@@ -16,6 +20,8 @@
     "mobile:add:ios": "npx cap add ios",
     "mobile:add:android": "npx cap add android",
     "mobile:sync": "npx cap sync",
+    "mobile:sync:ios": "npx cap sync ios",
+    "mobile:doctor:ios": "npx cap doctor ios",
     "mobile:open:ios": "npx cap open ios",
     "mobile:open:android": "npx cap open android",
     "test": "vitest",

@@ -1,6 +1,6 @@
 {
-  "name": "Personal CRM",
-  "short_name": "CRM",
+  "name": "Professor CRM",
+  "short_name": "Prof CRM",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#ffffff",

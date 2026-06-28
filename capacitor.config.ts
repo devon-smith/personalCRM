@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
- * Personal CRM mobile shell — Capacitor wraps the existing Next.js app
+ * Professor CRM mobile shell — Capacitor wraps the existing Next.js app
  * as an iOS/Android webview. The web app is loaded from a hosted URL
  * (CAPACITOR_SERVER_URL env at build time) rather than a static export,
  * which:
@@ -19,9 +19,9 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const serverUrl = process.env.CAPACITOR_SERVER_URL;
 
 const config: CapacitorConfig = {
-  appId: "com.devonsmith.personalcrm",
-  appName: "Personal CRM",
-  webDir: "out", // unused when server.url is set; placeholder for static build
+  appId: "com.devonsmith.professorcrm",
+  appName: "Professor CRM",
+  webDir: "mobile-web", // required by Capacitor; the app itself loads server.url
   ...(serverUrl
     ? {
         server: {

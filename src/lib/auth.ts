@@ -3,6 +3,18 @@ import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
+const DEFAULT_ALLOWED_EMAILS = ["devontjsmith@gmail.com", "jaaker@stanford.edu"];
+
+function getAllowedEmails(): string[] {
+  const configured = process.env.AUTH_ALLOWED_EMAILS;
+  if (!configured) return DEFAULT_ALLOWED_EMAILS;
+
+  return configured
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 const nextAuth = NextAuth({
   adapter: PrismaAdapter(prisma as never),
   providers: [
@@ -39,8 +51,8 @@ const nextAuth = NextAuth({
   callbacks: {
     async signIn({ user, account }) {
       // Single-user app: restrict to allowed email(s)
-      const ALLOWED_EMAILS = ["devontjsmith@gmail.com"];
-      if (user.email && !ALLOWED_EMAILS.includes(user.email.toLowerCase())) {
+      const allowedEmails = getAllowedEmails();
+      if (user.email && !allowedEmails.includes(user.email.toLowerCase())) {
         return false;
       }
 

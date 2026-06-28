@@ -1,204 +1,93 @@
-# Mobile (Capacitor) setup
+# Professor CRM iOS Build
 
-The CRM ships as a native iOS / Android shell that wraps the existing
-web app in a webview, loaded from your hosted server. Web updates ship
-without rebuilding the native binary — the shell exists for platform
-access (mic, notifications, install-on-home-screen) rather than UI
-duplication.
+This app uses Capacitor as a native iOS shell around the live Next.js CRM.
+The phone loads `CAPACITOR_SERVER_URL`; it does not run the API, database, AI
+jobs, or Google sync locally.
 
----
+## Requirements
 
-## Install on your iPhone — free, no Developer Program (the in-depth path)
+- Node.js 22 or newer (`nvm use` will read `.nvmrc`).
+- Xcode signed into the Apple Developer account.
+- An iPhone registered for development builds, or TestFlight access.
+- A running CRM backend with the same database/env values the web app uses.
 
-This is the path for putting the app on **your own** iPhone with just a
-free Apple ID. No $99/yr Apple Developer membership. The catch: the app
-signature expires after **7 days**, so you re-run one build step weekly.
-Everything else persists.
+## Local Device Build
 
-### What you need (once)
+Use this when the Mac and Jennifer's iPhone are on the same Wi-Fi network.
 
-- A Mac with **Xcode 15+** installed (App Store, free).
-- Your iPhone + a **USB-to-Lightning / USB-C cable** for the first run.
-- A free **Apple ID** (the one on your iPhone is fine).
-- The Next.js server running somewhere the phone can reach — your Mac on
-  the same Wi-Fi is simplest (see "Network setup" below).
+1. Start the web app on the LAN:
 
-### Step 1 — Generate the iOS project
+   ```bash
+   npm run dev:mobile
+   ```
 
-From the repo root on the Mac:
+2. Find the Mac's Wi-Fi IP:
 
-```bash
-npm install                 # if you haven't already
-npm run mobile:add:ios      # creates ios/App/ (Xcode project + CocoaPods)
-```
+   ```bash
+   ipconfig getifaddr en0
+   ```
 
-### Step 2 — Point the shell at your running server
+3. Sync the iOS project against that URL:
 
-The webview loads the live app from a URL. For your Mac on the LAN:
+   ```bash
+   CAPACITOR_SERVER_URL=http://YOUR_MAC_IP:3003 npm run mobile:sync:ios
+   ```
 
-```bash
-# Find your Mac's LAN IP (e.g. 192.168.1.42)
-ipconfig getifaddr en0
+4. Open Xcode:
 
-# Start the dev server (leave it running in its own terminal)
-npm run dev
+   ```bash
+   npm run mobile:open:ios
+   ```
 
-# Bake that URL into the native shell
-CAPACITOR_SERVER_URL=http://192.168.1.42:3003 npm run mobile:sync
-```
+5. In Xcode:
+   - Select the `App` target.
+   - Set Team to the Apple Developer team.
+   - Confirm Bundle Identifier is `com.devonsmith.professorcrm` or change it
+     to another unique identifier owned by the team.
+   - Select Jennifer's iPhone as the run target.
+   - Press Run.
 
-> Sanity check: open `http://192.168.1.42:3003` in **Safari on the
-> iPhone**. If it loads, the shell will too. If it doesn't, fix the
-> network before touching Xcode (it's almost always a firewall or a
-> different Wi-Fi network).
+Local builds only work while the iPhone can reach `http://YOUR_MAC_IP:3003`.
 
-### Step 3 — Open Xcode and sign with your free Apple ID
+## TestFlight / Real-World Build
 
-```bash
-npm run mobile:open:ios     # opens ios/App/App.xcworkspace in Xcode
-```
+Use this for a downloadable app that works away from the Mac.
 
-In Xcode:
+1. Deploy the Next.js backend to an HTTPS domain.
 
-1. Select the **App** target in the left sidebar (the blue icon at top).
-2. Go to **Signing & Capabilities**.
-3. Tick **Automatically manage signing**.
-4. **Team** → **Add an Account…** → sign in with your Apple ID →
-   then pick your name (Personal Team) as the Team.
-5. If you see a red "bundle identifier is not available" error, change
-   the **Bundle Identifier** to something unique, e.g.
-   `com.<yourname>.personalcrm.dev` — free personal teams can't reuse an
-   identifier someone else registered.
+2. Set production env values on that backend:
 
-### Step 4 — Run it on the phone
+   ```bash
+   NEXTAUTH_URL=https://crm.your-domain.com
+   AUTH_URL=https://crm.your-domain.com
+   AUTH_ALLOWED_EMAILS=devontjsmith@gmail.com,jaaker@stanford.edu
+   WEBHOOK_BASE_URL=https://crm.your-domain.com
+   ```
 
-1. Plug in the iPhone. The first time, tap **Trust** on the phone.
-2. In Xcode's top device dropdown, pick your iPhone (not a simulator).
-3. Press **▶︎ (Run)** or ⌘R. Xcode builds, installs, and launches.
-4. **First launch will fail with "Untrusted Developer."** This is
-   expected. On the iPhone: **Settings → General → VPN & Device
-   Management → [your Apple ID] → Trust**. Then tap the app icon again.
+3. In Google Cloud OAuth settings, add these authorized redirect URIs:
 
-That's it — the app is on your home screen.
+   ```text
+   https://crm.your-domain.com/api/auth/callback/google
+   https://crm.your-domain.com/api/auth/add-google-account/callback
+   ```
 
-### The weekly re-sign (the 7-day cost)
+4. Sync iOS against the production domain:
 
-Free-team signatures expire after 7 days. When the app refuses to open
-(or ~weekly, pre-emptively):
+   ```bash
+   CAPACITOR_SERVER_URL=https://crm.your-domain.com npm run mobile:sync:ios
+   ```
 
-1. Plug the phone back into the Mac.
-2. `npm run mobile:open:ios`, pick the phone, press ▶︎.
+5. In Xcode:
+   - Product > Archive
+   - Distribute App > App Store Connect
+   - Upload
+   - Add Jennifer as an internal or external tester in TestFlight.
 
-That re-signs and reinstalls in place — **your data and login persist**
-(they live on the server, not the binary). ~30 seconds of friction once
-a week. If that ever gets annoying, the $99/yr Developer Program raises
-the expiry to 90 days and unlocks TestFlight (no cable, over-the-air).
+## Notes
 
-### Wireless runs after the first cable run
-
-Once you've run over USB at least once, enable **Connect via network**
-in Xcode (Window → Devices and Simulators → select your iPhone → tick
-"Connect via network"). After that the weekly re-sign works over Wi-Fi
-with no cable, as long as the phone and Mac are on the same network.
-
-### Common snags
-
-| Symptom | Fix |
-|---|---|
-| Blank white screen in the app | `CAPACITOR_SERVER_URL` wrong or `npm run dev` not running. Load the URL in mobile Safari to confirm. |
-| "Untrusted Developer" on launch | Settings → General → VPN & Device Management → Trust your Apple ID. |
-| "Bundle identifier not available" | Change it to a unique string in Signing & Capabilities. |
-| App opened last week, now won't | Signature expired — re-run from Xcode (Step 4, the weekly re-sign). |
-| Works on Wi-Fi, dead on cellular | The Mac's LAN IP isn't reachable off-network. Use Tailscale (below) or deploy the server publicly. |
-
----
-
-## One-time per platform
-
-```bash
-# Add iOS (needs a Mac with Xcode installed)
-npm run mobile:add:ios
-
-# Add Android (needs Android Studio installed)
-npm run mobile:add:android
-```
-
-Generated `ios/` and `android/` folders are git-ignored. Each device /
-developer runs the add commands themselves.
-
-## Each rebuild
-
-```bash
-# Tell the shell which server to load (overrides capacitor.config.ts default)
-export CAPACITOR_SERVER_URL=https://crm.your-domain.com
-
-# Sync web → native (copies config, plugin updates, etc.)
-npm run mobile:sync
-
-# Open in Xcode / Android Studio
-npm run mobile:open:ios
-npm run mobile:open:android
-```
-
-In Xcode hit ▶︎ to build + install on the connected device / simulator.
-
-## Local dev pointing at your laptop
-
-```bash
-# Find your laptop's LAN IP (e.g. 192.168.1.42)
-ipconfig getifaddr en0     # macOS
-
-# Run the Next.js dev server
-npm run dev
-
-# Sync Capacitor pointing at the laptop
-CAPACITOR_SERVER_URL=http://192.168.1.42:3003 npm run mobile:sync
-npm run mobile:open:ios
-```
-
-The `cleartext: true` config in `capacitor.config.ts` only activates
-when the URL is http — production https hosts skip that flag.
-
-## What changes for the web app
-
-Nothing required. The existing app loads inside the webview verbatim.
-Code paths that want to detect the shell (e.g. to swap a web file picker
-for a native one later) can:
-
-```ts
-import { isMobileShell, getMobilePlatform } from "@/lib/mobile";
-
-if (isMobileShell()) {
-  // native code path (haptics, native share sheet, etc.)
-}
-```
-
-## Adding native capabilities later
-
-When you want native features (push notifications, native mic, native
-share), install the relevant Capacitor plugin and run `mobile:sync`:
-
-```bash
-npm install @capacitor/share @capacitor/haptics @capacitor/push-notifications
-npm run mobile:sync
-```
-
-The web side detects via `isMobileShell()` and uses the native API
-inside the shell; web fallbacks (Web Share API, vibration, etc.) keep
-working in a regular browser tab.
-
-## Why webview-loaded-from-server
-
-For a personal CRM the laptop+server lives on the same network the
-phone is usually on. Loading from the server has three advantages over
-a static export:
-
-1. Next.js API routes (auth, draft generation, search) work without
-   rewriting for an export target.
-2. Updates ship instantly — no App Store review cycle for a fix.
-3. The native binary stays trivial — just a shell, no bundled JS to
-   re-build per change.
-
-The downside is the phone needs network access to the CRM server. If
-the laptop is asleep the app shows the loading state. Acceptable
-tradeoff for personal use.
+- Google OAuth may be blocked in embedded webviews. The fastest path is to keep
+  Jennifer's Google account linked through the hosted web app, then use the
+  mobile shell for day-to-day access.
+- Native OAuth can be added later if we want first-run Google sign-in to happen
+  entirely inside the installed app.
+- The current native project uses Swift Package Manager through Capacitor 8.

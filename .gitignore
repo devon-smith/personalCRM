@@ -48,7 +48,5 @@ whatsapp-sidecar/auth-state/*
 !whatsapp-sidecar/auth-state/.gitkeep
 whatsapp-sidecar/node_modules
 
-# Capacitor native projects — generated locally per device, not checked in
-# (each developer/device runs `npm run mobile:add:ios` once).
-/ios
+# Capacitor Android project is still generated locally when needed.
 /android
