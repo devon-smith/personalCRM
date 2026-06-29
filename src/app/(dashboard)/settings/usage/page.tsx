@@ -20,6 +20,7 @@ const WINDOWS: Array<{ days: number; label: string }> = [
   { days: 30, label: "30 days" },
   { days: 90, label: "90 days" },
 ];
+const USAGE_STALE_TIME_MS = 5 * 60_000;
 
 function formatUsd(cents: number): string {
   if (cents < 0.01) return "<$0.01";
@@ -47,7 +48,7 @@ export default function UsagePage() {
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
-    staleTime: 60_000,
+    staleTime: USAGE_STALE_TIME_MS,
   });
 
   return (
