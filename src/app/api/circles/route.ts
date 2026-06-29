@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
 
 function computeWarmth(
@@ -50,19 +51,25 @@ export async function GET(req: NextRequest) {
           ...circle,
           googleSyncedAt: circle.googleSyncedAt?.toISOString() ?? null,
         })),
-        {
-          headers: {
-            "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
-          },
-        },
+        { headers: privateCacheHeaders(60, 5 * 60) },
       );
     }
 
     const circles = await prisma.circle.findMany({
       where: { userId: session.user.id },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        icon: true,
+        followUpDays: true,
+        sortOrder: true,
+        isDefault: true,
+        googleSyncEnabled: true,
+        googleSyncedAt: true,
+        googleSyncError: true,
         contacts: {
-          include: {
+          select: {
             contact: {
               select: {
                 id: true,
@@ -124,7 +131,9 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: privateCacheHeaders(60, 5 * 60),
+    });
   } catch (error) {
     console.error("GET /api/circles error:", error);
     return NextResponse.json(

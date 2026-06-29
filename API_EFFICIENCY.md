@@ -125,6 +125,7 @@
 - The retired Google Contacts preview GET now fails closed. Direct requests to `/api/gmail/contacts` cannot fetch a 2,000-contact People API preview; contact import remains an explicit POST action.
 - Removed the unused `/api/gmail/discover` HTTP route, which could scan 90 days / 500 Gmail messages if called directly. The underlying library remains available for deliberate maintenance/backfill code paths.
 - The Circles network map now parallelizes its independent DB reads and uses a five-minute private cache/client stale window. Reopening the lazy map avoids immediate repeat contact/membership reads.
+- The main Circles payload now uses an explicit Prisma select and short private cache. The page no longer returns unused circle metadata such as user IDs, timestamps, and Google group internals on every load.
 
 ## Next Highest-Impact Efficiency Work
 
