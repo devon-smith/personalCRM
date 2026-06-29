@@ -217,7 +217,13 @@ export function ReplyQueueConsole() {
   const [view, setView] = useState<"all" | "needs-review" | "ready">("all");
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const { data: bootstrapData, isLoading: bootstrapLoading } = useQuery<ReplyQueueBootstrapData>({
+  const {
+    data: bootstrapData,
+    isLoading: bootstrapLoading,
+    isFetching: bootstrapFetching,
+    dataUpdatedAt: bootstrapUpdatedAt,
+    refetch: refetchBootstrap,
+  } = useQuery<ReplyQueueBootstrapData>({
     queryKey: ["reply-queue-bootstrap", "needs-reply"],
     queryFn: async () => {
       const res = await fetch("/api/reply-queue/bootstrap");
@@ -230,8 +236,8 @@ export function ReplyQueueConsole() {
       }
       return res.json();
     },
-    staleTime: 30 * 1000,
-    refetchInterval: 60 * 1000,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const inboxData = bootstrapData?.inbox;
@@ -459,20 +465,40 @@ export function ReplyQueueConsole() {
                 <p className="mt-1 text-[12px] leading-5 text-[#8A8276]">
                   Triage inbound Gmail and review drafts before anything sends.
                 </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#E2D9CB] bg-white px-2.5 text-[11.5px] font-semibold text-[#6F685D]"
-              >
-                {syncMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
+                {bootstrapUpdatedAt > 0 && (
+                  <p className="mt-1 text-[11px] leading-4 text-[#A1998C]">
+                    Updated {formatDistanceToNow(new Date(bootstrapUpdatedAt))}
+                  </p>
                 )}
-                Sync
-              </button>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => void refetchBootstrap()}
+                  disabled={bootstrapFetching && !bootstrapLoading}
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[8px] border border-[#E2D9CB] bg-white px-2.5 text-[11.5px] font-semibold text-[#6F685D]"
+                >
+                  {bootstrapFetching && !bootstrapLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[#1E1B16] px-2.5 text-[11.5px] font-semibold text-white shadow-[0_1px_2px_rgba(31,26,18,0.14)]"
+                >
+                  {syncMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  Sync Gmail
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 flex w-fit gap-1 rounded-[9px] bg-[#ECE5D9] p-1">
