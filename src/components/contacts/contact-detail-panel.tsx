@@ -87,6 +87,7 @@ export function ContactDetailPanel({
       return res.json();
     },
     enabled: !!contactId,
+    staleTime: 5 * 60 * 1000,
   });
 
   const addJournalEntry = useMutation({

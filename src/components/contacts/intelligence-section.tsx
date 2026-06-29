@@ -23,6 +23,7 @@ export function IntelligenceSection({ contactId }: { contactId: string }) {
       if (!res.ok) throw new Error("Failed to load contact intelligence");
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const profile = data?.profile;
