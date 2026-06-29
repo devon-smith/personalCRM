@@ -16,6 +16,7 @@
 - Web/API worker job enqueues now prefer `WORKER_DATABASE_URL` and use a one-connection pool, keeping Graphile utility calls on the direct Postgres connection while bounding serverless connection use.
 - Worker task Prisma clients now use the same centralized `WORKER_DATABASE_URL` helper as the Graphile runner, so scheduled sync/AI jobs no longer bypass the direct worker connection and accidentally use the pooled web app URL.
 - Shared app helpers called from worker jobs now get a worker-runtime Prisma connection too: the worker sets `CRM_WORKER_RUNTIME=true`, and the lazy app Prisma singleton uses `WORKER_DATABASE_URL` only in that context.
+- `npm run worker:migrate` now initializes the Graphile Worker schema through `WORKER_DATABASE_URL` when set, matching the worker runtime and avoiding pooled-connection setup in production.
 - Manual Inbox/Reply Queue Gmail sync now runs the AI action extractor only when Gmail actually processed new mail, and zero-new-mail syncs avoid broad queue/dashboard invalidations.
 - Reply queue bootstrap now returns a tiny private cache window, absorbing immediate reloads/double mounts while keeping draft/send mutations effectively fresh.
 - Reply queue selected-contact context now uses `/api/contacts/:id?scope=reply-context`, keeping the facts/profile/memory needed for drafting while capping the right-rail interaction timeline at the 5 rows it renders instead of loading the full 50-row contact detail payload.
