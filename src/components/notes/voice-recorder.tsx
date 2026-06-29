@@ -50,11 +50,12 @@ export function VoiceRecorder({ contactId, onTranscribed }: VoiceRecorderProps) 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const uploadInFlightRef = useRef(false);
 
-  const stopStream = () => {
+  const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-  };
+  }, []);
 
   // Cleanup on unmount: stop any open mic stream so the OS releases it
   // and the browser indicator turns off.
@@ -63,7 +64,7 @@ export function VoiceRecorder({ contactId, onTranscribed }: VoiceRecorderProps) 
       stopStream();
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [stopStream]);
 
   const startRecording = useCallback(async () => {
     const mimeType = pickMimeType();
@@ -89,12 +90,14 @@ export function VoiceRecorder({ contactId, onTranscribed }: VoiceRecorderProps) 
     mediaRecorderRef.current = recorder;
     const chunks: Blob[] = [];
 
+    const startedAt = Date.now();
+
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunks.push(e.data);
     };
     recorder.onstop = () => {
       const blob = new Blob(chunks, { type: mimeType });
-      const elapsedMs = Date.now() - (state.kind === "recording" ? state.startedAt : Date.now());
+      const elapsedMs = Date.now() - startedAt;
       setState({
         kind: "review",
         blob,
@@ -103,7 +106,6 @@ export function VoiceRecorder({ contactId, onTranscribed }: VoiceRecorderProps) 
       stopStream();
     };
 
-    const startedAt = Date.now();
     recorder.start();
     setState({ kind: "recording", chunks, startedAt });
     setElapsedSec(0);
@@ -111,7 +113,7 @@ export function VoiceRecorder({ contactId, onTranscribed }: VoiceRecorderProps) 
     intervalRef.current = setInterval(() => {
       setElapsedSec((s) => s + 1);
     }, 1000);
-  }, [state]);
+  }, [stopStream]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current?.state === "recording") {
@@ -124,12 +126,15 @@ export function VoiceRecorder({ contactId, onTranscribed }: VoiceRecorderProps) 
   }, []);
 
   const discardRecording = useCallback(() => {
+    uploadInFlightRef.current = false;
     setState({ kind: "idle" });
     setElapsedSec(0);
   }, []);
 
   const uploadRecording = useCallback(async () => {
     if (state.kind !== "review") return;
+    if (uploadInFlightRef.current) return;
+    uploadInFlightRef.current = true;
     setState({ kind: "uploading" });
 
     const form = new FormData();
@@ -148,10 +153,12 @@ export function VoiceRecorder({ contactId, onTranscribed }: VoiceRecorderProps) 
       const entry = await res.json();
       toast.success("Note transcribed");
       onTranscribed?.(entry);
+      uploadInFlightRef.current = false;
       setState({ kind: "idle" });
       setElapsedSec(0);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
+      uploadInFlightRef.current = false;
       setState({ kind: "review", blob: state.blob, durationSec: state.durationSec });
     }
   }, [state, contactId, onTranscribed]);
