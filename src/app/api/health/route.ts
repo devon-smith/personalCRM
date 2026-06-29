@@ -23,19 +23,29 @@ export async function GET(request: Request) {
   const liveCheck =
     new URL(request.url).searchParams.get("live") === "1";
 
-  // Check Google accounts
-  const googleAccounts = await prisma.account.findMany({
-    where: { userId, provider: "google" },
-    select: {
-      id: true,
-      providerAccountId: true,
-      access_token: true,
-      refresh_token: true,
-      expires_at: true,
-      needsReconnect: true,
-      lastRefreshError: true,
-    },
-  });
+  // Check Google accounts without materializing OAuth tokens in the
+  // DB-only health path. Live checks below deliberately resolve tokens
+  // through the Google client.
+  const [googleAccounts, usableGoogleAccountCount] = await Promise.all([
+    prisma.account.findMany({
+      where: { userId, provider: "google" },
+      select: {
+        id: true,
+        providerAccountId: true,
+        expires_at: true,
+        needsReconnect: true,
+        lastRefreshError: true,
+      },
+    }),
+    prisma.account.count({
+      where: {
+        userId,
+        provider: "google",
+        access_token: { not: null },
+        needsReconnect: false,
+      },
+    }),
+  ]);
 
   let gmailStatus: "connected" | "expired" | "disconnected" = "disconnected";
   let gmailError: string | null = null;
@@ -44,10 +54,7 @@ export async function GET(request: Request) {
     gmailStatus = "disconnected";
     gmailError = "No Google account connected.";
   } else if (!liveCheck) {
-    const usableAccounts = googleAccounts.filter(
-      (account) => account.access_token && !account.needsReconnect,
-    );
-    if (usableAccounts.length > 0) {
+    if (usableGoogleAccountCount > 0) {
       gmailStatus = "connected";
     } else {
       gmailStatus = "expired";

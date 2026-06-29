@@ -23,8 +23,13 @@ export async function getCalendarSyncStatus(
   const [accounts, syncedMeetingCount, lastMeetingSync, lastSyncRun] =
     await Promise.all([
       prisma.account.findMany({
-        where: { userId, provider: "google" },
-        select: { access_token: true, scope: true },
+        where: {
+          userId,
+          provider: "google",
+          access_token: { not: null },
+          needsReconnect: false,
+        },
+        select: { scope: true },
       }),
       prisma.interaction.count({
         where: {
@@ -53,10 +58,9 @@ export async function getCalendarSyncStatus(
       }),
     ]);
 
-  const hasGoogleAccount = accounts.some((account) => !!account.access_token);
+  const hasGoogleAccount = accounts.length > 0;
   const hasCalendarScope = accounts.some(
     (account) =>
-      account.access_token &&
       (!account.scope || account.scope.includes("calendar.readonly")),
   );
   const connection: CalendarConnectionState = !hasGoogleAccount

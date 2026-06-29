@@ -40,15 +40,19 @@ export async function POST(request: Request) {
   }
   const trigger = parseSyncTrigger(new URL(request.url).searchParams.get("trigger") ?? "manual");
 
-  // Check if Google account exists before attempting sync
-  const googleAccount = await prisma.account.findFirst({
-    where: { userId: session.user.id, provider: "google" },
-    select: { access_token: true },
+  // Check account availability without materializing OAuth tokens in this route.
+  const connectedAccountCount = await prisma.account.count({
+    where: {
+      userId: session.user.id,
+      provider: "google",
+      access_token: { not: null },
+      needsReconnect: false,
+    },
   });
 
-  if (!googleAccount?.access_token) {
+  if (connectedAccountCount === 0) {
     return NextResponse.json(
-      { error: "No Google account connected", processed: 0 },
+      { error: "No active Google account connected", processed: 0 },
       { status: 400 },
     );
   }
