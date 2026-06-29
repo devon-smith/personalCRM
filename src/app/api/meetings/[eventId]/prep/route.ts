@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getUpcomingEvents } from "@/lib/calendar";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { buildMeetingPrep } from "@/lib/meeting-prep";
 
 /**
@@ -49,19 +50,22 @@ export async function GET(
       attendeeEmails,
     );
 
-    return NextResponse.json({
-      eventTitle: event.title,
-      eventDescription: event.description,
-      eventLocation: event.location,
-      eventStartTime: event.startTime,
-      eventEndTime: event.endTime,
-      eventHtmlLink: event.htmlLink,
-      eventPrep: event.prep,
-      unknownAttendeeEmails: attendeeEmails.filter(
-        (e) => !dossier.attendees.some((a) => a.email?.toLowerCase() === e.toLowerCase()),
-      ),
-      ...dossier,
-    });
+    return NextResponse.json(
+      {
+        eventTitle: event.title,
+        eventDescription: event.description,
+        eventLocation: event.location,
+        eventStartTime: event.startTime,
+        eventEndTime: event.endTime,
+        eventHtmlLink: event.htmlLink,
+        eventPrep: event.prep,
+        unknownAttendeeEmails: attendeeEmails.filter(
+          (e) => !dossier.attendees.some((a) => a.email?.toLowerCase() === e.toLowerCase()),
+        ),
+        ...dossier,
+      },
+      { headers: privateCacheHeaders(5 * 60, 15 * 60) },
+    );
   } catch (err) {
     // Surface the real error so the UI can render something useful
     // instead of an opaque "Prep failed (500)". buildMeetingPrep
