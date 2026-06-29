@@ -17,6 +17,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials, getAvatarColor } from "@/lib/avatar";
+import {
+  addSavedQueryToListCaches,
+  appendSavedQueryFollowUpCache,
+  seedSavedQueryDetailCache,
+  setSavedQueryStar,
+} from "@/lib/saved-query-cache";
 
 /**
  * Natural-language network query box (M7.3 flagship UI, M7.3b streaming).
@@ -62,6 +68,8 @@ interface QueryResult {
   /** M0.x.7 — id of the auto-saved SavedQuery row. Set when the
    *  server persists the answer; lets the UI star/deep-link. */
   savedQueryId?: string;
+  /** Set when the server reused a rapid exact-match recent answer. */
+  cached?: boolean;
 }
 
 interface LiveStep {
@@ -240,12 +248,12 @@ export function NetworkQueryBox({
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const effectiveParent =
+      opts.parentOverride !== undefined
+        ? opts.parentOverride
+        : parentQueryId ?? null;
 
     try {
-      const effectiveParent =
-        opts.parentOverride !== undefined
-          ? opts.parentOverride
-          : parentQueryId ?? null;
       const res = await fetch("/api/network-query?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -338,16 +346,33 @@ export function NetworkQueryBox({
         case "complete": {
           const completed = data.result as QueryResult;
           setResult(completed);
-          // M0.x.8: refresh /ask history + the "View question history (N)"
-          // counter immediately so the new auto-saved row appears
-          // without requiring a page reload.
-          qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
-          qc.invalidateQueries({ queryKey: ["saved-queries"] });
-          // M0.x.9: when this submit was a follow-up, let the parent
-          // page (e.g. /ask/[id] thread view) know so it can refresh
-          // its child list without polling.
-          if (parentQueryId && completed.savedQueryId && onCompleteFollowUp) {
-            onCompleteFollowUp(completed.savedQueryId);
+          const savedQueryId = completed.savedQueryId;
+          if (savedQueryId && !completed.cached) {
+            const createdAt = new Date().toISOString();
+            const savedQuery = {
+              id: savedQueryId,
+              query: q.trim(),
+              title: completed.title,
+              answer: completed.answer,
+              evidence: {
+                suggestedContacts: completed.suggestedContacts,
+                reasoningTrace: completed.reasoningTrace,
+                tokensIn: completed.usage.inputTokens,
+                tokensOut: completed.usage.outputTokens,
+              },
+              createdAt,
+              lastRunAt: createdAt,
+              parentQueryId: effectiveParent,
+            };
+            seedSavedQueryDetailCache(qc, savedQuery);
+            if (effectiveParent) {
+              appendSavedQueryFollowUpCache(qc, effectiveParent, savedQuery);
+            } else {
+              addSavedQueryToListCaches(qc, savedQuery);
+            }
+          }
+          if (effectiveParent && savedQueryId && onCompleteFollowUp) {
+            onCompleteFollowUp(savedQueryId);
           }
           break;
         }
@@ -519,10 +544,10 @@ export function NetworkQueryBox({
               );
               if (!res.ok) throw new Error("Star failed");
               toast.success(nextStarred ? "Starred" : "Unstarred");
-              qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
-              qc.invalidateQueries({ queryKey: ["saved-queries"] });
+              setSavedQueryStar(qc, result.savedQueryId, nextStarred);
             } catch (err) {
               setIsStarred(!nextStarred); // rollback
+              setSavedQueryStar(qc, result.savedQueryId, !nextStarred);
               toast.error(
                 err instanceof Error ? err.message : "Couldn't star",
               );

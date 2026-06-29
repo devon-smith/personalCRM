@@ -364,10 +364,6 @@ export default function AskByIdPage({
       <FollowUpThread
         parentId={row.id}
         followUps={data.followUps ?? []}
-        onFollowUpComplete={() => {
-          qc.invalidateQueries({ queryKey: ["saved-query", row.id] });
-          qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
-        }}
       />
     </div>
   );
@@ -376,11 +372,9 @@ export default function AskByIdPage({
 function FollowUpThread({
   parentId,
   followUps,
-  onFollowUpComplete,
 }: {
   parentId: string;
   followUps: FollowUpRow[];
-  onFollowUpComplete: (id: string) => void;
 }) {
   return (
     <div className="pt-4 space-y-4 border-t" style={{ borderColor: "var(--border)" }}>
@@ -413,7 +407,6 @@ function FollowUpThread({
         <NetworkQueryBox
           parentQueryId={parentId}
           placeholder="Ask a follow-up about this answer…"
-          onCompleteFollowUp={onFollowUpComplete}
           compact
         />
       </div>
