@@ -133,6 +133,7 @@
 - Contact journal add/delete now update the open contact panel's React Query cache directly from mutation results instead of invalidating and immediately re-reading `/api/journal`.
 - Contact momentum queries now canonicalize requested contact IDs and use five-minute private response caching, so re-sorting the same People list does not spend a duplicate `/api/momentum` read for identical sparkline data.
 - Removed the unused contact conversations route. The active contact Story feed already uses interactions bundled with the contact detail payload, so direct `/api/contacts/:id/conversations` calls can no longer fetch and group broad per-channel interaction windows.
+- Removed the unused stale-outbound interaction route and its raw SQL helper. Reply-priority/noise utilities remain, but direct `/api/interactions/stale-outbound` calls can no longer scan latest outbound emails across contacts.
 
 ## Next Highest-Impact Efficiency Work
 

@@ -1,27 +1,6 @@
-import { prisma } from "@/lib/prisma";
-
 // ─── Types ───
 
 export type ReplyPriority = "high" | "medium" | "low" | "skip";
-
-export interface StaleOutbound {
-  readonly contactId: string;
-  readonly contactName: string;
-  readonly subject: string | null;
-  readonly preview: string | null;
-  readonly daysSinceSent: number;
-  readonly sentAt: Date;
-  readonly interactionId: string;
-}
-
-export interface ThreadQueryOptions {
-  readonly limit?: number;
-  readonly offset?: number;
-  readonly minDays?: number;
-}
-
-const DEFAULT_LIMIT = 50;
-const DEFAULT_STALE_DAYS = 7;
 
 // ─── Noise detection ───
 
@@ -168,87 +147,4 @@ export function scoreReplyPriority(
     return { priority: "low", reason: reasons[0] || "Low priority" };
   }
   return { priority: "low", reason: "No urgency signals" };
-}
-
-// ─── Helpers ───
-
-function daysBetween(from: Date, to: Date): number {
-  const ms = to.getTime() - from.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
-}
-
-function truncate(text: string | null, maxLength: number): string | null {
-  if (!text) return null;
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + "...";
-}
-
-// ─── Core Queries ───
-
-/**
- * Find emails where the user sent the last message but hasn't
- * heard back in `minDays` days.
- */
-export async function getStaleOutbound(
-  userId: string,
-  options: ThreadQueryOptions = {},
-): Promise<readonly StaleOutbound[]> {
-  const {
-    limit = DEFAULT_LIMIT,
-    offset = 0,
-    minDays = DEFAULT_STALE_DAYS,
-  } = options;
-
-  const cutoffDate = new Date(
-    Date.now() - minDays * 24 * 60 * 60 * 1000,
-  );
-
-  const latestPerContact = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      contactId: string;
-      contactName: string;
-      subject: string | null;
-      summary: string | null;
-      occurredAt: Date;
-      direction: string;
-    }>
-  >`
-    SELECT DISTINCT ON (i."contactId")
-      i."id",
-      i."contactId",
-      c."name" AS "contactName",
-      i."subject",
-      i."summary",
-      i."occurredAt",
-      i."direction"
-    FROM "Interaction" i
-    JOIN "Contact" c ON c."id" = i."contactId"
-    WHERE i."userId" = ${userId}
-      AND i."type" = 'EMAIL'
-    ORDER BY i."contactId", i."occurredAt" DESC
-  `;
-
-  if (latestPerContact.length === 0) {
-    return [];
-  }
-
-  const now = new Date();
-
-  return latestPerContact
-    .filter(
-      (r) =>
-        r.direction === "OUTBOUND" && r.occurredAt <= cutoffDate,
-    )
-    .map((row) => ({
-      interactionId: row.id,
-      contactId: row.contactId,
-      contactName: row.contactName,
-      subject: truncate(row.subject, 120),
-      preview: truncate(row.summary, 200),
-      daysSinceSent: daysBetween(row.occurredAt, now),
-      sentAt: row.occurredAt,
-    }))
-    .sort((a, b) => b.daysSinceSent - a.daysSinceSent)
-    .slice(offset, offset + limit);
 }
