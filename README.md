@@ -156,8 +156,9 @@ Minimum production env checklist:
 - `AUTH_SECRET` / `NEXTAUTH_SECRET` set to stable secrets.
 - `AUTH_ALLOWED_EMAILS` limited to the intended user(s).
 - `DATABASE_URL` set to the pooled Postgres connection for Vercel.
-- `WORKER_DATABASE_URL` set to the direct Postgres connection for the
-  worker host.
+- `WORKER_DATABASE_URL` set to the direct Postgres connection on both
+  the worker host and Vercel. The web app uses it only for low-volume
+  Graphile job enqueues from webhooks/actions.
 - `CAPACITOR_SERVER_URL` set to the same HTTPS app URL before building
   the iOS wrapper.
 - Google OAuth redirect URLs updated to the production domain.
