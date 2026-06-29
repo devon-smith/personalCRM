@@ -40,6 +40,7 @@ export function LogInteractionDialog({
   const [subject, setSubject] = useState("");
   const [summary, setSummary] = useState("");
   const [pasteText, setPasteText] = useState("");
+  const [lastParsedText, setLastParsedText] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const logInteraction = useLogInteraction();
 
@@ -65,13 +66,18 @@ export function LogInteractionDialog({
   }
 
   async function handleParse() {
-    if (!pasteText.trim()) return;
+    const text = pasteText.trim();
+    if (!text || parsing) return;
+    if (lastParsedText === text) {
+      toast.info("Already parsed. Review the fields below and save.");
+      return;
+    }
     setParsing(true);
     try {
       const res = await fetch("/api/ai/parse-interaction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: pasteText, contactId }),
+        body: JSON.stringify({ text, contactId }),
       });
       if (!res.ok) throw new Error("Failed to parse");
       const data = await res.json();
@@ -79,6 +85,7 @@ export function LogInteractionDialog({
       setDirection(data.direction);
       setSubject(data.subject);
       setSummary(data.summary);
+      setLastParsedText(text);
       toast.success("Parsed! Review the fields below and save.");
     } catch (err) {
       toast.error(
@@ -95,6 +102,7 @@ export function LogInteractionDialog({
     setSubject("");
     setSummary("");
     setPasteText("");
+    setLastParsedText(null);
     setParsing(false);
   }
 

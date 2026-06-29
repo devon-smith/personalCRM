@@ -44,22 +44,29 @@ export function SmartPasteDialog({
 }: SmartPasteDialogProps) {
   const [rawText, setRawText] = useState("");
   const [parsed, setParsed] = useState<ParsedFields | null>(null);
+  const [lastParsedText, setLastParsedText] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [step, setStep] = useState<"paste" | "review">("paste");
   const logInteraction = useLogInteraction();
 
   async function handleParse() {
-    if (!rawText.trim()) return;
+    const text = rawText.trim();
+    if (!text || parsing) return;
+    if (lastParsedText === text && parsed) {
+      setStep("review");
+      return;
+    }
     setParsing(true);
     try {
       const res = await fetch("/api/ai/parse-interaction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: rawText, contactId }),
+        body: JSON.stringify({ text, contactId }),
       });
       if (!res.ok) throw new Error("Failed to parse");
       const data = await res.json();
       setParsed(data);
+      setLastParsedText(text);
       setStep("review");
     } catch (err) {
       toast.error(
@@ -95,6 +102,7 @@ export function SmartPasteDialog({
   function handleClose() {
     setRawText("");
     setParsed(null);
+    setLastParsedText(null);
     setStep("paste");
     setParsing(false);
     onOpenChange(false);

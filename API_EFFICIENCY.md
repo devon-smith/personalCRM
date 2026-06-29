@@ -174,6 +174,7 @@
 - Draft workspace variant generation now guards against duplicate in-flight/already-visible requests and clears visible variants whenever the draft changes. Accidental double taps or stale variant panels no longer spend an extra Sonnet call for the same draft state.
 - Quick draft composer actions now guard at the handler boundary too: duplicate generate clicks are ignored while a draft is already generating, and "Save to Gmail" no-ops once a Gmail deep link exists. This prevents repeated provider/Google calls during rapid taps before button disabled state settles.
 - Quick draft composer preset-contact lookups are now disabled while the modal is closed, and relationship-type overrides reset on every open. Hidden composer state no longer keeps focused contact-summary reads alive or leaks a prior override into the next generation request.
+- AI interaction parsing now guards duplicate calls in both manual Log Interaction and Smart Log dialogs. Rapid Parse taps return while parsing is in-flight, and unchanged pasted text reuses the already-parsed fields instead of spending another parse model call.
 
 ## Next Highest-Impact Efficiency Work
 
