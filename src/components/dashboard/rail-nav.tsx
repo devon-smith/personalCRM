@@ -65,7 +65,7 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
-    refetchInterval: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
   });
   const settingsHasIssue = googleStatus?.needsReconnect ?? false;
