@@ -1,4 +1,4 @@
-import { getAllGoogleAccessTokens } from "./client";
+import { getAllGoogleAccessTokens, googleFetchWithToken } from "./client";
 import { cleanContactName } from "@/lib/contacts/clean-name";
 import { prisma } from "@/lib/prisma";
 
@@ -102,7 +102,12 @@ async function fetchContactsForAccount(
 
   // First-ever sync, or no token saved: do a full sync that requests a token.
   if (!cursor?.nextSyncToken) {
-    const { contacts, nextSyncToken } = await runFullSync(token, maxContacts);
+    const { contacts, nextSyncToken } = await runFullSync(
+      userId,
+      accountId,
+      token,
+      maxContacts,
+    );
     await saveCursor(userId, accountId, nextSyncToken, { fullSync: true });
     return contacts;
   }
@@ -110,6 +115,8 @@ async function fetchContactsForAccount(
   // Incremental sync against the saved token.
   try {
     const { contacts, nextSyncToken } = await runIncrementalSync(
+      userId,
+      accountId,
       token,
       cursor.nextSyncToken,
       maxContacts,
@@ -119,7 +126,12 @@ async function fetchContactsForAccount(
   } catch (err) {
     // 410 Gone: token expired. Wipe cursor and fall back to full sync.
     if (err instanceof TokenExpiredError) {
-      const { contacts, nextSyncToken } = await runFullSync(token, maxContacts);
+      const { contacts, nextSyncToken } = await runFullSync(
+        userId,
+        accountId,
+        token,
+        maxContacts,
+      );
       await saveCursor(userId, accountId, nextSyncToken, { fullSync: true });
       return contacts;
     }
@@ -140,6 +152,8 @@ class TokenExpiredError extends Error {
 const MAX_SYNC_PAGES = 200;
 
 async function runFullSync(
+  userId: string,
+  accountId: string,
   token: string,
   maxContacts: number,
 ): Promise<{ contacts: GoogleContact[]; nextSyncToken: string | null }> {
@@ -152,7 +166,12 @@ async function runFullSync(
   // maxContacts afterward.
   for (let page = 0; page < MAX_SYNC_PAGES; page++) {
     const url = peopleEndpoint({ pageToken, requestSyncToken: true });
-    const data = await callPeopleApi(url, token);
+    const data = await callPeopleApi(url, token, {
+      userId,
+      accountId,
+      mode: "full",
+      page,
+    });
 
     for (const person of data.connections ?? []) {
       const parsed = parsePerson(person);
@@ -168,6 +187,8 @@ async function runFullSync(
 }
 
 async function runIncrementalSync(
+  userId: string,
+  accountId: string,
   token: string,
   syncToken: string,
   maxContacts: number,
@@ -180,7 +201,12 @@ async function runIncrementalSync(
   // signals the last page, then truncate output.
   for (let page = 0; page < MAX_SYNC_PAGES; page++) {
     const url = peopleEndpoint({ pageToken, syncToken });
-    const data = await callPeopleApi(url, token);
+    const data = await callPeopleApi(url, token, {
+      userId,
+      accountId,
+      mode: "incremental",
+      page,
+    });
 
     for (const person of data.connections ?? []) {
       const parsed = parsePerson(person);
@@ -212,9 +238,29 @@ function peopleEndpoint(opts: {
   return url;
 }
 
-async function callPeopleApi(url: URL, token: string): Promise<PeopleApiResponse> {
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
+async function callPeopleApi(
+  url: URL,
+  token: string,
+  telemetry: {
+    userId: string;
+    accountId: string;
+    mode: "full" | "incremental";
+    page: number;
+  },
+): Promise<PeopleApiResponse> {
+  const res = await googleFetchWithToken(token, url.toString(), undefined, {
+    userId: telemetry.userId,
+    service: "people",
+    operation: "people.connections.list",
+    feature: "google_contacts_import",
+    metadata: {
+      accountId: telemetry.accountId,
+      mode: telemetry.mode,
+      page: telemetry.page,
+      pageToken: Boolean(url.searchParams.get("pageToken")),
+      syncToken: Boolean(url.searchParams.get("syncToken")),
+      requestSyncToken: url.searchParams.get("requestSyncToken") === "true",
+    },
   });
 
   if (res.status === 410) {

@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getAllGoogleAccessTokens } from "@/lib/gmail/client";
-import { incrementProviderCall } from "@/lib/sync/provider-call-counter";
+import { getAllGoogleAccessTokens, googleFetchWithToken } from "@/lib/gmail/client";
 
 // ─── Types ───
 
@@ -135,7 +134,13 @@ async function fetchCalendarEvents(
   // Fetch from each account and merge
   for (const { token } of accountTokens) {
     try {
-      const events = await fetchCalendarEventsWithToken(token, timeMin, timeMax, maxResults);
+      const events = await fetchCalendarEventsWithToken(
+        userId,
+        token,
+        timeMin,
+        timeMax,
+        maxResults,
+      );
       anySucceeded = true;
       for (const event of events) {
         // Deduplicate — same event appears on multiple calendars if both accounts are invited
@@ -169,6 +174,7 @@ async function fetchCalendarEvents(
 }
 
 async function fetchCalendarEventsWithToken(
+  userId: string,
   token: string,
   timeMin: Date,
   timeMax: Date,
@@ -190,10 +196,23 @@ async function fetchCalendarEventsWithToken(
       url.searchParams.set("pageToken", pageToken);
     }
 
-    incrementProviderCall("google");
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await googleFetchWithToken(
+      token,
+      url.toString(),
+      undefined,
+      {
+        userId,
+        service: "calendar",
+        operation: "calendar.events.list",
+        feature: "calendar_events_fetch",
+        metadata: {
+          pageToken: Boolean(pageToken),
+          maxResults,
+          timeMin: timeMin.toISOString(),
+          timeMax: timeMax.toISOString(),
+        },
+      },
+    );
     if (!res.ok) {
       if (res.status === 403) {
         const body = await res.text();

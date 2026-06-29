@@ -9,7 +9,7 @@
  * https://developers.google.com/people/api/rest/v1/contactGroups
  */
 
-import { googleFetchWithToken } from "./client";
+import { googleFetchWithToken, type GoogleProviderCallTelemetry } from "./client";
 
 const BASE = "https://people.googleapis.com/v1";
 
@@ -35,11 +35,20 @@ interface ListResponse {
   nextPageToken?: string;
 }
 
+interface ContactGroupTelemetry {
+  userId?: string | null;
+  feature?: string;
+  metadata?: Record<string, unknown>;
+}
+
 /**
  * List all USER_CONTACT_GROUP entries (skipping system groups like
  * "My Contacts" / "Starred").
  */
-export async function listContactGroups(token: string): Promise<ContactGroup[]> {
+export async function listContactGroups(
+  token: string,
+  telemetry?: ContactGroupTelemetry,
+): Promise<ContactGroup[]> {
   const out: ContactGroup[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < 10; page++) {
@@ -47,7 +56,15 @@ export async function listContactGroups(token: string): Promise<ContactGroup[]> 
     url.searchParams.set("pageSize", "200");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-    const res = await googleFetchWithToken(token, url.toString());
+    const res = await googleFetchWithToken(
+      token,
+      url.toString(),
+      undefined,
+      peopleTelemetry("people.contactGroups.list", telemetry, {
+        page,
+        pageToken: Boolean(pageToken),
+      }),
+    );
     if (!res.ok) {
       throw new Error(`contactGroups.list ${res.status}`);
     }
@@ -72,12 +89,18 @@ export async function listContactGroups(token: string): Promise<ContactGroup[]> 
 export async function createContactGroup(
   token: string,
   name: string,
+  telemetry?: ContactGroupTelemetry,
 ): Promise<ContactGroup> {
-  const res = await googleFetchWithToken(token, `${BASE}/contactGroups`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contactGroup: { name } }),
-  });
+  const res = await googleFetchWithToken(
+    token,
+    `${BASE}/contactGroups`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactGroup: { name } }),
+    },
+    peopleTelemetry("people.contactGroups.create", telemetry),
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`contactGroups.create ${res.status}: ${body.slice(0, 200)}`);
@@ -96,6 +119,7 @@ export async function updateContactGroupName(
   token: string,
   resourceName: string,
   newName: string,
+  telemetry?: ContactGroupTelemetry,
 ): Promise<void> {
   const res = await googleFetchWithToken(
     token,
@@ -108,6 +132,9 @@ export async function updateContactGroupName(
         updateGroupFields: "name",
       }),
     },
+    peopleTelemetry("people.contactGroups.update", telemetry, {
+      resourceName,
+    }),
   );
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -126,6 +153,7 @@ export async function modifyContactGroupMembers(
   resourceName: string,
   add: string[],
   remove: string[],
+  telemetry?: ContactGroupTelemetry,
 ): Promise<void> {
   if (add.length === 0 && remove.length === 0) return;
 
@@ -140,6 +168,11 @@ export async function modifyContactGroupMembers(
         resourceNamesToRemove: remove,
       }),
     },
+    peopleTelemetry("people.contactGroups.members.modify", telemetry, {
+      resourceName,
+      added: add.length,
+      removed: remove.length,
+    }),
   );
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -153,11 +186,19 @@ export async function modifyContactGroupMembers(
 export async function getContactGroup(
   token: string,
   resourceName: string,
+  telemetry?: ContactGroupTelemetry,
 ): Promise<ContactGroup | null> {
   const url = new URL(`${BASE}/${resourceName}`);
   url.searchParams.set("maxMembers", "10000");
 
-  const res = await googleFetchWithToken(token, url.toString());
+  const res = await googleFetchWithToken(
+    token,
+    url.toString(),
+    undefined,
+    peopleTelemetry("people.contactGroups.get", telemetry, {
+      resourceName,
+    }),
+  );
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`contactGroups.get ${res.status}`);
@@ -169,5 +210,23 @@ export async function getContactGroup(
     groupType: g.groupType ?? "USER_CONTACT_GROUP",
     memberCount: g.memberCount ?? 0,
     memberResourceNames: g.memberResourceNames ?? [],
+  };
+}
+
+function peopleTelemetry(
+  operation: string,
+  telemetry?: ContactGroupTelemetry,
+  metadata?: Record<string, unknown>,
+): GoogleProviderCallTelemetry | undefined {
+  if (!telemetry) return undefined;
+  return {
+    userId: telemetry.userId,
+    service: "people",
+    operation,
+    feature: telemetry.feature ?? "google_contact_groups",
+    metadata: {
+      ...telemetry.metadata,
+      ...metadata,
+    },
   };
 }

@@ -5,6 +5,9 @@ import { fetchGoogleContacts } from "@/lib/gmail/contacts-import";
 
 vi.mock("@/lib/gmail/client", () => ({
   getAllGoogleAccessTokens: vi.fn(),
+  googleFetchWithToken: vi.fn(
+    (_token: string, url: string, init?: RequestInit) => fetch(url, init),
+  ),
 }));
 
 const { getAllGoogleAccessTokens } = await import("@/lib/gmail/client");

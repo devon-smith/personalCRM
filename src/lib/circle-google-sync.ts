@@ -18,7 +18,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { getGoogleAccessToken } from "@/lib/gmail/client";
+import { getGoogleAccessToken, googleFetchWithToken } from "@/lib/gmail/client";
 import {
   createContactGroup,
   getContactGroup,
@@ -105,7 +105,11 @@ export async function syncCircleToGoogle(
   let groupResourceName = circle.googleGroupResourceName;
   if (!groupResourceName) {
     try {
-      const created = await createContactGroup(token, circle.name);
+      const created = await createContactGroup(token, circle.name, {
+        userId,
+        feature: "circle_google_sync",
+        metadata: { circleId },
+      });
       groupResourceName = created.resourceName;
       await prisma.circle.update({
         where: { id: circleId },
@@ -122,12 +126,20 @@ export async function syncCircleToGoogle(
   // Read current Google membership.
   let currentMembers = new Set<string>();
   try {
-    const group = await getContactGroup(token, groupResourceName);
+    const group = await getContactGroup(token, groupResourceName, {
+      userId,
+      feature: "circle_google_sync",
+      metadata: { circleId },
+    });
     if (group) {
       currentMembers = new Set(group.memberResourceNames ?? []);
     } else {
       // The linked group was deleted in Google. Recreate.
-      const recreated = await createContactGroup(token, circle.name);
+      const recreated = await createContactGroup(token, circle.name, {
+        userId,
+        feature: "circle_google_sync",
+        metadata: { circleId, recreated: true },
+      });
       groupResourceName = recreated.resourceName;
       await prisma.circle.update({
         where: { id: circleId },
@@ -145,7 +157,9 @@ export async function syncCircleToGoogle(
 
   // Push the diff (chunked to respect the 1000-per-call cap).
   try {
-    await applyMembershipDiff(token, groupResourceName, toAdd, toRemove);
+    await applyMembershipDiff(userId, token, groupResourceName, toAdd, toRemove, {
+      circleId,
+    });
   } catch (err) {
     await markError(circleId, errMessage(err));
     throw err;
@@ -169,10 +183,12 @@ export async function syncCircleToGoogle(
 }
 
 async function applyMembershipDiff(
+  userId: string,
   token: string,
   groupResourceName: string,
   add: string[],
   remove: string[],
+  metadata: Record<string, unknown>,
 ): Promise<void> {
   // People API caps add/remove at 1000 each per call. Chunk by max
   // of the two so a single call never exceeds either limit.
@@ -180,7 +196,14 @@ async function applyMembershipDiff(
   for (let i = 0; i < total; i += MAX_MEMBERS_PER_REQUEST) {
     const addChunk = add.slice(i, i + MAX_MEMBERS_PER_REQUEST);
     const removeChunk = remove.slice(i, i + MAX_MEMBERS_PER_REQUEST);
-    await modifyContactGroupMembers(token, groupResourceName, addChunk, removeChunk);
+    await modifyContactGroupMembers(token, groupResourceName, addChunk, removeChunk, {
+      userId,
+      feature: "circle_google_sync",
+      metadata: {
+        ...metadata,
+        chunkStart: i,
+      },
+    });
   }
 }
 
@@ -197,7 +220,7 @@ async function resolveResourceNames(
   for (const c of contacts) {
     if (!c.email) continue;
     try {
-      const rn = await searchPeopleByEmail(token, c.email);
+      const rn = await searchPeopleByEmail(token, userId, c.email);
       if (rn) {
         await prisma.contact.update({
           where: { id: c.id },
@@ -213,20 +236,26 @@ async function resolveResourceNames(
       );
     }
   }
-  void userId;
 }
 
 /** Search People API for a contact by email. Returns resourceName or null. */
 async function searchPeopleByEmail(
   token: string,
+  userId: string,
   email: string,
 ): Promise<string | null> {
   const url = new URL("https://people.googleapis.com/v1/people:searchContacts");
   url.searchParams.set("query", email);
   url.searchParams.set("readMask", "emailAddresses");
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await googleFetchWithToken(token, url.toString(), undefined, {
+    userId,
+    service: "people",
+    operation: "people.searchContacts",
+    feature: "circle_google_sync",
+    metadata: {
+      lookup: "email",
+    },
   });
   if (!res.ok) return null;
   const data = (await res.json()) as {

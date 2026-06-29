@@ -55,7 +55,7 @@ export async function establishCalendarWatches(
       try {
         // Stop any existing channel for this (account, calendar) so we
         // don't pile up zombie watches when this runs multiple times.
-        await stopWatchIfExists(accessToken, accountId, calendarId);
+        await stopWatchIfExists(accessToken, userId, accountId, calendarId);
 
         const channelId = randomUUID();
         const res = await googleFetchWithToken(
@@ -70,6 +70,16 @@ export async function establishCalendarWatches(
               address: callbackUrl,
               token, // arrives as X-Goog-Channel-Token; we re-validate
             }),
+          },
+          {
+            userId,
+            service: "calendar",
+            operation: "calendar.events.watch",
+            feature: "calendar_watch_setup",
+            metadata: {
+              accountId,
+              calendarId,
+            },
           },
         );
 
@@ -125,6 +135,7 @@ export async function establishCalendarWatches(
 
 async function stopWatchIfExists(
   accessToken: string,
+  userId: string,
   accountId: string,
   calendarId: string,
 ): Promise<void> {
@@ -143,6 +154,16 @@ async function stopWatchIfExists(
         id: existing.channelId,
         resourceId: existing.resourceId,
       }),
+    },
+    {
+      userId,
+      service: "calendar",
+      operation: "calendar.channels.stop",
+      feature: "calendar_watch_setup",
+      metadata: {
+        accountId,
+        calendarId,
+      },
     },
   );
   // 200, 204, or 404 are all "channel is gone now" outcomes.

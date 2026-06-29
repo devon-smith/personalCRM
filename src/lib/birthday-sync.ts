@@ -151,7 +151,15 @@ async function fetchFromCalendar(
     }
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-    const res = await googleFetch(userId, url.toString());
+    const res = await googleFetch(userId, url.toString(), undefined, {
+      service: "calendar",
+      operation: "calendar.events.list",
+      feature: "birthday_calendar_sync",
+      metadata: {
+        calendarId,
+        pageToken: Boolean(pageToken),
+      },
+    });
     if (!res.ok) break;
 
     const data = (await res.json()) as CalendarListResponse;

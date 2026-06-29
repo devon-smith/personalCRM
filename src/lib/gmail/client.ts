@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { logProviderCall } from "@/lib/provider-call-log";
 import { incrementProviderCall } from "@/lib/sync/provider-call-counter";
 
 interface TokenResponse {
@@ -12,6 +13,14 @@ type RefreshResult =
   | { ok: true; data: TokenResponse }
   | { ok: false; kind: "terminal"; error: string; status?: number }
   | { ok: false; kind: "transient"; error: string; status?: number };
+
+export interface GoogleProviderCallTelemetry {
+  userId?: string | null;
+  service: "gmail" | "calendar" | "people" | "oauth";
+  operation: string;
+  feature: string;
+  metadata?: Record<string, unknown>;
+}
 
 const TRANSIENT_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const TERMINAL_OAUTH_ERRORS = new Set([
@@ -97,7 +106,7 @@ async function doRefresh(
   userId: string,
   refreshToken: string,
 ): Promise<string | null> {
-  const result = await refreshWithBackoff(refreshToken);
+  const result = await refreshWithBackoff(refreshToken, { userId, accountId });
 
   if (result.ok) {
     await prisma.account.update({
@@ -137,7 +146,10 @@ async function doRefresh(
   return null;
 }
 
-async function refreshWithBackoff(refreshToken: string): Promise<RefreshResult> {
+async function refreshWithBackoff(
+  refreshToken: string,
+  telemetry: { userId: string; accountId: string },
+): Promise<RefreshResult> {
   const delays = [0, 1000, 2000, 4000];
   let last: RefreshResult = { ok: false, kind: "transient", error: "no_attempt" };
 
@@ -145,7 +157,10 @@ async function refreshWithBackoff(refreshToken: string): Promise<RefreshResult> 
     if (delays[attempt] > 0) {
       await new Promise((r) => setTimeout(r, delays[attempt]));
     }
-    last = await refreshGoogleToken(refreshToken);
+    last = await refreshGoogleToken(refreshToken, {
+      ...telemetry,
+      attempt: attempt + 1,
+    });
     if (last.ok) return last;
     if (last.kind === "terminal") return last;
   }
@@ -181,8 +196,12 @@ export function classifyRefreshFailure(
   return { kind: "transient", error: errorCode, status };
 }
 
-async function refreshGoogleToken(refreshToken: string): Promise<RefreshResult> {
+async function refreshGoogleToken(
+  refreshToken: string,
+  telemetry: { userId: string; accountId: string; attempt: number },
+): Promise<RefreshResult> {
   let res: Response;
+  const startedAt = Date.now();
   try {
     incrementProviderCall("google");
     res = await fetch("https://oauth2.googleapis.com/token", {
@@ -196,6 +215,19 @@ async function refreshGoogleToken(refreshToken: string): Promise<RefreshResult> 
       }),
     });
   } catch (error) {
+    await logGoogleProviderCall({
+      userId: telemetry.userId,
+      service: "oauth",
+      operation: "oauth.token.refresh",
+      feature: "google_token_refresh",
+      startedAt,
+      ok: false,
+      error: error instanceof Error ? error.message : "network_error",
+      metadata: {
+        accountId: telemetry.accountId,
+        attempt: telemetry.attempt,
+      },
+    });
     return {
       ok: false,
       kind: "transient",
@@ -204,12 +236,40 @@ async function refreshGoogleToken(refreshToken: string): Promise<RefreshResult> 
   }
 
   if (res.ok) {
+    await logGoogleProviderCall({
+      userId: telemetry.userId,
+      service: "oauth",
+      operation: "oauth.token.refresh",
+      feature: "google_token_refresh",
+      startedAt,
+      ok: true,
+      metadata: {
+        accountId: telemetry.accountId,
+        attempt: telemetry.attempt,
+        httpStatus: res.status,
+      },
+    });
     const data = (await res.json()) as TokenResponse;
     return { ok: true, data };
   }
 
   const bodyText = await res.text();
   const classified = classifyRefreshFailure(res.status, bodyText);
+  await logGoogleProviderCall({
+    userId: telemetry.userId,
+    service: "oauth",
+    operation: "oauth.token.refresh",
+    feature: "google_token_refresh",
+    startedAt,
+    ok: false,
+    error: classified.error,
+    metadata: {
+      accountId: telemetry.accountId,
+      attempt: telemetry.attempt,
+      httpStatus: res.status,
+      failureKind: classified.kind,
+    },
+  });
   return { ok: false, ...classified };
 }
 
@@ -260,15 +320,10 @@ export function googleFetchWithToken(
   token: string,
   url: string,
   init?: RequestInit,
+  telemetry?: GoogleProviderCallTelemetry,
 ): Promise<Response> {
   incrementProviderCall("google");
-  return fetch(url, {
-    ...init,
-    headers: {
-      ...init?.headers,
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return fetchGoogleWithTelemetry(token, url, init, telemetry);
 }
 
 /**
@@ -279,11 +334,76 @@ export async function googleFetch(
   userId: string,
   url: string,
   init?: RequestInit,
+  telemetry?: Omit<GoogleProviderCallTelemetry, "userId">,
 ): Promise<Response> {
   const token = await getGoogleAccessToken(userId);
   if (!token) {
     throw new Error("No valid Google access token. User may need to reconnect.");
   }
 
-  return googleFetchWithToken(token, url, init);
+  return googleFetchWithToken(
+    token,
+    url,
+    init,
+    telemetry ? { ...telemetry, userId } : undefined,
+  );
+}
+
+async function fetchGoogleWithTelemetry(
+  token: string,
+  url: string,
+  init?: RequestInit,
+  telemetry?: GoogleProviderCallTelemetry,
+): Promise<Response> {
+  const startedAt = Date.now();
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        ...init?.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (telemetry) {
+      await logGoogleProviderCall({
+        ...telemetry,
+        startedAt,
+        ok: res.ok,
+        error: res.ok ? undefined : `http_${res.status}`,
+        metadata: {
+          ...telemetry.metadata,
+          httpStatus: res.status,
+        },
+      });
+    }
+    return res;
+  } catch (error) {
+    if (telemetry) {
+      await logGoogleProviderCall({
+        ...telemetry,
+        startedAt,
+        ok: false,
+        error: error instanceof Error ? error.message : "network_error",
+      });
+    }
+    throw error;
+  }
+}
+
+async function logGoogleProviderCall(input: GoogleProviderCallTelemetry & {
+  startedAt: number;
+  ok: boolean;
+  error?: string;
+}): Promise<void> {
+  await logProviderCall({
+    userId: input.userId,
+    provider: "google",
+    service: input.service,
+    operation: input.operation,
+    feature: input.feature,
+    status: input.ok ? "success" : "error",
+    latencyMs: Date.now() - input.startedAt,
+    error: input.error ?? null,
+    metadata: input.metadata ?? null,
+  });
 }

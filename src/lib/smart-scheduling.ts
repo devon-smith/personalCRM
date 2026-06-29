@@ -110,7 +110,16 @@ async function fetchEvents(
     url.searchParams.set("maxResults", "250");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-    const res = await googleFetch(userId, url.toString());
+    const res = await googleFetch(userId, url.toString(), undefined, {
+      service: "calendar",
+      operation: "calendar.events.list",
+      feature: "smart_scheduling_calendar_scan",
+      metadata: {
+        pageToken: Boolean(pageToken),
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+      },
+    });
     if (!res.ok) break;
 
     const data = await res.json();
