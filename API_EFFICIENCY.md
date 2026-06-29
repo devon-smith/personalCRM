@@ -99,6 +99,7 @@
 - Removed the final tracked `/feed` page stub so the retired Feed surface no longer appears in the production Next route graph.
 - Browser fallback Gmail sync is now explicit opt-in in every environment via `NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true`; local/dev tabs no longer start hidden sync timers by default, and runtime status/docs now report worker/manual sync as the default freshness path.
 - Dashboard inbox no longer exposes Dismiss or Snooze actions, including hidden swipe-left dismissal. The corresponding inbox-item API routes were removed; users now resolve with Mark replied or tune classification with Doesn't need a reply.
+- Removed the orphan inbox-item mute route and stopped checking `GmailSyncState.mutedThreads` during inbound item creation, eliminating a hidden suppression path and one DB read per inbound interaction.
 
 ## Next Highest-Impact Efficiency Work
 

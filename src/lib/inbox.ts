@@ -217,20 +217,6 @@ async function isMassSender(userId: string, fromEmail: string): Promise<boolean>
   return isMass;
 }
 
-// ─── Muted thread check ────────────────────────────────────
-
-async function isMutedThread(userId: string, threadKey: string): Promise<boolean> {
-  if (!threadKey || !threadKey.startsWith("gmail:")) return false;
-  const gmailThreadId = threadKey.slice(6);
-
-  const syncState = await prisma.gmailSyncState.findUnique({
-    where: { userId },
-    select: { mutedThreads: true },
-  });
-
-  return syncState?.mutedThreads?.includes(gmailThreadId) ?? false;
-}
-
 // ─── Called when an INBOUND interaction is created ───────────
 
 export async function onInboundInteraction(
@@ -274,9 +260,6 @@ export async function onInboundInteraction(
 
   // Don't create inbox items for mass senders
   if (channel === "email" && options?.fromEmail && await isMassSender(userId, options.fromEmail)) return;
-
-  // Don't create inbox items for muted threads
-  if (await isMutedThread(userId, threadKey)) return;
 
   // Check for existing OPEN item for this contact+channel+thread
   const existing = await prisma.inboxItem.findFirst({
