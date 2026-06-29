@@ -150,6 +150,7 @@
 - Voice reference deletes and instruction saves now update the cached Voice bootstrap payload locally. Uploads still refetch because parsed reference guidance is only available after server-side ingestion.
 - Dashboard Inbox resolve, bulk clear, and "doesn't need a reply" actions now keep local inbox counts/items coherent and only refresh dashboard aggregates. The inbox list no longer refetches immediately after already-applying the optimistic update.
 - Draft workspace saves and streamed refinements now patch the open workspace cache from the returned version payload instead of refetching `/api/drafts/:id/workspace`. Save-to-Gmail also patches Gmail draft metadata locally and opens the API's returned deep link field.
+- Manual interaction logging now patches the affected contact detail, contact summary, and visible contact-list caches from the created interaction. Logging a note/call/meeting no longer refetches all contact detail queries or an unused interactions query; dashboard aggregates still refresh.
 
 ## Next Highest-Impact Efficiency Work
 
