@@ -30,7 +30,9 @@ export function ContactFormDialog({
   editId,
 }: ContactFormDialogProps) {
   const isEditing = !!editId;
-  const { data: existing } = useContactSummary(editId ?? null);
+  const { data: existing } = useContactSummary(editId ?? null, {
+    enabled: open && isEditing,
+  });
   const createContact = useCreateContact();
   const updateContact = useUpdateContact();
 

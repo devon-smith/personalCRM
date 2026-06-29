@@ -332,6 +332,8 @@ export function ReplyQueueConsole() {
       if (!res.ok) return null;
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: draftAudit, isLoading: draftAuditLoading } = useQuery<DraftWorkspaceAudit | null>({

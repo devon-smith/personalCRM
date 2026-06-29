@@ -86,11 +86,14 @@ export function useContact(id: string | null) {
   });
 }
 
-export function useContactSummary(id: string | null) {
+export function useContactSummary(
+  id: string | null,
+  options: ContactQueryOptions = {},
+) {
   return useQuery<ContactWithCount>({
     queryKey: ["contact-summary", id],
     queryFn: () => fetchJson(`/api/contacts/${id}?scope=summary`),
-    enabled: !!id,
+    enabled: !!id && (options.enabled ?? true),
     staleTime: 5 * 60_000,
   });
 }
