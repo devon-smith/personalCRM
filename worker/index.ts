@@ -50,6 +50,7 @@ import inboxClassify from "./tasks/inbox-classify.js";
 import extractLifeEvents from "./tasks/extract-life-events.js";
 import feedAggregate from "./tasks/feed-aggregate.js";
 import syncRunRetention from "./tasks/sync-run-retention.js";
+import providerCallRetention from "./tasks/provider-call-retention.js";
 
 // ─── WORKER_DATABASE_URL — direct connection only ──────────────────────
 // graphile-worker uses named prepared statements internally. Postgres
@@ -94,6 +95,7 @@ const taskList = {
   "extract-life-events": extractLifeEvents,
   "feed-aggregate": feedAggregate,
   "sync-run-retention": syncRunRetention,
+  "provider-call-retention": providerCallRetention,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -166,6 +168,9 @@ const crontab = `
 # Daily at 01:45 UTC: retain recent SyncRun telemetry and mark
 # abandoned "running" rows from interrupted sync processes.
 45 1 * * * sync-run-retention
+# Daily at 01:55 UTC: retain recent ProviderCallLog rows after usage
+# windows have enough history for cost tuning and debugging.
+55 1 * * * provider-call-retention
 `.trim();
 
 async function main() {
