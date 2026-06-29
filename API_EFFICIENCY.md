@@ -17,6 +17,7 @@
 - Reply queue bootstrap now returns a tiny private cache window, absorbing immediate reloads/double mounts while keeping draft/send mutations effectively fresh.
 - Reply queue selected-contact context now uses `/api/contacts/:id?scope=reply-context`, keeping the facts/profile/memory needed for drafting while capping the right-rail interaction timeline at the 5 rows it renders instead of loading the full 50-row contact detail payload.
 - Ask history now loads saved-query summaries first and lazy-loads full answers/evidence only when a row is expanded, avoiding a 200-row answer/evidence payload on every history open.
+- Saved-query list/detail reads intentionally rely on React Query freshness instead of browser HTTP cache, so star/delete mutations can refetch authoritative rows immediately.
 - Meeting prep dossiers now return short private cache headers, so reloads/reopens reuse recent Calendar lookup and dossier assembly instead of rebuilding the same prep response immediately.
 - `/api/health` is DB-only by default. It no longer spends a Gmail profile API call on normal dashboard loads. Use `/api/health?live=1` only when debugging token reachability.
 - Gmail and Calendar webhook-triggered worker jobs now use stable per-user Graphile job keys, so rapid push-notification bursts collapse into one pending sync per source/user instead of stacking duplicate jobs.

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
-
-const READ_CACHE_HEADERS = privateCacheHeaders(60, 5 * 60);
 
 /**
  * GET /api/saved-queries/:id
@@ -67,10 +64,7 @@ export async function GET(
     },
   });
 
-  return NextResponse.json(
-    { savedQuery: row, followUps },
-    { headers: READ_CACHE_HEADERS },
-  );
+  return NextResponse.json({ savedQuery: row, followUps });
 }
 
 export async function DELETE(
