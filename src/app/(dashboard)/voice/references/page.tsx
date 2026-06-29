@@ -48,10 +48,13 @@ interface VoiceReferenceRow {
   addedAt: string;
 }
 
-interface VoiceProfileResponse {
-  learned: LearnedProfile;
-  indexedEmailCount: number;
-  lastIndexedAt: string | null;
+interface VoiceReferencesBootstrapResponse {
+  profile: {
+    learned: LearnedProfile;
+    indexedEmailCount: number;
+    lastIndexedAt: string | null;
+  };
+  references: VoiceReferenceRow[];
 }
 
 interface UploadOutcome {
@@ -118,20 +121,11 @@ export default function VoiceReferencesPage() {
   const [sourceType, setSourceType] = useState<string>("gpt_knowledge_base");
   const [lastOutcomes, setLastOutcomes] = useState<UploadOutcome[] | null>(null);
 
-  const { data, isLoading } = useQuery<{ references: VoiceReferenceRow[] }>({
-    queryKey: ["voice-references"],
+  const { data, isLoading } = useQuery<VoiceReferencesBootstrapResponse>({
+    queryKey: ["voice", "bootstrap"],
     queryFn: async () => {
-      const res = await fetch("/api/voice/references");
-      if (!res.ok) throw new Error("Failed to load references");
-      return res.json();
-    },
-  });
-
-  const { data: profile, isLoading: profileLoading } = useQuery<VoiceProfileResponse>({
-    queryKey: ["voice", "profile"],
-    queryFn: async () => {
-      const res = await fetch("/api/voice/profile");
-      if (!res.ok) throw new Error("Failed to load voice profile");
+      const res = await fetch("/api/voice/bootstrap");
+      if (!res.ok) throw new Error("Failed to load voice reference data");
       return res.json();
     },
   });
@@ -158,7 +152,7 @@ export default function VoiceReferencesPage() {
     },
     onSuccess: (result) => {
       setLastOutcomes(result.outcomes);
-      qc.invalidateQueries({ queryKey: ["voice-references"] });
+      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
       const { imported, duplicates, failed } = result.summary;
       const parts: string[] = [];
       if (imported > 0) parts.push(`${imported} imported`);
@@ -180,7 +174,7 @@ export default function VoiceReferencesPage() {
       if (!res.ok) throw new Error("Delete failed");
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["voice-references"] });
+      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
       toast.success("Removed");
     },
     onError: () => toast.error("Couldn't remove"),
@@ -204,6 +198,7 @@ export default function VoiceReferencesPage() {
   );
 
   const refs = data?.references ?? [];
+  const profile = data?.profile;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-6 sm:py-10 space-y-6">
@@ -235,7 +230,7 @@ export default function VoiceReferencesPage() {
 
       <RelationshipResponseTables
         learned={profile?.learned ?? null}
-        isLoading={profileLoading}
+        isLoading={isLoading}
         indexedEmailCount={profile?.indexedEmailCount ?? 0}
       />
 

@@ -54,6 +54,7 @@
 - Contact detail intelligence now loads profile, memory, and relationship graph neighbors through one DB-backed `/api/contacts/:id/intelligence` endpoint with a short private cache, replacing three parallel client requests and three separate auth/ownership checks on every contact story open.
 - Removed the now-unused individual contact intelligence routes (`/profile`, `/memory`, `/network`) so the consolidated endpoint is the only internal contact-intelligence API surface.
 - Voice settings now loads profile, corpus stats, and reference-material summaries through one DB-backed `/api/voice/bootstrap` request with a short private cache, replacing three page-load requests while leaving upload/delete/reindex mutations on their focused endpoints.
+- The Voice reference library now reuses `/api/voice/bootstrap` for learned response tables plus reference rows, replacing its separate profile and reference-list reads with one initial request.
 
 ## Next Highest-Impact Efficiency Work
 

@@ -124,7 +124,6 @@ export default function VoiceSettingsPage() {
     onSuccess: (result) => {
       setLastOutcomes(result.outcomes);
       qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
-      qc.invalidateQueries({ queryKey: ["voice-references"] });
       const { imported, duplicates, failed } = result.summary;
       const parts: string[] = [];
       if (imported > 0) parts.push(`${imported} imported`);
@@ -146,7 +145,6 @@ export default function VoiceSettingsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
-      qc.invalidateQueries({ queryKey: ["voice-references"] });
       toast.success("Reference removed");
     },
     onError: () => toast.error("Couldn't remove reference"),
@@ -165,7 +163,6 @@ export default function VoiceSettingsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
-      qc.invalidateQueries({ queryKey: ["voice", "profile"] });
       toast.success("Voice instructions saved — applied to every draft now");
     },
     onError: () => toast.error("Failed to save voice instructions"),
