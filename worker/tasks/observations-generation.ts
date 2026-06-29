@@ -17,8 +17,8 @@
  * fresh.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient, Prisma } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { Prisma, type PrismaClient } from "../../src/generated/prisma/client";
+import { createWorkerPrismaClient } from "../db.js";
 import {
   collectSignals,
   phraseSignal,
@@ -31,8 +31,7 @@ interface ObservationsPayload {
 
 const observationsGeneration: Task = async (rawPayload, helpers) => {
   const payload = (rawPayload ?? {}) as ObservationsPayload;
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const userIds = payload.userId

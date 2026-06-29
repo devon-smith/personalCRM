@@ -20,8 +20,7 @@
  *   longer fan out into a separate FeedItem aggregation path.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import {
   extractLifeEvent,
   LIFE_EVENT_MODEL,
@@ -43,10 +42,7 @@ const extractLifeEventsTask: Task = async (rawPayload, helpers) => {
   }
 
   const payload = (rawPayload ?? {}) as ExtractPayload;
-  const adapter = new PrismaPg({
-    connectionString: process.env.DATABASE_URL!,
-  });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const rows = payload.emailMessageId

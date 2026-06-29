@@ -6,19 +6,11 @@
  * from growing indefinitely after Google telemetry coverage expands.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import { cleanupProviderCallLogs } from "../../src/lib/provider-call-retention";
 
 const providerCallRetention: Task = async (_payload, helpers) => {
-  const connectionString =
-    process.env.WORKER_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("DATABASE_URL or WORKER_DATABASE_URL is required");
-  }
-
-  const adapter = new PrismaPg({ connectionString });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const summary = await cleanupProviderCallLogs(prisma);

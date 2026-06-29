@@ -8,8 +8,7 @@
  * useAutoSync off, the browser path can be retired.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import { runGmailSyncForUser } from "../../src/lib/sync/google-sync-runs";
 import { parseSyncTrigger } from "../../src/lib/sync/run-telemetry";
 
@@ -21,8 +20,7 @@ interface GmailSyncPayload {
 const gmailSync: Task = async (rawPayload, helpers) => {
   const payload = (rawPayload ?? {}) as GmailSyncPayload;
   const trigger = parseSyncTrigger(payload.triggeredBy);
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     // Single-user app for now; if multi-user is added later, walk all

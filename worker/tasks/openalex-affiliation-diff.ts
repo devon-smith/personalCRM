@@ -13,16 +13,14 @@
  * the run). Surfaces are logged via helpers.logger.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import { getAuthorWithRecentWorks } from "../../src/lib/research/openalex";
 import { classifyAffiliation } from "../../src/lib/research/affiliation-diff";
 
 const PER_RUN_CAP = 200;
 
 const openAlexAffiliationDiff: Task = async (_payload, helpers) => {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const contacts = await prisma.contact.findMany({

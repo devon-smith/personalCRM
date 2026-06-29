@@ -14,8 +14,7 @@
  * isn't configured.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import { establishGmailWatch } from "../../src/lib/gmail/watch";
 import { establishCalendarWatches } from "../../src/lib/calendar-watch";
 
@@ -23,8 +22,7 @@ const GMAIL_RENEWAL_GRACE_MS = 24 * 60 * 60 * 1000;        // renew if expires <
 const CALENDAR_RENEWAL_GRACE_MS = 48 * 60 * 60 * 1000;     // renew if expires <48h
 
 const watchRenew: Task = async (_payload, helpers) => {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const gmailEnabled = !!process.env.GMAIL_PUBSUB_TOPIC;

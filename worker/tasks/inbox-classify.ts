@@ -21,8 +21,7 @@
  *   under $0.0005/item. 500 daily inbound items still well under $1/day.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import {
   classifyResponse,
   CLASSIFIER_MODEL,
@@ -46,10 +45,7 @@ const inboxClassify: Task = async (rawPayload, helpers) => {
     return;
   }
 
-  const adapter = new PrismaPg({
-    connectionString: process.env.DATABASE_URL!,
-  });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const item = await prisma.inboxItem.findUnique({

@@ -10,8 +10,8 @@
  * fresh, the task no-ops in <100ms.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient, Prisma } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { Prisma, type PrismaClient } from "../../src/generated/prisma/client";
+import { createWorkerPrismaClient } from "../db.js";
 import { extractAttributes } from "../../src/lib/intelligence/extract-attributes";
 
 const CONTACTS_PER_RUN = 50;
@@ -33,8 +33,7 @@ const contactAttributeExtraction: Task = async (rawPayload, helpers) => {
   }
 
   const payload = (rawPayload ?? {}) as ExtractPayload;
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const userIds = payload.userId

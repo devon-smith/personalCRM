@@ -18,8 +18,8 @@
  * weekly cron via worker/index.ts.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import type { PrismaClient } from "../../src/generated/prisma/client";
+import { createWorkerPrismaClient } from "../db.js";
 import { extractFeatures } from "../../src/lib/voice/feature-extraction";
 import { detectSignatureLines } from "../../src/lib/voice/signature-detector";
 import {
@@ -46,8 +46,7 @@ interface VoiceCorpusPayload {
 
 const voiceCorpusIndex: Task = async (rawPayload, helpers) => {
   const payload = (rawPayload ?? {}) as VoiceCorpusPayload;
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const userIds = payload.userId

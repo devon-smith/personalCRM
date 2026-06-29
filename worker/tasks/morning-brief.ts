@@ -15,8 +15,7 @@
  * Cron: weekdays 13:30 UTC (~6:30 Pacific). Configured in worker/index.ts.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import {
   gatherMorningBrief,
   renderBriefHtml,
@@ -37,8 +36,7 @@ const morningBrief: Task = async (rawPayload, helpers) => {
   const appBaseUrl =
     process.env.WEBHOOK_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3003";
 
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const users = payload.userId

@@ -5,13 +5,11 @@
  * without letting high-frequency Gmail sync telemetry grow forever.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import { cleanupSyncRuns } from "../../src/lib/sync/run-retention";
 
 const syncRunRetention: Task = async (_payload, helpers) => {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const summary = await cleanupSyncRuns(prisma);

@@ -11,8 +11,8 @@
  * so per-contact data is freshest before the graph is recomputed).
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient, Prisma } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { Prisma, type PrismaClient } from "../../src/generated/prisma/client";
+import { createWorkerPrismaClient } from "../db.js";
 import {
   detectMutualThreadEdges,
   detectSameOrgEdges,
@@ -27,8 +27,7 @@ interface ExtractPayload {
 
 const graphEdgeExtraction: Task = async (rawPayload, helpers) => {
   const payload = (rawPayload ?? {}) as ExtractPayload;
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     helpers.logger.info("graph-edge-extraction: task start, resolving users");

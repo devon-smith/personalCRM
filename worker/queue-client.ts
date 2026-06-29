@@ -16,18 +16,14 @@
 import { Pool } from "pg";
 import { makeWorkerUtils } from "graphile-worker";
 import type { WorkerUtils } from "graphile-worker";
+import { getWorkerDatabaseUrl } from "./db.js";
 
 let cachedUtils: WorkerUtils | null = null;
 
 async function getUtils(): Promise<WorkerUtils> {
   if (cachedUtils) return cachedUtils;
-  const connectionString = process.env.WORKER_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("WORKER_DATABASE_URL or DATABASE_URL is required to enqueue worker jobs");
-  }
-
   const pool = new Pool({
-    connectionString,
+    connectionString: getWorkerDatabaseUrl(),
     max: 1,
     idleTimeoutMillis: 10_000,
   });

@@ -16,8 +16,7 @@
  * minute-to-minute and the dashboard surfaces are persistent.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import {
   searchRecentMentions,
   type BraveSearchHit,
@@ -32,8 +31,7 @@ const signalDetection: Task = async (_payload, helpers) => {
     return;
   }
 
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const contacts = await prisma.contact.findMany({

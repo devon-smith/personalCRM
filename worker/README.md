@@ -26,8 +26,11 @@ npm run worker
 The worker connects via `WORKER_DATABASE_URL` when set, otherwise
 `DATABASE_URL`. In production use the direct Postgres connection for
 `WORKER_DATABASE_URL`; graphile-worker uses named prepared statements
-that do not work reliably through transaction pooling. Concurrency is
-4, polls every 2s, and handles SIGINT/SIGTERM cleanly.
+that do not work reliably through transaction pooling. The Graphile
+runner, web-side enqueue utility, and task-local Prisma clients all use
+the same worker DB helper so scheduled jobs do not accidentally fall
+back to the pooled app URL. Concurrency is 4, polls every 2s, and
+handles SIGINT/SIGTERM cleanly.
 
 ## Where to run it
 

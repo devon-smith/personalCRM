@@ -50,6 +50,7 @@ import inboxClassify from "./tasks/inbox-classify.js";
 import extractLifeEvents from "./tasks/extract-life-events.js";
 import syncRunRetention from "./tasks/sync-run-retention.js";
 import providerCallRetention from "./tasks/provider-call-retention.js";
+import { getWorkerDatabaseUrl } from "./db.js";
 
 // ─── WORKER_DATABASE_URL — direct connection only ──────────────────────
 // graphile-worker uses named prepared statements internally. Postgres
@@ -62,10 +63,11 @@ import providerCallRetention from "./tasks/provider-call-retention.js";
 // the Next.js side keeps using DATABASE_URL on the transaction-pool
 // connection (6543) because Prisma's PrismaPg adapter handles the
 // session loss correctly.
-const connectionString =
-  process.env.WORKER_DATABASE_URL ?? process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("[worker] DATABASE_URL (or WORKER_DATABASE_URL) is required");
+let connectionString: string;
+try {
+  connectionString = getWorkerDatabaseUrl();
+} catch (err) {
+  console.error("[worker] Fatal:", err instanceof Error ? err.message : err);
   process.exit(1);
 }
 

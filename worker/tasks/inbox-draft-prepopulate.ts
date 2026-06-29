@@ -23,8 +23,8 @@
  *     not to reply via this surface).
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import type { PrismaClient } from "../../src/generated/prisma/client";
+import { createWorkerPrismaClient } from "../db.js";
 import { generateDraft } from "../../src/lib/draft-generator";
 import {
   buildDraftInputFromInboxItem,
@@ -55,8 +55,7 @@ const inboxDraftPrepopulate: Task = async (rawPayload, helpers) => {
   }
 
   const payload = (rawPayload ?? {}) as PrepopulatePayload;
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
   const limit = payload.limit ?? ITEMS_PER_RUN;
 
   try {

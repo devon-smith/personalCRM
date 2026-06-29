@@ -5,13 +5,11 @@
  * so one bad circle doesn't block the rest.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import { syncCircleToGoogle } from "../../src/lib/circle-google-sync";
 
 const circleGoogleSync: Task = async (_payload, helpers) => {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const circles = await prisma.circle.findMany({

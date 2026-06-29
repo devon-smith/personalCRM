@@ -4,8 +4,7 @@
  * events change far less often than email arrives.
  */
 import type { Task } from "graphile-worker";
-import { PrismaClient } from "../../src/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { createWorkerPrismaClient } from "../db.js";
 import { runCalendarSyncForUser } from "../../src/lib/sync/google-sync-runs";
 import { parseSyncTrigger } from "../../src/lib/sync/run-telemetry";
 
@@ -17,8 +16,7 @@ interface CalendarSyncPayload {
 const calendarSync: Task = async (rawPayload, helpers) => {
   const payload = (rawPayload ?? {}) as CalendarSyncPayload;
   const trigger = parseSyncTrigger(payload.triggeredBy);
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createWorkerPrismaClient();
 
   try {
     const users = await prisma.user.findMany({
