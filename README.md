@@ -159,8 +159,12 @@ Recommended one-user production shape:
    initialize the `graphile_worker` schema.
 4. Deploy the Next.js app to Vercel with `npm run build`.
 5. Deploy one long-running worker service with `npm run worker`.
-6. Confirm Sources shows recent worker-run Gmail and Calendar syncs.
-7. Keep `NEXT_PUBLIC_ENABLE_BROWSER_SYNC` unset unless the worker is
+6. Run `npm run deploy:audit -- --strict` against the deployed env.
+7. Run `npm run data:smoke:google`, then `npm run data:audit:jennifer -- --strict`
+   against the production database to verify real Gmail/Calendar sync and
+   no retired/dev test residue.
+8. Confirm Sources shows recent worker-run Gmail and Calendar syncs.
+9. Keep `NEXT_PUBLIC_ENABLE_BROWSER_SYNC` unset unless the worker is
    temporarily offline and you intentionally want an open browser tab to
    act as a fallback sync trigger.
 
@@ -176,6 +180,9 @@ Minimum production env checklist:
 - `CAPACITOR_SERVER_URL` set to the same HTTPS app URL before building
   the iOS wrapper.
 - Google OAuth redirect URLs updated to the production domain.
+- Google Pub/Sub and webhook env vars configured before relying on
+  near-real-time push sync. Manual sync and worker cron still work
+  without Pub/Sub.
 
 Do not add Vercel Cron for Gmail or Calendar unless the worker is
 intentionally removed. The worker already owns Gmail every 3 minutes,

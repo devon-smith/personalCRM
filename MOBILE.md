@@ -77,11 +77,21 @@ Use this for a downloadable app that works away from the Mac.
    CAPACITOR_SERVER_URL=https://crm.your-domain.com npm run mobile:sync:ios
    ```
 
-5. In Xcode:
+5. Check the native project configuration:
+
+   ```bash
+   npm run mobile:doctor:ios
+   ```
+
+6. In Xcode:
    - Product > Archive
    - Distribute App > App Store Connect
    - Upload
    - Add Jennifer as an internal or external tester in TestFlight.
+
+After the TestFlight shell points at the HTTPS app URL, normal web changes ship
+through the deployed Next.js app. Jennifer only needs a new TestFlight install
+when native shell settings, plugins, signing, app icons, or capabilities change.
 
 ## Notes
 
