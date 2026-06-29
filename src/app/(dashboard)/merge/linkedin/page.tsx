@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
+import { removeLinkedInReviewItems } from "@/lib/linkedin-review-cache";
 import type {
   LinkedInReviewResponse,
   LinkedInReviewItem,
@@ -45,6 +46,8 @@ const tierLabels: Record<string, string> = {
   ACQUAINTANCE: "Acquaintance",
 };
 
+const LINKEDIN_REVIEW_STALE_MS = 2 * 60 * 1000;
+
 type FilterCategory = "all" | "job_change" | "name_match" | "partial_match";
 
 export default function LinkedInReviewPage() {
@@ -60,6 +63,8 @@ export default function LinkedInReviewPage() {
       if (!res.ok) throw new Error("Failed to fetch review queue");
       return res.json();
     },
+    staleTime: LINKEDIN_REVIEW_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 
   const resolveMutation = useMutation({
@@ -81,7 +86,13 @@ export default function LinkedInReviewPage() {
     },
     onSuccess: (_data, variables) => {
       setResolvedIds((prev) => new Set([...prev, variables.sightingId]));
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      queryClient.setQueryData<LinkedInReviewResponse>(
+        ["linkedin-review"],
+        (current) => removeLinkedInReviewItems(current, [variables.sightingId]),
+      );
+      if (variables.action !== "dismiss") {
+        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["duplicates"] });
 
       const actionLabels: Record<string, string> = {
@@ -114,14 +125,19 @@ export default function LinkedInReviewPage() {
       }
       return results;
     },
-    onSuccess: (resolvedItemIds) => {
+    onSuccess: (resolvedItemIds, variables) => {
       setResolvedIds((prev) => {
         const next = new Set(prev);
         resolvedItemIds.forEach((id) => next.add(id));
         return next;
       });
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["linkedin-review"] });
+      if (variables.action !== "dismiss") {
+        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      }
+      queryClient.setQueryData<LinkedInReviewResponse>(
+        ["linkedin-review"],
+        (current) => removeLinkedInReviewItems(current, resolvedItemIds),
+      );
       queryClient.invalidateQueries({ queryKey: ["duplicates"] });
       toast.success(`Resolved ${resolvedItemIds.length} items`);
     },

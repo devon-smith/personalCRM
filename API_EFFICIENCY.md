@@ -163,6 +163,7 @@
 - Sources data-health now uses a five-minute client stale window and no focus refetch, matching its short private response cache. Manual Gmail refreshes only invalidate contact caches when Gmail actually processed messages.
 - Voice reference uploads now return imported reference summaries and merge them into the cached Voice bootstrap payload. Successful imports no longer refetch `/api/voice/bootstrap`, and duplicate/failed-only uploads do not refetch unchanged reference data.
 - Voice settings and reference-material pages now keep `/api/voice/bootstrap` fresh for the same five-minute window as the server's private response cache, avoiding repeat DB bootstrap reads during normal navigation.
+- LinkedIn review queue reads now use a short private cache/client stale window, and resolve/bulk-resolve actions prune the cached review response locally with updated category counts instead of refetching the queue. Dismiss-only actions also skip contact-list invalidation because no contact row changes.
 
 ## Next Highest-Impact Efficiency Work
 

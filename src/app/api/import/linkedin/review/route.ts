@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(30, 120);
 
 export interface LinkedInReviewContact {
   id: string;
@@ -136,7 +139,10 @@ export async function GET() {
       partialMatches: items.filter((i) => i.category === "partial_match").length,
     };
 
-    return NextResponse.json({ items, totalPending, summary });
+    return NextResponse.json(
+      { items, totalPending, summary },
+      { headers: READ_CACHE_HEADERS },
+    );
   } catch (error) {
     console.error("[GET /api/import/linkedin/review]", error);
     return NextResponse.json(
