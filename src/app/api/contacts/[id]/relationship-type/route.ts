@@ -3,6 +3,17 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { classifyRecipient } from "@/lib/voice/relationship-classifier";
 
+function relationshipTypeResponse(relationshipType: string | null) {
+  return NextResponse.json(
+    { relationshipType },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
+      },
+    },
+  );
+}
+
 /**
  * GET /api/contacts/:id/relationship-type
  *
@@ -16,7 +27,7 @@ import { classifyRecipient } from "@/lib/voice/relationship-classifier";
  * Haiku fires, the in-process cache amortizes across draft sessions.
  */
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
@@ -36,7 +47,7 @@ export async function GET(
     // No email → no recipient lookup → no relationship classification.
     // Return null rather than 400; the draft modal handles this by
     // hiding the pill.
-    return NextResponse.json({ relationshipType: null });
+    return relationshipTypeResponse(null);
   }
 
   const relationshipType = await classifyRecipient({
@@ -45,5 +56,5 @@ export async function GET(
     recipientEmail: contact.email,
   });
 
-  return NextResponse.json({ relationshipType });
+  return relationshipTypeResponse(relationshipType);
 }

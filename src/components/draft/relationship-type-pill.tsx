@@ -55,6 +55,7 @@ export function RelationshipTypePill({
       if (!res.ok) throw new Error("Failed to load relationship type");
       return res.json();
     },
+    staleTime: 10 * 60 * 1000,
   });
 
   const inferred = data?.relationshipType ?? null;
