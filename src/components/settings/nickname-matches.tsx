@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Merge, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Merge, X } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 interface MatchContact {
@@ -158,6 +159,7 @@ function MatchRow({
 
 export function NicknameMatches() {
   const queryClient = useQueryClient();
+  const [isOpen, setIsOpen] = useState(false);
 
   const { data, isLoading } = useQuery<{ suggestions: NicknameMatch[] }>({
     queryKey: ["nickname-matches"],
@@ -166,6 +168,8 @@ export function NicknameMatches() {
       if (!res.ok) throw new Error("Failed to fetch nickname matches");
       return res.json();
     },
+    enabled: isOpen,
+    staleTime: 10 * 60 * 1000,
   });
 
   const mergeMutation = useMutation({
@@ -225,15 +229,42 @@ export function NicknameMatches() {
     onError: (err) => toast.error(err.message),
   });
 
-  if (isLoading) {
+  if (!isOpen) {
     return (
-      <section>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between rounded-[14px] border border-[#E8EAED] bg-white px-5 py-4 text-left transition-colors hover:bg-[#F8F9FA]"
+        onClick={() => setIsOpen(true)}
+      >
         <h2
           className="text-[18px] font-semibold text-[#1A1A1A]"
           style={{ letterSpacing: "-0.03em" }}
         >
           Possible duplicates
         </h2>
+        <ChevronDown className="h-4 w-4 shrink-0 text-[#B5BAC0]" />
+      </button>
+    );
+  }
+
+  const suggestions = data?.suggestions ?? [];
+
+  if (isLoading) {
+    return (
+      <section>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setIsOpen(false)}
+        >
+          <h2
+            className="text-[18px] font-semibold text-[#1A1A1A]"
+            style={{ letterSpacing: "-0.03em" }}
+          >
+            Possible duplicates
+          </h2>
+          <ChevronUp className="h-4 w-4 shrink-0 text-[#B5BAC0]" />
+        </button>
         <div className="mt-4 flex items-center gap-2 text-[13px] text-[#C1C5CA]">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Scanning...
@@ -242,60 +273,70 @@ export function NicknameMatches() {
     );
   }
 
-  const suggestions = data?.suggestions ?? [];
-
-  if (suggestions.length === 0) return null;
-
   return (
     <section>
-      <div className="flex items-center gap-2">
-        <h2
-          className="text-[18px] font-semibold text-[#1A1A1A]"
-          style={{ letterSpacing: "-0.03em" }}
-        >
-          Possible duplicates
-        </h2>
-        <span className="rounded-md bg-[#FBF5E8] px-1.5 py-0.5 text-[11px] font-medium text-[#C4962E]">
-          {suggestions.length}
-        </span>
-      </div>
-      <p className="mt-1 text-[13px] text-[#B5BAC0]">
-        Contacts that may be the same person under different names.
-      </p>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between text-left"
+        onClick={() => setIsOpen(false)}
+      >
+        <div className="flex items-center gap-2">
+          <h2
+            className="text-[18px] font-semibold text-[#1A1A1A]"
+            style={{ letterSpacing: "-0.03em" }}
+          >
+            Possible duplicates
+          </h2>
+          {suggestions.length > 0 && (
+            <span className="rounded-md bg-[#FBF5E8] px-1.5 py-0.5 text-[11px] font-medium text-[#C4962E]">
+              {suggestions.length}
+            </span>
+          )}
+        </div>
+        <ChevronUp className="h-4 w-4 shrink-0 text-[#B5BAC0]" />
+      </button>
 
-      <div className="mt-4 space-y-2.5">
-        {suggestions.map((match) => {
-          const key = `${match.contactA.id}:${match.contactB.id}`;
-          return (
-            <MatchRow
-              key={key}
-              match={match}
-              onMerge={() =>
-                mergeMutation.mutate({
-                  contactAId: match.contactA.id,
-                  contactBId: match.contactB.id,
-                })
-              }
-              onDismiss={() =>
-                dismissMutation.mutate({
-                  contactAId: match.contactA.id,
-                  contactBId: match.contactB.id,
-                })
-              }
-              isMerging={
-                mergeMutation.isPending &&
-                mergeMutation.variables?.contactAId === match.contactA.id &&
-                mergeMutation.variables?.contactBId === match.contactB.id
-              }
-              isDismissing={
-                dismissMutation.isPending &&
-                dismissMutation.variables?.contactAId === match.contactA.id &&
-                dismissMutation.variables?.contactBId === match.contactB.id
-              }
-            />
-          );
-        })}
-      </div>
+      {suggestions.length === 0 && (
+        <p className="mt-3 text-[13px] text-[#B5BAC0]">
+          No possible duplicates found.
+        </p>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="mt-4 space-y-2.5">
+          {suggestions.map((match) => {
+            const key = `${match.contactA.id}:${match.contactB.id}`;
+            return (
+              <MatchRow
+                key={key}
+                match={match}
+                onMerge={() =>
+                  mergeMutation.mutate({
+                    contactAId: match.contactA.id,
+                    contactBId: match.contactB.id,
+                  })
+                }
+                onDismiss={() =>
+                  dismissMutation.mutate({
+                    contactAId: match.contactA.id,
+                    contactBId: match.contactB.id,
+                  })
+                }
+                isMerging={
+                  mergeMutation.isPending &&
+                  mergeMutation.variables?.contactAId === match.contactA.id &&
+                  mergeMutation.variables?.contactBId === match.contactB.id
+                }
+                isDismissing={
+                  dismissMutation.isPending &&
+                  dismissMutation.variables?.contactAId === match.contactA.id &&
+                  dismissMutation.variables?.contactBId === match.contactB.id
+                }
+              />
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
