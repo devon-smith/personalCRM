@@ -20,6 +20,22 @@ import {
 } from "./research/openalex";
 import { searchContactWeb, type WebSearchResult } from "./research/web-search";
 
+const SCHOLARLY_RESEARCH_ATTENDEE_LIMIT = 8;
+const OPEN_WEB_RESEARCH_ATTENDEE_LIMIT = 4;
+
+type ContactTierName = "INNER_CIRCLE" | "PROFESSIONAL" | "ACQUAINTANCE";
+
+export interface MeetingPrepResearchCandidate {
+  id: string;
+  tier: ContactTierName;
+  email: string | null;
+  role: string | null;
+  company: string | null;
+  lastInteraction: Date | null;
+  openAlexAuthorId: string | null;
+  isNoise: boolean;
+}
+
 export interface AttendeePrep {
   contactId: string;
   contactName: string;
@@ -32,6 +48,10 @@ export interface AttendeePrep {
   scholarly: ScholarlySection | null;
   openWeb: WebSearchResult | null;
   lastMeetingDelta: LastMeetingDelta | null;
+  researchBudget: {
+    scholarly: "included" | "skipped_by_limit";
+    openWeb: "included" | "skipped_by_limit";
+  };
 }
 
 export interface HistorySection {
@@ -84,6 +104,15 @@ export interface LastMeetingDelta {
 export interface MeetingPrepDossier {
   eventId: string;
   attendees: AttendeePrep[];
+  researchLimits: {
+    knownAttendees: number;
+    scholarlyLimit: number;
+    openWebLimit: number;
+    scholarlyRequested: number;
+    openWebRequested: number;
+    scholarlySkipped: number;
+    openWebSkipped: number;
+  };
 }
 
 /**
@@ -97,7 +126,7 @@ export async function buildMeetingPrep(
 ): Promise<MeetingPrepDossier> {
   const lowercased = attendeeEmails.map((e) => e.toLowerCase()).filter(Boolean);
   if (lowercased.length === 0) {
-    return { eventId, attendees: [] };
+    return { eventId, attendees: [], researchLimits: emptyResearchLimits() };
   }
 
   // Resolve emails → contacts. Checks both primary and additional emails.
@@ -116,9 +145,16 @@ export async function buildMeetingPrep(
       role: true,
       company: true,
       avatarUrl: true,
+      tier: true,
+      lastInteraction: true,
       openAlexAuthorId: true,
+      isNoise: true,
     },
   });
+
+  const researchSelection = selectMeetingPrepResearchContactIds(contacts);
+  const scholarlyContactIds = new Set(researchSelection.scholarly);
+  const openWebContactIds = new Set(researchSelection.openWeb);
 
   // Wrap each section in a per-attendee catch so one section throwing
   // (Voyage outage, OpenAlex hiccup, Prisma weirdness) doesn't 500
@@ -126,6 +162,8 @@ export async function buildMeetingPrep(
   // the affected section showing an empty / null state.
   const attendees = await Promise.all(
     contacts.map(async (c) => {
+      const shouldLoadScholarly = scholarlyContactIds.has(c.id);
+      const shouldLoadOpenWeb = openWebContactIds.has(c.id);
       const [history, lastMeeting, scholarly, openWeb] = await Promise.all([
         loadHistory(userId, c.id).catch((err) => {
           console.error(`[meeting-prep] loadHistory failed for ${c.name}:`, err);
@@ -135,14 +173,18 @@ export async function buildMeetingPrep(
           console.error(`[meeting-prep] loadLastMeetingDelta failed for ${c.name}:`, err);
           return null;
         }),
-        loadScholarly(c.id, c.name, c.openAlexAuthorId).catch((err) => {
-          console.error(`[meeting-prep] loadScholarly failed for ${c.name}:`, err);
-          return null;
-        }),
-        loadOpenWeb(userId, c.id, c.name, c.company).catch((err) => {
-          console.error(`[meeting-prep] loadOpenWeb failed for ${c.name}:`, err);
-          return null;
-        }),
+        shouldLoadScholarly
+          ? loadScholarly(c.id, c.name, c.openAlexAuthorId).catch((err) => {
+              console.error(`[meeting-prep] loadScholarly failed for ${c.name}:`, err);
+              return null;
+            })
+          : Promise.resolve(null),
+        shouldLoadOpenWeb
+          ? loadOpenWeb(userId, c.id, c.name, c.company).catch((err) => {
+              console.error(`[meeting-prep] loadOpenWeb failed for ${c.name}:`, err);
+              return null;
+            })
+          : Promise.resolve(null),
       ]);
       return {
         contactId: c.id,
@@ -155,11 +197,82 @@ export async function buildMeetingPrep(
         scholarly,
         openWeb,
         lastMeetingDelta: lastMeeting,
+        researchBudget: {
+          scholarly: shouldLoadScholarly ? "included" : "skipped_by_limit",
+          openWeb: shouldLoadOpenWeb ? "included" : "skipped_by_limit",
+        },
       } as AttendeePrep;
     }),
   );
 
-  return { eventId, attendees };
+  return {
+    eventId,
+    attendees,
+    researchLimits: {
+      knownAttendees: contacts.length,
+      scholarlyLimit: SCHOLARLY_RESEARCH_ATTENDEE_LIMIT,
+      openWebLimit: OPEN_WEB_RESEARCH_ATTENDEE_LIMIT,
+      scholarlyRequested: researchSelection.scholarly.length,
+      openWebRequested: researchSelection.openWeb.length,
+      scholarlySkipped: Math.max(0, contacts.length - researchSelection.scholarly.length),
+      openWebSkipped: Math.max(0, contacts.length - researchSelection.openWeb.length),
+    },
+  };
+}
+
+function emptyResearchLimits(): MeetingPrepDossier["researchLimits"] {
+  return {
+    knownAttendees: 0,
+    scholarlyLimit: SCHOLARLY_RESEARCH_ATTENDEE_LIMIT,
+    openWebLimit: OPEN_WEB_RESEARCH_ATTENDEE_LIMIT,
+    scholarlyRequested: 0,
+    openWebRequested: 0,
+    scholarlySkipped: 0,
+    openWebSkipped: 0,
+  };
+}
+
+export function selectMeetingPrepResearchContactIds(
+  contacts: MeetingPrepResearchCandidate[],
+  limits = {
+    scholarly: SCHOLARLY_RESEARCH_ATTENDEE_LIMIT,
+    openWeb: OPEN_WEB_RESEARCH_ATTENDEE_LIMIT,
+  },
+): { scholarly: string[]; openWeb: string[] } {
+  const ranked = contacts
+    .filter((contact) => !contact.isNoise)
+    .toSorted((a, b) => {
+      const scoreDelta = scoreResearchCandidate(b) - scoreResearchCandidate(a);
+      if (scoreDelta !== 0) return scoreDelta;
+      return a.id.localeCompare(b.id);
+    });
+
+  return {
+    scholarly: ranked.slice(0, Math.max(0, limits.scholarly)).map((contact) => contact.id),
+    openWeb: ranked.slice(0, Math.max(0, limits.openWeb)).map((contact) => contact.id),
+  };
+}
+
+function scoreResearchCandidate(contact: MeetingPrepResearchCandidate): number {
+  let score = 0;
+
+  if (contact.tier === "INNER_CIRCLE") score += 300;
+  else if (contact.tier === "PROFESSIONAL") score += 200;
+  else score += 100;
+
+  if (contact.openAlexAuthorId) score += 90;
+  if (contact.lastInteraction) {
+    const ageDays = Math.max(
+      0,
+      Math.floor((Date.now() - contact.lastInteraction.getTime()) / 86_400_000),
+    );
+    score += Math.max(0, 90 - Math.min(ageDays, 90));
+  }
+  if (contact.role) score += 20;
+  if (contact.company) score += 20;
+  if (contact.email) score += 10;
+
+  return score;
 }
 
 function emptyHistory(): HistorySection {

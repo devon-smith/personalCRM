@@ -41,6 +41,15 @@ interface PrepResponse {
   };
   unknownAttendeeEmails: string[];
   attendees: AttendeePrep[];
+  researchLimits?: {
+    knownAttendees: number;
+    scholarlyLimit: number;
+    openWebLimit: number;
+    scholarlyRequested: number;
+    openWebRequested: number;
+    scholarlySkipped: number;
+    openWebSkipped: number;
+  };
   error?: string;
 }
 
@@ -252,6 +261,18 @@ export default function MeetingPrepPage({
         </div>
       )}
 
+      {data.researchLimits &&
+        (data.researchLimits.scholarlySkipped > 0 ||
+          data.researchLimits.openWebSkipped > 0) && (
+          <div className="mt-5 rounded-[18px] border border-[#E8DED0] bg-[#FBF8F2] px-4 py-3 text-[13px] leading-6 text-[#6A6258]">
+            <span className="font-semibold text-[#1F1D1A]">Public research focused:</span>{" "}
+            researched the top {data.researchLimits.openWebRequested} attendee
+            {data.researchLimits.openWebRequested === 1 ? "" : "s"} for open-web context
+            and the top {data.researchLimits.scholarlyRequested} for scholarly context to keep
+            large-meeting prep fast and API-efficient.
+          </div>
+        )}
+
       <section className="mt-9">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
@@ -368,7 +389,13 @@ function AttendeeCard({ attendee: a }: { attendee: AttendeePrep }) {
 
             <IntelPanel icon={GraduationCap} title="Research profile">
               {!a.scholarly ? (
-                <EmptyLine>No OpenAlex match yet.</EmptyLine>
+                a.researchBudget.scholarly === "skipped_by_limit" ? (
+                  <EmptyLine>
+                    Scholarly lookup was skipped to keep this large-meeting brief focused.
+                  </EmptyLine>
+                ) : (
+                  <EmptyLine>No OpenAlex match yet.</EmptyLine>
+                )
               ) : a.scholarly.candidatesFound > 1 && !a.scholarly.authorId ? (
                 <EmptyLine>
                   {a.scholarly.candidatesFound} OpenAlex candidates matched. Open the
@@ -411,7 +438,13 @@ function AttendeeCard({ attendee: a }: { attendee: AttendeePrep }) {
 
             <IntelPanel icon={Newspaper} title="Open web">
               {!a.openWeb ? (
-                <EmptyLine>Web search is not available for this attendee.</EmptyLine>
+                a.researchBudget.openWeb === "skipped_by_limit" ? (
+                  <EmptyLine>
+                    Open-web lookup was skipped to keep this large-meeting brief focused.
+                  </EmptyLine>
+                ) : (
+                  <EmptyLine>Web search is not available for this attendee.</EmptyLine>
+                )
               ) : a.openWeb.emptyResult ? (
                 <EmptyLine>No recent public mentions found in the last 90 days.</EmptyLine>
               ) : (

@@ -8,12 +8,11 @@ This is the final punch list for calling the API-efficiency and polish pass done
 - Workspace draft creation: server-side in-flight dedupe is implemented per inbox item or draft fingerprint. Concurrent composer opens share one generation/write.
 - Draft refinement: concurrent refinements for the same draft are rejected before voice context retrieval or Sonnet streaming starts, preventing overlapping version writes and duplicate model calls.
 - Gmail action extraction: the public route requires changed thread refs from Gmail sync, dedupes/caps them at 50, and no longer permits direct broad recent-inbox scans. The maintenance backfill path remains library-only and caps AI classifications at 100.
-- Meeting prep: the route reuses the shared seven-day Calendar window before widening to 30 days, returns private cache headers, and relies on the external research cache for OpenAlex/Crossref/Brave/Anthropic misses.
+- Meeting prep: the route reuses the shared seven-day Calendar window before widening to 30 days, returns private cache headers, caps public research to the highest-signal attendees, and relies on the external research cache for OpenAlex/Crossref/Brave/Anthropic misses.
 - Worker AI tasks: scheduled tasks are batch-capped: inbox draft prepopulate 20, memory synthesis 30 contacts, contact profile extraction 50 contacts, mention extraction 50 emails, life-event extraction 25 emails, embedding refresh 100 contacts.
 
 ## Remaining API-Efficiency Checks
 
-- Meeting prep can still fan out public research for every known attendee in very large meetings. Add a research cap or priority ordering before production if Jennifer routinely has large attendee-list meetings.
 - Gmail action extraction still loads all contact emails for matching. Fine for one user now; revisit with indexed/cached email map if contacts grow into the tens of thousands.
 - Review production `ProviderCallLog`, `AIGenerationLog`, and `SyncRun` after the first real week and tune cron cadence or batch sizes from observed cost, not guesses.
 
