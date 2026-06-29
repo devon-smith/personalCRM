@@ -70,34 +70,3 @@ Return as JSON: { "casual": "...", "professional": "..." }`,
   }
   return { casual: text, professional: text };
 }
-
-export async function summarizeInteractions(
-  contactName: string,
-  interactions: InteractionContext[]
-): Promise<string> {
-  const interactionsSummary = interactions
-    .map(
-      (i) =>
-        `- ${new Date(i.occurredAt).toLocaleDateString()}: ${i.type} (${i.direction}) — ${i.subject ?? ""} ${i.summary ?? ""}`
-    )
-    .join("\n");
-
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 200,
-    messages: [
-      {
-        role: "user",
-        content: `Summarize the relationship with ${contactName} in 2-3 sentences based on these interactions:
-
-${interactionsSummary || "No interactions recorded."}
-
-Be concise and focus on the nature and quality of the relationship.`,
-      },
-    ],
-  });
-
-  return message.content[0].type === "text"
-    ? message.content[0].text
-    : "Unable to generate summary.";
-}

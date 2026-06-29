@@ -116,6 +116,7 @@
 - Ask/network-query now short-circuits rapid exact-match retries. If the same user asks the same question under the same parent within two minutes, the API returns the recent saved answer instead of launching another Claude/tool loop; later re-asks still run fresh.
 - Ask tool calls now clamp model-supplied `limit` values before hitting search, graph, interaction, and memory tools. Oversized or invalid limits fall back to bounded defaults, preventing accidental large DB reads and oversized tool-result prompts.
 - Ask memory lookup tools now expand `ContactMemory.openThreads` and `theyMentioned` in Postgres and return only unresolved/matching rows. They no longer load every memory JSON blob into the app process before filtering.
+- Contact "Prep" summaries are now local DB summaries built from selected profile, memory, and five recent interaction fields. The route no longer loads the full contact payload or spends a Sonnet call for a short inline relationship summary.
 
 ## Next Highest-Impact Efficiency Work
 
