@@ -140,6 +140,7 @@
 - Circle suggestion accept actions now remove the accepted suggestion from the open cache instead of invalidating and immediately rescanning `/api/circles/suggestions`.
 - Contact updates now merge the PATCH response into the open contact detail and summary caches instead of refetching those focused reads immediately; the broader contact-list invalidation remains for filtered People views.
 - Contact detail, summary, and reply-context reads now return short private cache headers, absorbing immediate reopen/reload cases for the selected person without changing mutation behavior.
+- Contact alias/email/phone edits now merge the alias-route response into the open contact detail and summary caches, avoiding stale refetches against short-cached contact reads.
 
 ## Next Highest-Impact Efficiency Work
 

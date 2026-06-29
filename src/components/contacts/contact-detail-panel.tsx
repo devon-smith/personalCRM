@@ -10,7 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useContact, useDeleteContact, useUpdateContact } from "@/lib/hooks/use-contacts";
+import {
+  useContact,
+  useDeleteContact,
+  useUpdateContact,
+  type ContactWithCount,
+  type ContactWithDetails,
+} from "@/lib/hooks/use-contacts";
 import { useMomentum } from "@/lib/hooks/use-momentum";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import { Sparkline, SparklineBadge } from "@/components/ui/sparkline";
@@ -34,6 +40,13 @@ interface JournalEntry {
   content: string;
   mood: string;
   createdAt: string;
+}
+
+interface AliasUpdateResult {
+  id: string;
+  aliases: string[];
+  additionalEmails: string[];
+  additionalPhones: string[];
 }
 
 interface ContactDetailPanelProps {
@@ -194,11 +207,17 @@ export function ContactDetailPanel({
         const err = await res.json();
         throw new Error(err.error ?? "Failed to update");
       }
-      return res.json();
+      return res.json() as Promise<AliasUpdateResult>;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
-      queryClient.invalidateQueries({ queryKey: ["contact-summary", contactId] });
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ContactWithDetails>(
+        ["contact", contactId],
+        (current) => current ? { ...current, ...updated } : current,
+      );
+      queryClient.setQueryData<ContactWithCount>(
+        ["contact-summary", contactId],
+        (current) => current ? { ...current, ...updated } : current,
+      );
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
     },
     onError: (err) => toast.error(err.message),
