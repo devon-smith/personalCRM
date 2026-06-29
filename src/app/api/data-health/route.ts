@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { privateCacheHeaders } from "@/lib/http/cache";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 import {
   getSyncRuntimeStatus,
@@ -65,6 +66,8 @@ export async function GET() {
 
   const userId = session.user.id;
   const profile = getUserProfile();
+  const imessageVisible = deploymentFeatures.imessage;
+  const imessageAvailable = imessageVisible && profile.imessageAvailable;
 
   // Check ALL linked Google accounts for tokens and scopes
   const googleAccounts = await prisma.account.findMany({
@@ -202,15 +205,19 @@ export async function GET() {
       select: { createdAt: true },
     }),
 
-    prisma.interaction.count({
-      where: { userId, type: "MESSAGE", sourceId: { startsWith: "imsg:" } },
-    }),
+    imessageVisible
+      ? prisma.interaction.count({
+          where: { userId, type: "MESSAGE", sourceId: { startsWith: "imsg:" } },
+        })
+      : Promise.resolve(0),
 
-    prisma.interaction.findFirst({
-      where: { userId, type: "MESSAGE", sourceId: { startsWith: "imsg:" } },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
-    }),
+    imessageVisible
+      ? prisma.interaction.findFirst({
+          where: { userId, type: "MESSAGE", sourceId: { startsWith: "imsg:" } },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        })
+      : Promise.resolve(null),
 
     prisma.contact.count({
       where: { userId, source: "APPLE_CONTACTS" },
@@ -284,20 +291,22 @@ export async function GET() {
         : "Not imported yet",
       canSync: true,
     },
-    {
-      name: "iMessage",
-      key: "imessage",
-      status: profile.imessageAvailable
-        ? imessageInteractionCount > 0 ? "connected" : "available"
-        : "coming_soon",
-      lastSync: lastImessageSync?.createdAt?.toISOString() ?? null,
-      captured: profile.imessageAvailable
-        ? imessageInteractionCount > 0
-          ? `${imessageInteractionCount} conversations synced`
-          : "Not synced yet"
-        : "Disabled for this profile",
-      canSync: profile.imessageAvailable,
-    },
+    ...(imessageVisible
+      ? [{
+          name: "iMessage",
+          key: "imessage",
+          status: imessageAvailable
+            ? imessageInteractionCount > 0 ? "connected" : "available"
+            : "coming_soon",
+          lastSync: lastImessageSync?.createdAt?.toISOString() ?? null,
+          captured: imessageAvailable
+            ? imessageInteractionCount > 0
+              ? `${imessageInteractionCount} conversations synced`
+              : "Not synced yet"
+            : "Disabled for this profile",
+          canSync: imessageAvailable,
+        } satisfies DataSource]
+      : []),
     {
       name: "LinkedIn",
       key: "linkedin",

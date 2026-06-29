@@ -11,6 +11,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { deploymentFeatures } from "@/lib/deployment-features";
 
 interface HealthData {
   gmail: {
@@ -134,11 +135,15 @@ export function SyncAlerts() {
   // eslint-disable-next-line react-hooks/purity -- stale heartbeat depends on current time
   const nowMs = Date.now();
   const whatsappStale =
+    deploymentFeatures.whatsapp &&
     health.whatsapp?.status === "connected" &&
     health.whatsapp.lastSyncAt &&
     nowMs - new Date(health.whatsapp.lastSyncAt).getTime() > 3 * 60 * 1000;
 
-  if (health.whatsapp?.status === "disconnected" || whatsappStale) {
+  if (
+    deploymentFeatures.whatsapp &&
+    (health.whatsapp?.status === "disconnected" || whatsappStale)
+  ) {
     alerts.push({
       key: "whatsapp-disconnected",
       type: "warning",
@@ -150,7 +155,11 @@ export function SyncAlerts() {
   }
 
   // WhatsApp unmatched contacts
-  if (health.whatsapp?.status === "connected" && health.whatsapp.unmatchedCount > 0) {
+  if (
+    deploymentFeatures.whatsapp &&
+    health.whatsapp?.status === "connected" &&
+    health.whatsapp.unmatchedCount > 0
+  ) {
     alerts.push({
       key: "whatsapp-unmatched",
       type: "info",

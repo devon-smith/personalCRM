@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { getAllGoogleAccessTokens } from "@/lib/gmail/client";
 import { noStoreHeaders, privateCacheHeaders } from "@/lib/http/cache";
 import { checkIMessageAccess } from "@/lib/imessage";
@@ -96,8 +97,10 @@ export async function GET(request: Request) {
 
   // Check iMessage access (only if enabled in user profile)
   const profile = getUserProfile();
-  const imessageError = profile.imessageAvailable ? checkIMessageAccess() : "Disabled in user profile";
-  const imessageStatus = profile.imessageAvailable
+  const imessageAvailable =
+    deploymentFeatures.imessage && profile.imessageAvailable;
+  const imessageError = imessageAvailable ? checkIMessageAccess() : "Disabled in user profile";
+  const imessageStatus = imessageAvailable
     ? (imessageError ? "unavailable" : "connected")
     : "disabled";
 
@@ -107,11 +110,15 @@ export async function GET(request: Request) {
       where: { userId },
       select: { lastSyncAt: true, syncEnabled: true },
     }),
-    prisma.iMessageSyncState.count({ where: { userId } }),
-    prisma.whatsAppSyncState.findUnique({
-      where: { userId },
-      select: { connected: true, updatedAt: true, messagesSynced: true, unmatchedChats: true },
-    }),
+    deploymentFeatures.imessage
+      ? prisma.iMessageSyncState.count({ where: { userId } })
+      : Promise.resolve(0),
+    deploymentFeatures.whatsapp
+      ? prisma.whatsAppSyncState.findUnique({
+          where: { userId },
+          select: { connected: true, updatedAt: true, messagesSynced: true, unmatchedChats: true },
+        })
+      : Promise.resolve(null),
   ]);
 
   // Count interactions by source prefix
@@ -169,18 +176,20 @@ export async function GET(request: Request) {
         error: imessageError,
         handlesTracked: imessageSyncCount,
       },
-      whatsapp: {
-        status: whatsappSync
-          ? whatsappSync.connected
-            ? "connected"
-            : "disconnected"
-          : "not_configured",
-        lastSyncAt: whatsappSync?.updatedAt ?? null,
-        messagesSynced: whatsappSync?.messagesSynced ?? 0,
-        unmatchedCount: Array.isArray(whatsappSync?.unmatchedChats)
-          ? (whatsappSync.unmatchedChats as unknown[]).length
-          : 0,
-      },
+      whatsapp: deploymentFeatures.whatsapp
+        ? {
+            status: whatsappSync
+              ? whatsappSync.connected
+                ? "connected"
+                : "disconnected"
+              : "not_configured",
+            lastSyncAt: whatsappSync?.updatedAt ?? null,
+            messagesSynced: whatsappSync?.messagesSynced ?? 0,
+            unmatchedCount: Array.isArray(whatsappSync?.unmatchedChats)
+              ? (whatsappSync.unmatchedChats as unknown[]).length
+              : 0,
+          }
+        : undefined,
       interactions: {
         total: totalInteractions,
         imessage: imsgCount,

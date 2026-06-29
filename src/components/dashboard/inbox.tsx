@@ -26,6 +26,7 @@ import { EvidenceChevron } from "@/components/shared/evidence-chevron";
 import { useSessionExpanded } from "@/components/ds";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import { trimToShortPhrase } from "@/lib/inbox/response-classifier";
+import { deploymentFeatures } from "@/lib/deployment-features";
 
 // ─── Swipe gesture hook ─────────────────────────────────────
 
@@ -282,6 +283,7 @@ const urgencyColors: Record<string, { bg: string; text: string }> = {
 
 export function Inbox() {
   const queryClient = useQueryClient();
+  const showActivity = deploymentFeatures.activity;
   const [activeTab, setActiveTab] = useState<"inbox" | "groups" | "activity">("inbox");
   // M0.x.2 — "Needs reply" (default) vs "All inbound". Local state
   // is fine; the server query keys off this and React Query caches
@@ -320,7 +322,7 @@ export function Inbox() {
       if (!res.ok) return { items: [] };
       return res.json();
     },
-    enabled: activeTab === "activity",
+    enabled: showActivity && activeTab === "activity",
   });
 
   // ─── Mutations ──────────────────────────────────────────────
@@ -638,28 +640,30 @@ export function Inbox() {
               </span>
             )}
           </button>
-          <button
-            onClick={() => setActiveTab("activity")}
-            className="rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
-            style={{
-              backgroundColor:
-                activeTab === "activity"
-                  ? "#FFFFFF"
-                  : "transparent",
-              color:
-                activeTab === "activity"
-                  ? "var(--text-primary)"
-                  : "var(--text-tertiary)",
-              boxShadow:
-                activeTab === "activity"
-                  ? "0 1px 3px rgba(0,0,0,0.06)"
-                  : "none",
-              transitionDuration: "var(--duration-fast)",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            History
-          </button>
+          {showActivity && (
+            <button
+              onClick={() => setActiveTab("activity")}
+              className="rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
+              style={{
+                backgroundColor:
+                  activeTab === "activity"
+                    ? "#FFFFFF"
+                    : "transparent",
+                color:
+                  activeTab === "activity"
+                    ? "var(--text-primary)"
+                    : "var(--text-tertiary)",
+                boxShadow:
+                  activeTab === "activity"
+                    ? "0 1px 3px rgba(0,0,0,0.06)"
+                    : "none",
+                transitionDuration: "var(--duration-fast)",
+                letterSpacing: "-0.01em",
+              }}
+            >
+              History
+            </button>
+          )}
         </div>
 
         <button

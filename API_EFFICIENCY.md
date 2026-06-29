@@ -31,6 +31,7 @@
 - Non-generation provider calls now write to `ProviderCallLog`: Voyage embedding batches for search/draft voice retrieval/voice corpus/contact embedding refresh, plus Gmail draft list/save/send user actions. Settings usage aggregates those rows separately from LLM generations and sync runs.
 - Sync budget alert thresholds are now deployment-configurable through `SYNC_BUDGET_PROVIDER_CALLS_PER_DAY`, `SYNC_BUDGET_BROWSER_FALLBACK_CALLS_PER_DAY`, and `SYNC_BUDGET_ERROR_RATE_PERCENT`.
 - Calendar empty states now use DB-only sync status returned with `/api/calendar`, so the Calendar and home meeting surfaces distinguish disconnected/missing-scope, never-synced, failed-sync, and genuinely-empty states without extra Google calls.
+- Legacy/development surfaces are now hidden from the main UI unless enabled by public deployment flags: `NEXT_PUBLIC_ENABLE_IMESSAGE`, `NEXT_PUBLIC_ENABLE_WHATSAPP`, `NEXT_PUBLIC_ENABLE_ACTIVITY`, and `NEXT_PUBLIC_ENABLE_FEED`.
 
 ## Next Highest-Impact Efficiency Work
 
@@ -41,4 +42,4 @@
 
 - Add draft audit copy in the reply modal: exact inbound message used, thread messages loaded, voice references used, and known missing context.
 - Add a user-facing "Refresh now" control for Gmail/Calendar that explains it may take a moment, rather than relying on background polling.
-- Move legacy/development sources out of the main UI unless enabled by config: iMessage, WhatsApp, and feed/activity remnants.
+- Audit direct legacy routes before launch and decide whether to leave them available for admins or return a disabled state.

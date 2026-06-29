@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 import { LinkedInImport } from "@/components/settings/linkedin-import";
 import { WhatsAppSync } from "@/components/settings/whatsapp-sync";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import type { DataHealthResponse, GoogleAccountInfo } from "@/app/api/data-health/route";
 import type { CalendarSyncResult } from "@/app/api/calendar/route";
 import type { IMessageSyncResult } from "@/app/api/imessage/route";
@@ -38,6 +39,8 @@ function formatRelativeTime(iso: string): string {
 
 export default function SourcesPage() {
   const queryClient = useQueryClient();
+  const showIMessage = deploymentFeatures.imessage;
+  const showWhatsApp = deploymentFeatures.whatsapp;
 
   const { data, isLoading } = useQuery<DataHealthResponse>({
     queryKey: ["data-health"],
@@ -131,7 +134,12 @@ export default function SourcesPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const isSyncing = syncGmail.isPending || importContacts.isPending || syncCalendar.isPending || importApple.isPending || syncIMessage.isPending;
+  const isSyncing =
+    syncGmail.isPending ||
+    importContacts.isPending ||
+    syncCalendar.isPending ||
+    importApple.isPending ||
+    (showIMessage && syncIMessage.isPending);
 
   // Auto-sync after adding a new Google account
   const didAutoSync = useRef(false);
@@ -154,7 +162,7 @@ export default function SourcesPage() {
     importContacts.mutate();
     syncCalendar.mutate();
     importApple.mutate();
-    syncIMessage.mutate();
+    if (showIMessage) syncIMessage.mutate();
   }
 
   // Calculate data quality score
@@ -278,23 +286,26 @@ export default function SourcesPage() {
           actionLabel="Import"
         />
 
-        {/* iMessage */}
-        <SourceCard
-          icon={MessageCircle}
-          iconBg="var(--status-success-bg)"
-          iconColor="var(--status-success)"
-          name="iMessage"
-          source={sourceByKey("imessage")}
-          isSyncing={syncIMessage.isPending}
-          onSync={() => syncIMessage.mutate()}
-        />
+        {showIMessage && (
+          <SourceCard
+            icon={MessageCircle}
+            iconBg="var(--status-success-bg)"
+            iconColor="var(--status-success)"
+            name="iMessage"
+            source={sourceByKey("imessage")}
+            isSyncing={syncIMessage.isPending}
+            onSync={() => syncIMessage.mutate()}
+          />
+        )}
       </div>
 
       {/* ═══ SECTION 3 — Messaging ═══ */}
-      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "140ms" }}>
-        <h2 className="ds-heading-sm">Messaging</h2>
-        <WhatsAppSync />
-      </div>
+      {showWhatsApp && (
+        <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "140ms" }}>
+          <h2 className="ds-heading-sm">Messaging</h2>
+          <WhatsAppSync />
+        </div>
+      )}
 
       {/* ═══ SECTION 4 — Imports ═══ */}
       <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "160ms" }}>
