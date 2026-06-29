@@ -67,7 +67,6 @@ export function useAutoSync() {
 
       const data = await res.json();
 
-      queryClient.invalidateQueries({ queryKey: ["unresponded-threads"] });
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
       queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
 

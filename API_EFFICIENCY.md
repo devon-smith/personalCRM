@@ -43,6 +43,7 @@
 - Reply queue no longer polls `/api/reply-queue/bootstrap` every minute while open. It now shows the last loaded time, has a DB-only Refresh action, and keeps Gmail provider sync as an explicit "Sync Gmail" action.
 - Dashboard inbox no longer polls `/api/inbox-items` every minute or uses pull-to-refresh as a hidden Gmail sync. It now has a DB-only Refresh path, explicit "Sync Gmail", short private cache headers, and optimistic row removal across cached inbox views.
 - Dashboard home no longer polls `/api/dashboard/bootstrap` every five minutes. It now exposes a visible Refresh action, shows the last loaded time, and uses short private stale-while-revalidate cache headers for the combined DB-backed home payload.
+- Removed the unused legacy `UnrespondedThreads` widget and `/api/interactions/unresponded` path, which were the last source of explicit React Query interval polling.
 
 ## Next Highest-Impact Efficiency Work
 
