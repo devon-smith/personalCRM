@@ -169,6 +169,7 @@
 - Circle deletes now remove the deleted circle from cached circle lists, People filter options, deleted-circle People results, and circle-specific intelligence/story caches locally. Deleting a circle no longer immediately refetches the full circles and People bootstrap payloads just to remove a known id.
 - Contact detail reads now use the same five-minute client stale window as other focused contact views. Contact update/delete cache helpers also handle both legacy contact-list arrays and People bootstrap objects explicitly, so detail edits patch visible People rows and deletes remove known rows locally instead of forcing broad contact-list refetches or accidentally treating bootstrap payloads as arrays.
 - Focused contact reads are now quieter in hidden/repeated UI states: edit-contact summary lookups are disabled while the dialog is closed, and Reply Queue selected-contact context uses a five-minute stale window with no focus refetch to match the server's short private contact cache.
+- Removed the unused top-level `/api/drafts` list route. Active draft surfaces use Reply Queue bootstrap or focused workspace endpoints, so direct `/api/drafts` calls can no longer run a broad draft list read with contact joins.
 
 ## Next Highest-Impact Efficiency Work
 
