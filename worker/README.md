@@ -29,8 +29,11 @@ The worker connects via `WORKER_DATABASE_URL` when set, otherwise
 that do not work reliably through transaction pooling. The Graphile
 runner, web-side enqueue utility, and task-local Prisma clients all use
 the same worker DB helper so scheduled jobs do not accidentally fall
-back to the pooled app URL. Concurrency is 4, polls every 2s, and
-handles SIGINT/SIGTERM cleanly.
+back to the pooled app URL. The worker entrypoint also marks
+`CRM_WORKER_RUNTIME=true`, which lets shared app helpers that use the
+lazy `src/lib/prisma` singleton prefer `WORKER_DATABASE_URL` without
+changing normal Vercel web requests. Concurrency is 4, polls every 2s,
+and handles SIGINT/SIGTERM cleanly.
 
 ## Where to run it
 

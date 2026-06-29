@@ -5,17 +5,37 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+function isWorkerRuntime(): boolean {
+  return (
+    process.env.CRM_WORKER_RUNTIME === "true" ||
+    process.argv.some((arg) => /(?:^|[/\\])worker[/\\]index\.(?:ts|js)$/.test(arg))
+  );
+}
+
 function createPrismaClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+  const workerRuntime = isWorkerRuntime();
+  const connectionString =
+    workerRuntime
+      ? process.env.WORKER_DATABASE_URL ?? process.env.DATABASE_URL
+      : process.env.DATABASE_URL;
+
+  if (!connectionString) {
+    throw new Error(
+      workerRuntime
+        ? "WORKER_DATABASE_URL or DATABASE_URL is required for worker Prisma access"
+        : "DATABASE_URL is required for Prisma access",
+    );
+  }
+
+  const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }
 
-// Lazy singleton. The worker's `import "dotenv/config"` lands env vars in
-// the process AFTER our task imports have already resolved, so eagerly
-// instantiating the client at module init captures an empty
-// DATABASE_URL and pg falls back to the OS-user database. Proxying the
-// export defers PrismaClient construction until first property access —
-// by which time dotenv has settled and DATABASE_URL is populated.
+// Lazy singleton. Worker modules import shared app helpers before the
+// worker entrypoint finishes setting dotenv/runtime flags. Proxying the
+// export defers PrismaClient construction until first property access,
+// by which time the web app has DATABASE_URL or the worker has
+// CRM_WORKER_RUNTIME plus WORKER_DATABASE_URL populated.
 function getInstance(): PrismaClient {
   if (!globalForPrisma.prisma) {
     globalForPrisma.prisma = createPrismaClient();

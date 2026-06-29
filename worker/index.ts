@@ -28,6 +28,7 @@
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local", override: true });
 dotenv.config({ path: ".env" });
+process.env.CRM_WORKER_RUNTIME = "true";
 
 import { run } from "graphile-worker";
 import embeddingRefresh from "./tasks/embedding-refresh.js";
