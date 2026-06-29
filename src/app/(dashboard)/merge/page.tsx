@@ -27,6 +27,10 @@ import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { useContacts } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import type { DuplicateGroup } from "@/lib/contact-duplicates";
+import {
+  removeDuplicateGroupsFromMergeBootstrap,
+  type MergeBootstrapCacheData,
+} from "@/lib/duplicate-groups-cache";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { NicknameMatches } from "@/components/settings/nickname-matches";
 
@@ -53,15 +57,10 @@ const matchTypeLabels: Record<string, string> = {
   name_and_phone: "Same phone",
 };
 
-interface DuplicatesResponse {
-  groups: DuplicateGroup[];
-  totalGroups: number;
-  totalDuplicates: number;
-}
-
-interface MergeBootstrapResponse {
-  duplicates: DuplicatesResponse;
-  linkedInReview: { totalPending: number };
+interface DuplicateMergeVariables {
+  primaryId: string;
+  mergeIds: string[];
+  groupKeys: string[];
 }
 
 export default function MergePage() {
@@ -70,7 +69,7 @@ export default function MergePage() {
   const [selectedPrimary, setSelectedPrimary] = useState<Record<string, string>>({});
   const [mergedGroups, setMergedGroups] = useState<Set<string>>(new Set());
 
-  const { data: bootstrap, isLoading } = useQuery<MergeBootstrapResponse>({
+  const { data: bootstrap, isLoading } = useQuery<MergeBootstrapCacheData>({
     queryKey: ["duplicates", "merge-bootstrap"],
     queryFn: async () => {
       const res = await fetch("/api/merge/bootstrap");
@@ -84,7 +83,7 @@ export default function MergePage() {
   const linkedInReview = bootstrap?.linkedInReview;
 
   const mergeMutation = useMutation({
-    mutationFn: async ({ primaryId, mergeIds }: { primaryId: string; mergeIds: string[] }) => {
+    mutationFn: async ({ primaryId, mergeIds }: DuplicateMergeVariables) => {
       const res = await fetch("/api/contacts/merge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -96,10 +95,19 @@ export default function MergePage() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast("Contacts merged successfully");
+      setMergedGroups((prev) => {
+        const next = new Set(prev);
+        variables.groupKeys.forEach((key) => next.add(key));
+        return next;
+      });
+      queryClient.setQueryData<MergeBootstrapCacheData>(
+        ["duplicates", "merge-bootstrap"],
+        (current) =>
+          removeDuplicateGroupsFromMergeBootstrap(current, variables.groupKeys),
+      );
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["duplicates"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -139,9 +147,13 @@ export default function MergePage() {
         mergedKeys.forEach((k) => next.add(k));
         return next;
       });
+      queryClient.setQueryData<MergeBootstrapCacheData>(
+        ["duplicates", "merge-bootstrap"],
+        (current) =>
+          removeDuplicateGroupsFromMergeBootstrap(current, mergedKeys),
+      );
       setMergeAllProgress({ current: 0, total: 0 });
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["duplicates"] });
     },
     onError: (err) => {
       setMergeAllProgress({ current: 0, total: 0 });
@@ -172,12 +184,7 @@ export default function MergePage() {
       .map((c) => c.id);
 
     mergeMutation.mutate(
-      { primaryId, mergeIds },
-      {
-        onSuccess: () => {
-          setMergedGroups((prev) => new Set([...prev, group.key]));
-        },
-      },
+      { primaryId, mergeIds, groupKeys: [group.key] },
     );
   }
 
