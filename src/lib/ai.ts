@@ -71,47 +71,6 @@ Return as JSON: { "casual": "...", "professional": "..." }`,
   return { casual: text, professional: text };
 }
 
-export async function suggestTags(
-  contact: ContactContext,
-  interactions: InteractionContext[]
-): Promise<string[]> {
-  const interactionsSummary = interactions
-    .slice(0, 5)
-    .map((i) => `${i.type}: ${i.summary ?? i.subject ?? ""}`)
-    .join("; ");
-
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 200,
-    messages: [
-      {
-        role: "user",
-        content: `Based on this contact info, suggest 3-5 relevant tags (lowercase, hyphenated).
-
-Name: ${contact.name}
-Company: ${contact.company ?? "N/A"}
-Role: ${contact.role ?? "N/A"}
-Notes: ${contact.notes ?? "N/A"}
-Interactions: ${interactionsSummary || "None"}
-
-Return as JSON array: ["tag-1", "tag-2", ...]`,
-      },
-    ],
-  });
-
-  const text =
-    message.content[0].type === "text" ? message.content[0].text : "";
-  try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-  } catch {
-    // fallback
-  }
-  return [];
-}
-
 export async function summarizeInteractions(
   contactName: string,
   interactions: InteractionContext[]

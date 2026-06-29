@@ -102,6 +102,7 @@
 - Removed the orphan inbox-item mute route and stopped checking `GmailSyncState.mutedThreads` during inbound item creation, eliminating a hidden suppression path and one DB read per inbound interaction.
 - Redirect-only aliases (`/`, `/home`, `/queries`, `/source-health`) now live in `next.config.ts` instead of App Router pages, preserving stale links while removing four static app routes from the production graph.
 - Removed the unused `/api/observations` GET route. Dashboard observations are already bundled in `/api/dashboard/bootstrap`; the focused dismiss route remains for the visible observation cards.
+- Removed orphan AI endpoints `/api/ai/relationship-health` and `/api/ai/suggest-tags`, plus their route-only Anthropic helper code. Historical `RelationshipInsight` rows remain readable by the extension, but the app no longer exposes unused direct AI compute paths.
 
 ## Next Highest-Impact Efficiency Work
 
