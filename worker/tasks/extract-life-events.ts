@@ -16,8 +16,8 @@
  *     hasEvent=true. Most messages produce no signal — that's correct.
  *
  * Cost: Haiku, max_tokens=250. ~50 inbound emails/day × $0.0005 ≈
- *   $0.025/day. The feed aggregator (separate task) is the bottleneck
- *   for surfacing extracted signals; this just feeds the source.
+ *   $0.025/day. These signals feed assistant observations; they no
+ *   longer fan out into a separate FeedItem aggregation path.
  */
 import type { Task } from "graphile-worker";
 import { PrismaClient } from "../../src/generated/prisma/client";

@@ -86,7 +86,6 @@ async function getTodayStats() {
   return stats[today] || {
     profilesSynced: 0,
     messagesSynced: 0,
-    feedItemsCaptured: 0,
     enrichments: 0,
   };
 }
@@ -100,7 +99,6 @@ async function incrementStat(key, amount = 1) {
     stats[today] = {
       profilesSynced: 0,
       messagesSynced: 0,
-      feedItemsCaptured: 0,
       enrichments: 0,
     };
   }
@@ -140,7 +138,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     // Update category-specific stats
     if (msg.category === "profile") incrementStat("profilesSynced");
     if (msg.category === "message") incrementStat("messagesSynced", msg.count || 1);
-    if (msg.category === "feed") incrementStat("feedItemsCaptured", msg.count || 1);
     if (msg.category === "enrichment") incrementStat("enrichments");
 
     sendResponse({ ok: true });

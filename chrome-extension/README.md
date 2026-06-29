@@ -29,10 +29,6 @@
 - Click to sync the visible messages as interactions
 - Messages are deduplicated by timestamp
 
-### Feed & Network (`/feed/*`, `/mynetwork/*`)
-- Small green badge appears on profile links for people in your CRM
-- Helps you recognize contacts while scrolling
-
 ### Popup
 - Shows connection status (green = connected, red = disconnected)
 - Today's stats: profiles synced, messages logged
@@ -47,7 +43,6 @@ chrome-extension/
 ├── background.js          # Service worker: health checks, message relay
 ├── content-profile.js     # Profile page: extraction, sidebar, sync
 ├── content-messaging.js   # Messaging: DM sync button
-├── content-feed.js        # Feed: badge known contacts
 ├── sidebar.css            # Sidebar overlay styles
 ├── popup.html + popup.js  # Extension popup
 └── icons/                 # Extension icons

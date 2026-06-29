@@ -3,8 +3,8 @@
  *
  * For an inbound email body, ask Claude Haiku whether it contains
  * a life event or career announcement FROM the sender. Used by the
- * feed-aggregator pipeline to surface ambient updates from Jennifer's
- * network without requiring her to read every email.
+ * assistant-observation pipeline to surface important relationship
+ * context without requiring Jennifer to read every email.
  *
  * The model is told to look for FIRST-person announcements only —
  * "I'm starting a new role at X" counts; "my friend joined X" does
@@ -12,7 +12,7 @@
  * Jennifer doesn't know.
  *
  * Fail-safe: any parse or API error returns { hasEvent: false }. A
- * missed signal is acceptable; a false positive in the feed is not.
+ * missed signal is acceptable; a false positive observation is not.
  */
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -70,7 +70,7 @@ NO, hasEvent=false:
 - Asking for feedback ("Would you read this paper draft?")
 - Thanks, FYIs, social pleasantries
 
-Lean conservative. When uncertain, return hasEvent=false. A missed event is acceptable; a false positive clutters the feed.
+Lean conservative. When uncertain, return hasEvent=false. A missed event is acceptable; a false positive creates noisy assistant context.
 
 Categories: new_role | promotion | publication | award | company | move | family | milestone | other
 
@@ -155,7 +155,7 @@ export function parseExtractResponse(text: string): ExtractResult {
         ? parsed.summary.trim()
         : "";
     // Require a summary — without one we have nothing useful to render
-    // and a generic placeholder would clutter the feed.
+    // and a generic placeholder would clutter assistant observations.
     if (!summary) return { hasEvent: false };
     return { hasEvent: true, eventType, summary };
   } catch {

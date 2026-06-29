@@ -611,8 +611,8 @@ async function processMessage(
       });
     }
 
-    // M0.x.3: extract life events from the inbound body so the /feed
-    // page surfaces them. Fire-and-forget — the worker is idempotent
+    // Extract life events from inbound bodies for assistant observations.
+    // Fire-and-forget — the worker is idempotent
     // (lifeEventProcessedAt IS NULL filter) so re-enqueuing is safe;
     // gating on the upsert's lifeEventProcessedAt avoids the bulk of
     // duplicates. If the row was just inserted, lifeEventProcessedAt

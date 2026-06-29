@@ -23,8 +23,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     status.stats?.profilesSynced ?? 0;
   document.getElementById("stat-messages").textContent =
     status.stats?.messagesSynced ?? 0;
-  document.getElementById("stat-feed").textContent =
-    status.stats?.feedItemsCaptured ?? 0;
   document.getElementById("stat-enrichments").textContent =
     status.stats?.enrichments ?? 0;
   document.getElementById("stat-contacts").textContent =
