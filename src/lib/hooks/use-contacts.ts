@@ -38,6 +38,12 @@ interface ContactQueryOptions {
   enabled?: boolean;
 }
 
+interface PeopleBootstrapContactCache {
+  contacts: ContactWithCount[];
+  circles?: unknown[];
+  totalPendingDuplicates?: number;
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
@@ -76,6 +82,7 @@ export function useContact(id: string | null) {
     queryKey: ["contact", id],
     queryFn: () => fetchJson(`/api/contacts/${id}`),
     enabled: !!id,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -135,7 +142,7 @@ export function useDeleteContact() {
     mutationFn: (id: string) =>
       fetchJson(`/api/contacts/${id}`, { method: "DELETE" }),
     onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      removeContactFromCaches(queryClient, id);
       queryClient.removeQueries({ queryKey: ["contact", id], exact: true });
       queryClient.removeQueries({ queryKey: ["contact-summary", id], exact: true });
     },
@@ -146,13 +153,19 @@ export function patchContactListCaches(
   queryClient: QueryClient,
   contact: Partial<Contact> & { id: string },
 ) {
-  queryClient.setQueriesData<ContactWithCount[]>(
+  queryClient.setQueriesData<unknown>(
     { queryKey: ["contacts"] },
-    (current) => current
-      ? current.map((item) =>
-          item.id === contact.id ? { ...item, ...contact } : item,
-        )
-      : current,
+    (current: unknown) => patchContactCacheValue(current, contact),
+  );
+}
+
+export function removeContactFromCaches(
+  queryClient: QueryClient,
+  contactId: string,
+) {
+  queryClient.setQueriesData<unknown>(
+    { queryKey: ["contacts"] },
+    (current: unknown) => removeContactFromCacheValue(current, contactId),
   );
 }
 
@@ -162,5 +175,64 @@ export function shouldInvalidateContactListCaches(
   return Object.keys(update).some((key) =>
     key !== "id" &&
     CONTACT_LIST_INVALIDATING_FIELDS.has(key as keyof Contact),
+  );
+}
+
+function patchContactCacheValue(
+  current: unknown,
+  contact: Partial<Contact> & { id: string },
+) {
+  if (Array.isArray(current)) {
+    return current.map((item) =>
+      isContactListItem(item) && item.id === contact.id
+        ? { ...item, ...contact }
+        : item,
+    );
+  }
+
+  if (isPeopleBootstrapContactCache(current)) {
+    return {
+      ...current,
+      contacts: current.contacts.map((item) =>
+        item.id === contact.id ? { ...item, ...contact } : item,
+      ),
+    };
+  }
+
+  return current;
+}
+
+function removeContactFromCacheValue(current: unknown, contactId: string) {
+  if (Array.isArray(current)) {
+    return current.filter(
+      (item) => !isContactListItem(item) || item.id !== contactId,
+    );
+  }
+
+  if (isPeopleBootstrapContactCache(current)) {
+    return {
+      ...current,
+      contacts: current.contacts.filter((item) => item.id !== contactId),
+    };
+  }
+
+  return current;
+}
+
+function isContactListItem(value: unknown): value is ContactWithCount {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string"
+  );
+}
+
+function isPeopleBootstrapContactCache(
+  value: unknown,
+): value is PeopleBootstrapContactCache {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { contacts?: unknown }).contacts)
   );
 }
