@@ -71,6 +71,7 @@
 - Converted unused legacy `/api/dashboard/stats` and `/api/inbox` reads into fail-closed stubs. Active home and inbox surfaces use `/api/dashboard/bootstrap` and `/api/inbox-items`.
 - Converted unused legacy `/api/changelog` routes into fail-closed stubs. Meeting prep and imports still use changelog data through focused server-side library calls.
 - Converted unused legacy HTTP backfill routes into fail-closed stubs so direct requests cannot trigger large source imports or relationship coverage scans. Maintenance scripts remain available for intentional backfills.
+- Converted unused legacy inbox debug/migration routes into fail-closed stubs so direct requests cannot run raw inbox diagnostics or all-interaction chat-id backfills.
 
 ## Next Highest-Impact Efficiency Work
 
