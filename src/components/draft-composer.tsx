@@ -102,7 +102,11 @@ export function DraftComposer() {
   const [selectedContact, setSelectedContact] = useState<ContactWithCount | null>(null);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 200);
-  const { data: contacts } = useContacts({ search: debouncedSearch });
+  const contactPickerEnabled = isOpen && step === "pick_contact";
+  const { data: contacts } = useContacts(
+    { search: debouncedSearch, limit: 20 },
+    { enabled: contactPickerEnabled },
+  );
 
   const [tone, setTone] = useState<DraftTone>("warm");
   const [context, setContext] = useState<DraftContext>("catching_up");

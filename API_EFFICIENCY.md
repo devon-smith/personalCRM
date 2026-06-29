@@ -59,6 +59,7 @@
 - Merge duplicates now loads duplicate groups and the LinkedIn pending count through one `/api/merge/bootstrap` request. Manual merge contact search and data-health gaps are intent-driven, so the default merge page no longer pulls the full contacts list or data-health report.
 - Circle suggestions are now intent-driven and short-cacheable. The Circles page no longer scans uncircled contacts plus recent interaction groups on first load just to discover whether suggestions exist.
 - Nickname duplicate matching is now intent-driven on the Merge page. The all-contact nickname scan no longer runs until the user opens the possible-duplicates section.
+- Global contact pickers now use lazy, capped contact queries. The draft composer and quick-log picker no longer fetch contacts while closed, and when opened they request 20 rows instead of the default 500.
 
 ## Next Highest-Impact Efficiency Work
 

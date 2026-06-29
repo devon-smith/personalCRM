@@ -18,6 +18,11 @@ interface ContactFilters {
   source?: string;
   tag?: string;
   sort?: string;
+  limit?: number;
+}
+
+interface ContactQueryOptions {
+  enabled?: boolean;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -29,7 +34,10 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export function useContacts(filters: ContactFilters = {}) {
+export function useContacts(
+  filters: ContactFilters = {},
+  options: ContactQueryOptions = {},
+) {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);
   if (filters.tier) params.set("tier", filters.tier);
@@ -37,6 +45,7 @@ export function useContacts(filters: ContactFilters = {}) {
   if (filters.source) params.set("source", filters.source);
   if (filters.tag) params.set("tag", filters.tag);
   if (filters.sort) params.set("sort", filters.sort);
+  if (filters.limit) params.set("limit", String(filters.limit));
 
   const queryString = params.toString();
   const url = `/api/contacts${queryString ? `?${queryString}` : ""}`;
@@ -44,6 +53,7 @@ export function useContacts(filters: ContactFilters = {}) {
   return useQuery<ContactWithCount[]>({
     queryKey: ["contacts", filters],
     queryFn: () => fetchJson(url),
+    enabled: options.enabled ?? true,
     staleTime: 5 * 60_000,
   });
 }

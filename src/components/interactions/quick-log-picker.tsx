@@ -34,7 +34,10 @@ export function QuickLogPicker({ open, onOpenChange }: QuickLogPickerProps) {
     name: string;
   } | null>(null);
   const debouncedSearch = useDebounce(search, 200);
-  const { data: contacts } = useContacts({ search: debouncedSearch });
+  const { data: contacts } = useContacts(
+    { search: debouncedSearch, limit: 20 },
+    { enabled: open && !selected },
+  );
 
   const filtered = contacts?.slice(0, 8) ?? [];
 
