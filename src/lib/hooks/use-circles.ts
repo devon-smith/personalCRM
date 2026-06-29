@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import type { WarmthLevel } from "@/components/ui/warmth-avatar";
 
 export interface CircleContact {
@@ -36,6 +41,11 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+function invalidateCircleCaches(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["circles"] });
+  queryClient.invalidateQueries({ queryKey: ["contacts", "people-bootstrap"] });
+}
+
 export function useCircles() {
   return useQuery<CircleWithContacts[]>({
     queryKey: ["circles"],
@@ -59,7 +69,7 @@ export function useCreateCircle() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
+      invalidateCircleCaches(queryClient);
     },
   });
 }
@@ -83,7 +93,7 @@ export function useUpdateCircle() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
+      invalidateCircleCaches(queryClient);
     },
   });
 }
@@ -94,7 +104,7 @@ export function useDeleteCircle() {
     mutationFn: (id: string) =>
       fetchJson(`/api/circles/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
+      invalidateCircleCaches(queryClient);
     },
   });
 }
@@ -109,7 +119,7 @@ export function useAddContactsToCircle() {
         body: JSON.stringify({ contactIds }),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
+      invalidateCircleCaches(queryClient);
     },
   });
 }
@@ -124,7 +134,7 @@ export function useRemoveContactsFromCircle() {
         body: JSON.stringify({ contactIds }),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
+      invalidateCircleCaches(queryClient);
     },
   });
 }

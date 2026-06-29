@@ -10,7 +10,7 @@ import { ContactList } from "@/components/contacts/contact-list";
 import { ContactDetailPanel } from "@/components/contacts/contact-detail-panel";
 import { ContactFormDialog } from "@/components/contacts/contact-form-dialog";
 import { ContactImportDialog } from "@/components/contacts/contact-import-dialog";
-import { useContacts } from "@/lib/hooks/use-contacts";
+import type { ContactWithCount } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { Pill, FilterPill } from "@/components/ds";
 import { deploymentFeatures } from "@/lib/deployment-features";
@@ -33,6 +33,12 @@ const sortOptions = [
   { value: "createdAt", label: "Date added" },
 ];
 
+interface PeopleBootstrapResponse {
+  contacts: ContactWithCount[];
+  circles: { id: string; name: string; color: string }[];
+  totalPendingDuplicates: number;
+}
+
 export default function ContactsPage() {
   return (
     <Suspense
@@ -54,16 +60,6 @@ function ContactsPageInner() {
   const [search, setSearch] = useState("");
   const [circleId, setCircleId] = useState("");
   const [source, setSource] = useState("");
-
-  const { data: circles } = useQuery<{ id: string; name: string; color: string }[]>({
-    queryKey: ["circles-filter"],
-    queryFn: async () => {
-      const res = await fetch("/api/circles");
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data) ? data : data.circles ?? [];
-    },
-  });
   const [sort, setSort] = useState("name");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -94,23 +90,31 @@ function ContactsPageInner() {
     [debouncedSearch, circleId, source, sort],
   );
 
-  const { data: contacts, isLoading } = useContacts(filters);
-
-  // Pending duplicates count — surfaced as a subtle link in the
-  // header (the Review Queue card on the dashboard was removed in
-  // favor of the dedicated /merge page). Only renders when there's
-  // something to review.
-  const { data: pendingDuplicates } = useQuery<{ totalPending: number }>({
-    queryKey: ["sightings-review-count"],
+  const { data: bootstrap, isLoading } = useQuery<PeopleBootstrapResponse>({
+    queryKey: ["contacts", "people-bootstrap", filters],
     queryFn: async () => {
-      const res = await fetch("/api/sightings");
-      if (!res.ok) return { totalPending: 0 };
-      const json = await res.json();
-      return { totalPending: json.totalPending ?? 0 };
+      const params = new URLSearchParams();
+      if (filters.search) params.set("search", filters.search);
+      if (filters.circle) params.set("circle", filters.circle);
+      if (filters.source) params.set("source", filters.source);
+      if (filters.sort) params.set("sort", filters.sort);
+
+      const queryString = params.toString();
+      const res = await fetch(
+        `/api/people/bootstrap${queryString ? `?${queryString}` : ""}`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to load people");
+      }
+      return res.json();
     },
     staleTime: 5 * 60 * 1000,
   });
-  const duplicateCount = pendingDuplicates?.totalPending ?? 0;
+
+  const contacts = bootstrap?.contacts ?? [];
+  const circles = bootstrap?.circles;
+  const duplicateCount = bootstrap?.totalPendingDuplicates ?? 0;
 
   const circleOptions = useMemo(
     () => [
@@ -129,7 +133,7 @@ function ContactsPageInner() {
     setFormOpen(true);
   }
 
-  const contactCount = contacts?.length ?? 0;
+  const contactCount = contacts.length;
 
   return (
     <div

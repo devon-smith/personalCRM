@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/generated/prisma/client";
-
-const VALID_SOURCES = new Set([
-  "MANUAL", "CSV_IMPORT", "GOOGLE_CONTACTS", "GMAIL_DISCOVER",
-  "APPLE_CONTACTS", "IMESSAGE", "LINKEDIN", "WHATSAPP",
-]);
-
-const VALID_TIERS = new Set(["INNER_CIRCLE", "PROFESSIONAL", "ACQUAINTANCE"]);
+import {
+  buildContactListQuery,
+  ContactListQueryError,
+  contactListSelect,
+} from "@/lib/contact-list-query";
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,90 +14,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { searchParams } = req.nextUrl;
-    const search = searchParams.get("search") ?? "";
-    const tier = searchParams.get("tier");
-    const source = searchParams.get("source");
-    const circle = searchParams.get("circle");
-    const tag = searchParams.get("tag");
-    const sort = searchParams.get("sort") ?? "name";
-    // M0.4 — system-artifact contacts ("Settings", "noreply@…") are
-    // hidden by default. Pass ?includeNoise=1 to surface them.
-    const includeNoise = searchParams.get("includeNoise") === "1";
-
-    if (tier && !VALID_TIERS.has(tier)) {
-      return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
-    }
-    if (source && !VALID_SOURCES.has(source)) {
-      return NextResponse.json({ error: "Invalid source" }, { status: 400 });
-    }
-
-    const where: Prisma.ContactWhereInput = {
-      userId: session.user.id,
-      ...(includeNoise ? {} : { isNoise: false }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: "insensitive" } },
-          { email: { contains: search, mode: "insensitive" } },
-          { additionalEmails: { has: search } },
-          { company: { contains: search, mode: "insensitive" } },
-        ],
-      }),
-      ...(tier && { tier: tier as Prisma.EnumContactTierFilter["equals"] }),
-      ...(circle && { circles: { some: { circleId: circle } } }),
-      ...(source && { source: source as Prisma.EnumContactSourceFilter["equals"] }),
-      ...(tag && { tags: { has: tag } }),
-    };
-
-    const orderBy: Prisma.ContactOrderByWithRelationInput =
-      sort === "lastInteraction"
-        ? { lastInteraction: { sort: "desc", nulls: "last" } }
-        : sort === "createdAt"
-          ? { createdAt: "desc" }
-          : { name: "asc" };
-
-    const limit = Math.min(
-      Number(searchParams.get("limit")) || 500,
-      1000,
+    const { where, orderBy, take } = buildContactListQuery(
+      req.nextUrl.searchParams,
+      session.user.id,
     );
 
     const contacts = await prisma.contact.findMany({
       where,
       orderBy,
-      take: limit,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        additionalEmails: true,
-        phone: true,
-        company: true,
-        role: true,
-        tier: true,
-        source: true,
-        tags: true,
-        linkedinUrl: true,
-        avatarUrl: true,
-        city: true,
-        state: true,
-        country: true,
-        notes: true,
-        followUpDays: true,
-        lastInteraction: true,
-        importedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: { select: { interactions: true } },
-        circles: {
-          select: {
-            circle: { select: { id: true, name: true, color: true } },
-          },
-        },
-      },
+      take,
+      select: contactListSelect,
     });
 
     return NextResponse.json(contacts);
   } catch (error) {
+    if (error instanceof ContactListQueryError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     console.error("[GET /api/contacts]", error);
     return NextResponse.json(
       { error: "Failed to fetch contacts" },
