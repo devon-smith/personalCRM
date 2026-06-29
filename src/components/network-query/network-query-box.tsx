@@ -170,18 +170,18 @@ export function NetworkQueryBox({
   // dashboard and /ask do not spend an extra saved-queries request
   // when their surrounding page already provides navigation/history.
   const { data: savedQueriesData } = useQuery<{
-    queries: { id: string }[];
+    count: number;
   }>({
     queryKey: ["saved-queries"],
     queryFn: async () => {
-      const res = await fetch("/api/saved-queries?limit=200&scope=summary");
-      if (!res.ok) return { queries: [] };
+      const res = await fetch("/api/saved-queries?scope=count");
+      if (!res.ok) return { count: 0 };
       return res.json();
     },
     staleTime: 60_000,
     enabled: showHistoryLink,
   });
-  const savedCount = savedQueriesData?.queries.length ?? 0;
+  const savedCount = savedQueriesData?.count ?? 0;
 
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);

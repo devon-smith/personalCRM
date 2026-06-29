@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
  *     ?since=<isoDate>      → createdAt >= that date
  *     ?limit=N (default 50) → cap
  *     ?scope=summary        → omit answer/evidence for lightweight history lists
+ *     ?scope=count          → return only { count } for compact badges
  *
  * POST /api/saved-queries
  *   Legacy save-query path. M0.x.7: every query auto-saves via
@@ -33,7 +34,9 @@ export async function GET(req: NextRequest) {
   const since = url.searchParams.get("since");
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? Math.min(200, Math.max(1, Number(limitParam))) : 50;
-  const summaryOnly = url.searchParams.get("scope") === "summary";
+  const scope = url.searchParams.get("scope");
+  const summaryOnly = scope === "summary";
+  const countOnly = scope === "count";
 
   const includeFollowUps = url.searchParams.get("includeFollowUps") === "1";
 
@@ -52,6 +55,11 @@ export async function GET(req: NextRequest) {
   // render nested under their parent on /ask/[id]). Set
   // ?includeFollowUps=1 to get every row including children.
   if (!includeFollowUps) where.parentQueryId = null;
+
+  if (countOnly) {
+    const count = await prisma.savedQuery.count({ where });
+    return NextResponse.json({ count });
+  }
 
   if (summaryOnly) {
     const queries = await prisma.savedQuery.findMany({
