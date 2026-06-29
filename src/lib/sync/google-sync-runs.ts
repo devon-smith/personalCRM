@@ -1,11 +1,11 @@
 import { syncCalendarEvents, type CalendarSyncResult } from "@/lib/calendar";
-import { initialGmailSync, incrementalGmailSync } from "@/lib/gmail/sync";
+import {
+  initialGmailSync,
+  incrementalGmailSync,
+  type GmailSyncResult,
+} from "@/lib/gmail/sync";
 import { prisma } from "@/lib/prisma";
 import { recordSyncRun, type SyncTrigger } from "@/lib/sync/run-telemetry";
-
-type GmailSyncResult =
-  | { processed: number }
-  | { processed: number; total: number; done: boolean };
 
 export async function runGmailSyncForUser(
   userId: string,
@@ -36,6 +36,7 @@ export async function runGmailSyncForUser(
           processed: result.processed,
           total,
           done,
+          changedThreadCount: result.changedThreads.length,
         },
       };
     },

@@ -33,6 +33,11 @@ interface ManualGmailSyncResult {
   actionsSaved: number;
 }
 
+interface GmailChangedThreadRef {
+  accountId: string;
+  threadId: string;
+}
+
 function apiErrorMessage(body: unknown, fallback: string): string {
   if (
     body &&
@@ -43,6 +48,24 @@ function apiErrorMessage(body: unknown, fallback: string): string {
     return body.error;
   }
   return fallback;
+}
+
+function parseChangedThreads(body: unknown): GmailChangedThreadRef[] {
+  if (!body || typeof body !== "object" || !("changedThreads" in body)) {
+    return [];
+  }
+  const value = body.changedThreads;
+  if (!Array.isArray(value)) return [];
+
+  return value.filter(
+    (item): item is GmailChangedThreadRef =>
+      typeof item === "object" &&
+      item !== null &&
+      "accountId" in item &&
+      typeof item.accountId === "string" &&
+      "threadId" in item &&
+      typeof item.threadId === "string",
+  );
 }
 
 function useSwipe(onSwipeRight: () => void, onSwipeLeft?: () => void) {
@@ -324,11 +347,20 @@ export function Inbox() {
       }
 
       const processed = Number((syncBody as { processed?: number }).processed ?? 0);
-      if (processed <= 0) {
+      const changedThreads = parseChangedThreads(syncBody);
+      if (processed <= 0 && changedThreads.length === 0) {
         return { processed: 0, scannedActions: false, actionsSaved: 0 };
       }
 
-      const extractRes = await fetch("/api/gmail/extract-actions", { method: "POST" });
+      const extractRes = await fetch("/api/gmail/extract-actions", {
+        method: "POST",
+        ...(changedThreads.length > 0
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ changedThreads }),
+            }
+          : {}),
+      });
       const extractBody = await extractRes.json().catch(() => ({}));
       if (!extractRes.ok) {
         throw new Error(apiErrorMessage(extractBody, "Action scan failed"));

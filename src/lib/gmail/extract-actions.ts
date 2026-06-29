@@ -56,6 +56,17 @@ export interface ExtractResult {
   actionsSaved: number;
 }
 
+export interface GmailChangedThreadRef {
+  accountId: string;
+  threadId: string;
+}
+
+export interface ExtractActionItemsOptions {
+  changedThreads?: readonly GmailChangedThreadRef[];
+}
+
+const MAX_TARGETED_THREAD_REFS = 50;
+
 // ─── Helpers ───
 
 function getHeader(
@@ -140,6 +151,30 @@ function cleanEmailBody(raw: string): string {
   return body.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function normalizeChangedThreadRefs(
+  refs: readonly GmailChangedThreadRef[] | undefined,
+): GmailChangedThreadRef[] {
+  if (!refs) return [];
+
+  const normalized: GmailChangedThreadRef[] = [];
+  const seen = new Set<string>();
+
+  for (const ref of refs) {
+    const accountId = ref.accountId.trim();
+    const threadId = ref.threadId.trim();
+    if (!accountId || !threadId) continue;
+
+    const key = `${accountId}:${threadId}`;
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    normalized.push({ accountId, threadId });
+    if (normalized.length >= MAX_TARGETED_THREAD_REFS) break;
+  }
+
+  return normalized;
+}
+
 // ─── Gmail fetching ───
 
 /**
@@ -195,6 +230,45 @@ async function fetchRecentThreads(
       batch.map(async (threadId) => {
         const threadUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`;
         const threadRes = await googleFetch(userId, threadUrl);
+        if (!threadRes.ok) return null;
+        return (await threadRes.json()) as GmailThread;
+      }),
+    );
+
+    for (const thread of results) {
+      if (thread) threads.push(thread);
+    }
+  }
+
+  return threads;
+}
+
+/**
+ * Fetch exact Gmail threads changed by sync, preserving account context.
+ */
+async function fetchChangedThreads(
+  userId: string,
+  changedThreads: readonly GmailChangedThreadRef[],
+): Promise<GmailThread[]> {
+  const refs = normalizeChangedThreadRefs(changedThreads);
+  if (refs.length === 0) return [];
+
+  const accountTokens = await getAllGoogleAccessTokens(userId);
+  const tokenByAccountId = new Map(
+    accountTokens.map(({ accountId, token }) => [accountId, token]),
+  );
+  const threads: GmailThread[] = [];
+  const BATCH_SIZE = 10;
+
+  for (let i = 0; i < refs.length; i += BATCH_SIZE) {
+    const batch = refs.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async ({ accountId, threadId }) => {
+        const token = tokenByAccountId.get(accountId);
+        if (!token) return null;
+
+        const threadUrl = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`;
+        const threadRes = await googleFetchWithToken(token, threadUrl);
         if (!threadRes.ok) return null;
         return (await threadRes.json()) as GmailThread;
       }),
@@ -404,6 +478,7 @@ const ACTIONABLE_CLASSIFICATIONS: ReadonlySet<Classification> = new Set([
 
 export async function extractActionItems(
   userId: string,
+  options: ExtractActionItemsOptions = {},
 ): Promise<ExtractResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const userEmail = user?.email?.toLowerCase();
@@ -420,8 +495,13 @@ export async function extractActionItems(
     userEmails.add(e.toLowerCase());
   }
 
-  // 1. Fetch recent threads (7 days for regular scan, small batch)
-  const threads = await fetchRecentThreads(userId, 7, 30);
+  // 1. Prefer exact threads changed by the sync that triggered extraction.
+  // Fall back to a small recent scan for direct/manual invocations.
+  const changedThreads = normalizeChangedThreadRefs(options.changedThreads);
+  const threads =
+    changedThreads.length > 0
+      ? await fetchChangedThreads(userId, changedThreads)
+      : await fetchRecentThreads(userId, 7, 30);
 
   // 2. Load contacts for matching (including additionalEmails)
   const contacts = await prisma.contact.findMany({

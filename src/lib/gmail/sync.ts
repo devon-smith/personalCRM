@@ -36,6 +36,25 @@ interface GmailHistoryResponse {
   nextPageToken?: string;
 }
 
+export interface GmailChangedThreadRef {
+  accountId: string;
+  threadId: string;
+}
+
+export interface IncrementalGmailSyncResult {
+  processed: number;
+  changedThreads: GmailChangedThreadRef[];
+}
+
+export interface InitialGmailSyncResult extends IncrementalGmailSyncResult {
+  total: number;
+  done: boolean;
+}
+
+export type GmailSyncResult = InitialGmailSyncResult | IncrementalGmailSyncResult;
+
+const MAX_CHANGED_THREADS_FOR_ACTION_EXTRACTION = 50;
+
 type ProcessResult =
   | { matched: true }
   | { matched: false; unmatchedEmail: string | null };
@@ -147,10 +166,28 @@ function buildEmailLookup(
   return map;
 }
 
+function addChangedThreadRef(
+  changedThreads: GmailChangedThreadRef[],
+  seenChangedThreads: Set<string>,
+  accountId: string,
+  threadId: string | null | undefined,
+): void {
+  if (!threadId) return;
+
+  const key = `${accountId}:${threadId}`;
+  if (seenChangedThreads.has(key)) return;
+
+  seenChangedThreads.add(key);
+  if (changedThreads.length >= MAX_CHANGED_THREADS_FOR_ACTION_EXTRACTION) return;
+
+  changedThreads.push({ accountId, threadId });
+}
+
 /**
  * Fetch and process messages from a single Google account for initial sync.
  */
 async function syncAccountInitial(
+  accountId: string,
   token: string,
   userId: string,
   userEmails: Set<string>,
@@ -158,11 +195,13 @@ async function syncAccountInitial(
   contactNames: Map<string, string>,
   unmatchedCounts: Map<string, number>,
   batchSize: number,
-): Promise<{ processed: number; total: number }> {
+): Promise<{ processed: number; total: number; changedThreads: GmailChangedThreadRef[] }> {
   const after = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
   let processed = 0;
   let totalMessages = 0;
   let pageToken: string | undefined;
+  const changedThreads: GmailChangedThreadRef[] = [];
+  const seenChangedThreads = new Set<string>();
 
   do {
     const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
@@ -188,6 +227,12 @@ async function syncAccountInitial(
         batch.map(async (msg) => {
           const detail = await fetchMessageDetail(userId, msg.id, token);
           if (!detail) return null;
+          addChangedThreadRef(
+            changedThreads,
+            seenChangedThreads,
+            accountId,
+            detail.threadId,
+          );
           return processMessage(userId, userEmails, detail, contactsByEmail, contactNames);
         }),
       );
@@ -208,7 +253,7 @@ async function syncAccountInitial(
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  return { processed, total: totalMessages };
+  return { processed, total: totalMessages, changedThreads };
 }
 
 /**
@@ -219,7 +264,7 @@ async function syncAccountInitial(
 export async function initialGmailSync(
   userId: string,
   batchSize: number = 100,
-): Promise<{ processed: number; total: number; done: boolean }> {
+): Promise<InitialGmailSyncResult> {
   await prisma.gmailSyncState.upsert({
     where: { userId },
     create: { userId, syncEnabled: true },
@@ -235,7 +280,7 @@ export async function initialGmailSync(
 
   if (accountTokens.length === 0) {
     console.error("No valid Google tokens for user", userId);
-    return { processed: 0, total: 0, done: true };
+    return { processed: 0, total: 0, done: true, changedThreads: [] };
   }
 
   const contacts = await prisma.contact.findMany({
@@ -247,16 +292,26 @@ export async function initialGmailSync(
 
   let processed = 0;
   let totalMessages = 0;
+  const changedThreads: GmailChangedThreadRef[] = [];
+  const seenChangedThreads = new Set<string>();
   const unmatchedCounts = new Map<string, number>();
 
   // Sync from each linked Google account
-  for (const { token } of accountTokens) {
+  for (const { accountId, token } of accountTokens) {
     const result = await syncAccountInitial(
-      token, userId, userEmails, contactsByEmail, contactNames,
+      accountId, token, userId, userEmails, contactsByEmail, contactNames,
       unmatchedCounts, batchSize,
     );
     processed += result.processed;
     totalMessages += result.total;
+    for (const ref of result.changedThreads) {
+      addChangedThreadRef(
+        changedThreads,
+        seenChangedThreads,
+        ref.accountId,
+        ref.threadId,
+      );
+    }
   }
 
   // Get current historyId from primary account for incremental sync
@@ -284,6 +339,7 @@ export async function initialGmailSync(
     processed,
     total: totalMessages,
     done: true,
+    changedThreads,
   };
 }
 
@@ -292,6 +348,7 @@ export async function initialGmailSync(
  * Returns messages added since startHistoryId.
  */
 async function syncAccountIncremental(
+  accountId: string,
   token: string,
   userId: string,
   startHistoryId: string,
@@ -299,10 +356,17 @@ async function syncAccountIncremental(
   contactsByEmail: Map<string, string>,
   contactNames: Map<string, string>,
   unmatchedCounts: Map<string, number>,
-): Promise<{ processed: number; historyId: string | null; needsFullSync: boolean }> {
+): Promise<{
+  processed: number;
+  historyId: string | null;
+  needsFullSync: boolean;
+  changedThreads: GmailChangedThreadRef[];
+}> {
   let processed = 0;
   let pageToken: string | undefined;
   let latestHistoryId: string | null = null;
+  const changedThreads: GmailChangedThreadRef[] = [];
+  const seenChangedThreads = new Set<string>();
 
   do {
     const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/history");
@@ -315,7 +379,12 @@ async function syncAccountIncremental(
     const res = await googleFetchWithToken(token, url.toString());
     if (!res.ok) {
       if (res.status === 404) {
-        return { processed: 0, historyId: null, needsFullSync: true };
+        return {
+          processed: 0,
+          historyId: null,
+          needsFullSync: true,
+          changedThreads: [],
+        };
       }
       console.error(`Gmail history API error for account: ${res.status}`);
       break;
@@ -332,6 +401,12 @@ async function syncAccountIncremental(
         const detail = await fetchMessageDetail(userId, added.message.id, token);
         if (!detail) continue;
 
+        addChangedThreadRef(
+          changedThreads,
+          seenChangedThreads,
+          accountId,
+          detail.threadId,
+        );
         const result = await processMessage(userId, userEmails, detail, contactsByEmail, contactNames);
         if (result.matched) {
           processed++;
@@ -347,7 +422,7 @@ async function syncAccountIncremental(
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  return { processed, historyId: latestHistoryId, needsFullSync: false };
+  return { processed, historyId: latestHistoryId, needsFullSync: false, changedThreads };
 }
 
 /**
@@ -356,7 +431,7 @@ async function syncAccountIncremental(
  */
 export async function incrementalGmailSync(
   userId: string,
-): Promise<{ processed: number }> {
+): Promise<IncrementalGmailSyncResult> {
   const syncState = await prisma.gmailSyncState.findUnique({
     where: { userId },
   });
@@ -373,7 +448,7 @@ export async function incrementalGmailSync(
 
   if (accountTokens.length === 0) {
     console.error("No valid Google tokens for user", userId);
-    return { processed: 0 };
+    return { processed: 0, changedThreads: [] };
   }
 
   const contacts = await prisma.contact.findMany({
@@ -385,12 +460,14 @@ export async function incrementalGmailSync(
 
   let processed = 0;
   let latestHistoryId = syncState.historyId;
+  const changedThreads: GmailChangedThreadRef[] = [];
+  const seenChangedThreads = new Set<string>();
   const unmatchedCounts = new Map<string, number>();
 
   // Sync from each linked Google account
-  for (const { token } of accountTokens) {
+  for (const { accountId, token } of accountTokens) {
     const result = await syncAccountIncremental(
-      token, userId, syncState.historyId,
+      accountId, token, userId, syncState.historyId,
       userEmails, contactsByEmail, contactNames, unmatchedCounts,
     );
 
@@ -399,6 +476,14 @@ export async function incrementalGmailSync(
     }
 
     processed += result.processed;
+    for (const ref of result.changedThreads) {
+      addChangedThreadRef(
+        changedThreads,
+        seenChangedThreads,
+        ref.accountId,
+        ref.threadId,
+      );
+    }
     if (result.historyId) {
       latestHistoryId = result.historyId;
     }
@@ -419,7 +504,7 @@ export async function incrementalGmailSync(
 
   await classifyContactTiers(userId);
 
-  return { processed };
+  return { processed, changedThreads };
 }
 
 async function fetchMessageDetail(
