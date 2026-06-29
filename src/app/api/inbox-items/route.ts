@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { getReplyQueueInbox } from "@/lib/reply-queue/inbox-items";
 
 // ─── In-memory cache (short TTL to avoid redundant queries) ──
@@ -11,6 +12,7 @@ interface CachedResponse {
 }
 let inboxCache: CachedResponse | null = null;
 const CACHE_TTL_MS = 3000; // 3 seconds
+const READ_CACHE_HEADERS = privateCacheHeaders(3, 15);
 
 /** Invalidate the inbox cache (call after resolve, dismiss, sync, etc.) */
 export function invalidateInboxCache() {
@@ -48,7 +50,7 @@ export async function GET(req: Request) {
       Date.now() < inboxCache.expiresAt
     ) {
       return new NextResponse(inboxCache.data, {
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...READ_CACHE_HEADERS },
       });
     }
 
@@ -61,7 +63,7 @@ export async function GET(req: Request) {
     };
 
     return new NextResponse(responseBody, {
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...READ_CACHE_HEADERS },
     });
   } catch (error) {
     console.error("[GET /api/inbox-items]", error);

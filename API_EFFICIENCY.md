@@ -41,6 +41,7 @@
 - The shared Ask box no longer fetches `/api/saved-queries` by default just to count history links. Dashboard and Ask already navigate/render history, so that count request is now opt-in.
 - Calendar page no longer polls `/api/calendar` every five minutes while open. It now uses a five-minute stale window, manual Sync calendar, and a short private cache header for DB-backed event reads.
 - Reply queue no longer polls `/api/reply-queue/bootstrap` every minute while open. It now shows the last loaded time, has a DB-only Refresh action, and keeps Gmail provider sync as an explicit "Sync Gmail" action.
+- Dashboard inbox no longer polls `/api/inbox-items` every minute or uses pull-to-refresh as a hidden Gmail sync. It now has a DB-only Refresh path, explicit "Sync Gmail", short private cache headers, and optimistic row removal across cached inbox views.
 
 ## Next Highest-Impact Efficiency Work
 

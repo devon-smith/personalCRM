@@ -157,6 +157,33 @@ interface InboxItemsData {
   allInboundCount?: number;
 }
 
+function removeItemFromInboxData(
+  data: InboxItemsData | undefined,
+  itemId: string,
+): InboxItemsData | undefined {
+  if (!data) return data;
+  const itemWasOpen = data.items.some((item) => item.id === itemId);
+  const groupWasOpen = data.groupChats.some((item) => item.id === itemId);
+  return {
+    ...data,
+    items: data.items.filter((item) => item.id !== itemId),
+    totalOpen: itemWasOpen ? Math.max(data.totalOpen - 1, 0) : data.totalOpen,
+    groupChats: data.groupChats.filter((item) => item.id !== itemId),
+    totalGroupChats: groupWasOpen
+      ? Math.max(data.totalGroupChats - 1, 0)
+      : data.totalGroupChats,
+  };
+}
+
+function restoreInboxSnapshots(
+  queryClient: ReturnType<typeof useQueryClient>,
+  snapshots: Array<readonly [readonly unknown[], InboxItemsData | undefined]>,
+) {
+  snapshots.forEach(([queryKey, data]) => {
+    queryClient.setQueryData(queryKey, data);
+  });
+}
+
 interface ActivityItem {
   id: string;
   type: string;
@@ -300,18 +327,23 @@ export function Inbox() {
 
   // ─── Data fetching ──────────────────────────────────────────
 
-  const { data: inboxData, isLoading: loadingNR } =
-    useQuery<InboxItemsData>({
-      queryKey: ["inbox-items", inboxView],
-      queryFn: async () => {
-        const params = inboxView === "all" ? "?view=all" : "";
-        const res = await fetch(`/api/inbox-items${params}`);
-        if (!res.ok) return { items: [], totalOpen: 0, groupChats: [], totalGroupChats: 0 };
-        return res.json();
-      },
-      staleTime: 30 * 1000,
-      refetchInterval: 60 * 1000,
-    });
+  const {
+    data: inboxData,
+    isLoading: loadingNR,
+    isFetching: fetchingInbox,
+    dataUpdatedAt: inboxUpdatedAt,
+    refetch: refetchInbox,
+  } = useQuery<InboxItemsData>({
+    queryKey: ["inbox-items", inboxView],
+    queryFn: async () => {
+      const params = inboxView === "all" ? "?view=all" : "";
+      const res = await fetch(`/api/inbox-items${params}`);
+      if (!res.ok) return { items: [], totalOpen: 0, groupChats: [], totalGroupChats: 0 };
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
   const { data: activityData, isLoading: loadingActivity } = useQuery<{
     items: ActivityItem[];
@@ -358,23 +390,18 @@ export function Inbox() {
     },
     onMutate: async ({ itemId }) => {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
-      const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
-      if (prev) {
-        const inItems = prev.items.some((i) => i.id === itemId);
-        const inGroups = prev.groupChats?.some((i) => i.id === itemId);
-        queryClient.setQueryData<InboxItemsData>(["inbox-items"], {
-          ...prev,
-          items: prev.items.filter((i) => i.id !== itemId),
-          totalOpen: inItems ? prev.totalOpen - 1 : prev.totalOpen,
-          groupChats: (prev.groupChats ?? []).filter((i) => i.id !== itemId),
-          totalGroupChats: inGroups ? (prev.totalGroupChats ?? 0) - 1 : (prev.totalGroupChats ?? 0),
-        });
-      }
-      return { prev };
+      const snapshots = queryClient.getQueriesData<InboxItemsData>({
+        queryKey: ["inbox-items"],
+      });
+      queryClient.setQueriesData<InboxItemsData>(
+        { queryKey: ["inbox-items"] },
+        (prev) => removeItemFromInboxData(prev, itemId),
+      );
+      return { snapshots };
     },
     onError: (_err, _vars, context) => {
-      if (context?.prev) {
-        queryClient.setQueryData(["inbox-items"], context.prev);
+      if (context?.snapshots) {
+        restoreInboxSnapshots(queryClient, context.snapshots);
       }
       toast.error("Failed to mark as replied");
     },
@@ -395,23 +422,18 @@ export function Inbox() {
     },
     onMutate: async ({ itemId }) => {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
-      const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
-      if (prev) {
-        const inItems = prev.items.some((i) => i.id === itemId);
-        const inGroups = prev.groupChats?.some((i) => i.id === itemId);
-        queryClient.setQueryData<InboxItemsData>(["inbox-items"], {
-          ...prev,
-          items: prev.items.filter((i) => i.id !== itemId),
-          totalOpen: inItems ? prev.totalOpen - 1 : prev.totalOpen,
-          groupChats: (prev.groupChats ?? []).filter((i) => i.id !== itemId),
-          totalGroupChats: inGroups ? (prev.totalGroupChats ?? 0) - 1 : (prev.totalGroupChats ?? 0),
-        });
-      }
-      return { prev };
+      const snapshots = queryClient.getQueriesData<InboxItemsData>({
+        queryKey: ["inbox-items"],
+      });
+      queryClient.setQueriesData<InboxItemsData>(
+        { queryKey: ["inbox-items"] },
+        (prev) => removeItemFromInboxData(prev, itemId),
+      );
+      return { snapshots };
     },
     onError: (_err, _vars, context) => {
-      if (context?.prev) {
-        queryClient.setQueryData(["inbox-items"], context.prev);
+      if (context?.snapshots) {
+        restoreInboxSnapshots(queryClient, context.snapshots);
       }
       toast.error("Failed to dismiss");
     },
@@ -431,23 +453,18 @@ export function Inbox() {
     },
     onMutate: async ({ itemId }) => {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
-      const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
-      if (prev) {
-        const inItems = prev.items.some((i) => i.id === itemId);
-        const inGroups = prev.groupChats?.some((i) => i.id === itemId);
-        queryClient.setQueryData<InboxItemsData>(["inbox-items"], {
-          ...prev,
-          items: prev.items.filter((i) => i.id !== itemId),
-          totalOpen: inItems ? prev.totalOpen - 1 : prev.totalOpen,
-          groupChats: (prev.groupChats ?? []).filter((i) => i.id !== itemId),
-          totalGroupChats: inGroups ? (prev.totalGroupChats ?? 0) - 1 : (prev.totalGroupChats ?? 0),
-        });
-      }
-      return { prev };
+      const snapshots = queryClient.getQueriesData<InboxItemsData>({
+        queryKey: ["inbox-items"],
+      });
+      queryClient.setQueriesData<InboxItemsData>(
+        { queryKey: ["inbox-items"] },
+        (prev) => removeItemFromInboxData(prev, itemId),
+      );
+      return { snapshots };
     },
     onError: (_err, _vars, context) => {
-      if (context?.prev) {
-        queryClient.setQueryData(["inbox-items"], context.prev);
+      if (context?.snapshots) {
+        restoreInboxSnapshots(queryClient, context.snapshots);
       }
       toast.error("Failed to snooze");
     },
@@ -465,19 +482,27 @@ export function Inbox() {
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
-      const prev = queryClient.getQueryData<InboxItemsData>(["inbox-items"]);
-      if (prev) {
-        queryClient.setQueryData<InboxItemsData>(["inbox-items"], {
-          ...prev,
-          items: [],
-          totalOpen: 0,
-        });
-      }
-      return { prev };
+      const snapshots = queryClient.getQueriesData<InboxItemsData>({
+        queryKey: ["inbox-items"],
+      });
+      queryClient.setQueriesData<InboxItemsData>(
+        { queryKey: ["inbox-items"] },
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: [],
+            totalOpen: 0,
+            groupChats: [],
+            totalGroupChats: 0,
+          };
+        },
+      );
+      return { snapshots };
     },
     onError: (_err, _vars, context) => {
-      if (context?.prev) {
-        queryClient.setQueryData(["inbox-items"], context.prev);
+      if (context?.snapshots) {
+        restoreInboxSnapshots(queryClient, context.snapshots);
       }
       toast.error("Failed to clear inbox");
     },
@@ -666,34 +691,65 @@ export function Inbox() {
           )}
         </div>
 
-        <button
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
-          style={{
-            color: "var(--text-tertiary)",
-            transitionDuration: "var(--duration-fast)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
-            e.currentTarget.style.color = "var(--text-secondary)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = "";
-            e.currentTarget.style.color = "var(--text-tertiary)";
-          }}
-        >
-          {syncMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {inboxUpdatedAt > 0 && (
+            <span
+              className="hidden text-[11px] sm:inline"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              Updated {formatDistanceToNow(new Date(inboxUpdatedAt))}
+            </span>
           )}
-          {syncMutation.isPending ? "Syncing..." : "Sync & scan"}
-        </button>
+          <button
+            onClick={() => void refetchInbox()}
+            disabled={fetchingInbox && !loadingNR}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+            style={{
+              color: "var(--text-tertiary)",
+              transitionDuration: "var(--duration-fast)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--surface-sunken)";
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "";
+              e.currentTarget.style.color = "var(--text-tertiary)";
+            }}
+          >
+            {fetchingInbox && !loadingNR ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Refresh
+          </button>
+          <button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
+            style={{
+              backgroundColor: "var(--text-primary)",
+              color: "var(--text-inverse)",
+              transitionDuration: "var(--duration-fast)",
+            }}
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            {syncMutation.isPending ? "Syncing..." : "Sync Gmail"}
+          </button>
+        </div>
       </div>
 
       {/* ─── Tab content with pull-to-refresh ─────────────────── */}
-      <PullToRefreshWrapper onRefresh={() => syncMutation.mutateAsync()}>
+      <PullToRefreshWrapper
+        onRefresh={async () => {
+          await refetchInbox();
+        }}
+      >
       <div className="px-4 sm:px-6 pt-4 pb-5">
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-12">
