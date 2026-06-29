@@ -178,6 +178,7 @@
 - Voice memo transcription now has a handler-level upload guard and computes duration from the recorder's local start timestamp. Rapid Transcribe taps can no longer submit duplicate Whisper uploads, and saved voice-note duration metadata no longer depends on stale React state.
 - Ask streaming now has a synchronous in-flight ref guard before `/api/network-query?stream=1` starts. Rapid Enter/double-tap submits and shortcut seed effects cannot launch overlapping Claude/tool streams while React's `isStreaming` state is still settling.
 - Manual voice reindex now enqueues with a per-user/per-mode Graphile job key and a per-user queue name. Repeated Re-index clicks collapse into the existing pending job, and manual voice indexing jobs for the same user cannot run concurrently against Gmail/Voyage.
+- Push-watch setup now dedupes in-flight requests and reuses the last per-user setup result for 60 seconds. Repeated setup POSTs no longer stop/create duplicate Calendar channels or refresh Gmail watches back-to-back during mobile double taps or retry loops.
 
 ## Next Highest-Impact Efficiency Work
 

@@ -3,6 +3,17 @@ import { auth } from "@/lib/auth";
 import { establishGmailWatch } from "@/lib/gmail/watch";
 import { establishCalendarWatches } from "@/lib/calendar-watch";
 
+const SETUP_PUSH_REUSE_MS = 60_000;
+
+interface SetupPushResult {
+  gmail: { ok: boolean; expiresAt?: string; error?: string };
+  calendar: { ok: boolean; channels: number; error?: string };
+  configured: { gmailPubsub: boolean; webhookBase: boolean; webhookToken: boolean };
+}
+
+const inFlightSetup = new Map<string, Promise<SetupPushResult>>();
+const recentSetupResults = new Map<string, { expiresAt: number; result: SetupPushResult }>();
+
 /**
  * POST /api/integrations/setup-push
  *
@@ -19,12 +30,37 @@ export async function POST() {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userId = session.user.id;
 
-  const result: {
-    gmail: { ok: boolean; expiresAt?: string; error?: string };
-    calendar: { ok: boolean; channels: number; error?: string };
-    configured: { gmailPubsub: boolean; webhookBase: boolean; webhookToken: boolean };
-  } = {
+  const recent = recentSetupResults.get(userId);
+  if (recent && recent.expiresAt > Date.now()) {
+    return NextResponse.json({ ...recent.result, cached: true });
+  }
+
+  const existing = inFlightSetup.get(userId);
+  if (existing) {
+    const result = await existing;
+    return NextResponse.json({ ...result, cached: true });
+  }
+
+  const setup = runSetupPush(userId);
+  inFlightSetup.set(userId, setup);
+  try {
+    const result = await setup;
+    recentSetupResults.set(userId, {
+      result,
+      expiresAt: Date.now() + SETUP_PUSH_REUSE_MS,
+    });
+    return NextResponse.json(result);
+  } finally {
+    if (inFlightSetup.get(userId) === setup) {
+      inFlightSetup.delete(userId);
+    }
+  }
+}
+
+async function runSetupPush(userId: string): Promise<SetupPushResult> {
+  const result: SetupPushResult = {
     gmail: { ok: false },
     calendar: { ok: false, channels: 0 },
     configured: {
@@ -37,7 +73,7 @@ export async function POST() {
   // Gmail
   if (result.configured.gmailPubsub) {
     try {
-      const r = await establishGmailWatch(session.user.id);
+      const r = await establishGmailWatch(userId);
       if (r) {
         result.gmail = { ok: true, expiresAt: r.expiration.toISOString() };
       } else {
@@ -56,7 +92,7 @@ export async function POST() {
   // Calendar
   if (result.configured.webhookBase && result.configured.webhookToken) {
     try {
-      const channels = await establishCalendarWatches(session.user.id);
+      const channels = await establishCalendarWatches(userId);
       result.calendar = { ok: channels.length > 0, channels: channels.length };
     } catch (err) {
       result.calendar = {
@@ -69,5 +105,5 @@ export async function POST() {
     result.calendar.error = "WEBHOOK_BASE_URL / WEBHOOK_TOKEN not set";
   }
 
-  return NextResponse.json(result);
+  return result;
 }
