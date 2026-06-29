@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getAllGoogleAccessTokens } from "@/lib/gmail/client";
+import { incrementProviderCall } from "@/lib/sync/provider-call-counter";
 
 // ─── Types ───
 
@@ -189,6 +190,7 @@ async function fetchCalendarEventsWithToken(
       url.searchParams.set("pageToken", pageToken);
     }
 
+    incrementProviderCall("google");
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${token}` },
     });

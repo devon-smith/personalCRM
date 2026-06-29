@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { incrementProviderCall } from "@/lib/sync/provider-call-counter";
 
 interface TokenResponse {
   access_token: string;
@@ -183,6 +184,7 @@ export function classifyRefreshFailure(
 async function refreshGoogleToken(refreshToken: string): Promise<RefreshResult> {
   let res: Response;
   try {
+    incrementProviderCall("google");
     res = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -259,6 +261,7 @@ export function googleFetchWithToken(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
+  incrementProviderCall("google");
   return fetch(url, {
     ...init,
     headers: {

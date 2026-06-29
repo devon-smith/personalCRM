@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
+import { withProviderCallCounter } from "@/lib/sync/provider-call-counter";
 
 export type SyncSource = "gmail" | "calendar";
 export type SyncTrigger = "cron" | "manual" | "webhook" | "browser_fallback";
@@ -48,7 +49,7 @@ export async function recordSyncRun<T>({
   }
 
   try {
-    const result = await run();
+    const { result, total: providerCallTotal } = await withProviderCallCounter(run);
     const finishedAt = new Date();
     const summary = summarize?.(result);
 
@@ -61,7 +62,7 @@ export async function recordSyncRun<T>({
             finishedAt,
             durationMs: finishedAt.getTime() - startedAt.getTime(),
             itemsProcessed: summary?.itemsProcessed ?? null,
-            providerCalls: summary?.providerCalls ?? null,
+            providerCalls: summary?.providerCalls ?? providerCallTotal,
             metadata: summary?.metadata ?? metadata,
           },
         })

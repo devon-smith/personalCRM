@@ -19,6 +19,7 @@ export interface RecentSyncRunStatus {
   finishedAt: string | null;
   durationMs: number | null;
   itemsProcessed: number | null;
+  providerCalls: number | null;
   error: string | null;
 }
 
@@ -97,6 +98,7 @@ async function getRecentSyncRuns(
         finishedAt: true,
         durationMs: true,
         itemsProcessed: true,
+        providerCalls: true,
         error: true,
       },
     });
@@ -110,6 +112,7 @@ async function getRecentSyncRuns(
       finishedAt: run.finishedAt?.toISOString() ?? null,
       durationMs: run.durationMs,
       itemsProcessed: run.itemsProcessed,
+      providerCalls: run.providerCalls,
       error: run.error,
     }));
   } catch {

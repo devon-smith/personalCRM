@@ -479,6 +479,7 @@ function SyncRunRow({
       <div className="flex items-center gap-2 tabular-nums">
         <span style={{ color: "var(--text-tertiary)" }}>
           {formatDuration(run.durationMs)}
+          {typeof run.providerCalls === "number" ? ` · ${run.providerCalls} call${run.providerCalls === 1 ? "" : "s"}` : ""}
           {typeof run.itemsProcessed === "number" ? ` · ${run.itemsProcessed} item${run.itemsProcessed === 1 ? "" : "s"}` : ""}
         </span>
         <span className="font-medium capitalize" style={{ color: statusColor }}>
