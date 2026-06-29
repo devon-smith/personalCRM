@@ -115,6 +115,7 @@
 - Contact typeahead surfaces now explicitly disable semantic embeddings. The command palette and link-handle picker use `semantic=0`, and the link-handle picker uses the capped search endpoint instead of the full contact-list payload with circles, counts, notes, and timestamps.
 - Ask/network-query now short-circuits rapid exact-match retries. If the same user asks the same question under the same parent within two minutes, the API returns the recent saved answer instead of launching another Claude/tool loop; later re-asks still run fresh.
 - Ask tool calls now clamp model-supplied `limit` values before hitting search, graph, interaction, and memory tools. Oversized or invalid limits fall back to bounded defaults, preventing accidental large DB reads and oversized tool-result prompts.
+- Ask memory lookup tools now expand `ContactMemory.openThreads` and `theyMentioned` in Postgres and return only unresolved/matching rows. They no longer load every memory JSON blob into the app process before filtering.
 
 ## Next Highest-Impact Efficiency Work
 

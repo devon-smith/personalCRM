@@ -33,7 +33,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { PrismaClient } from "@/generated/prisma/client";
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { findNeighbors } from "./graph-traverse";
 import { searchContacts as fuzzyContactSearch } from "@/lib/search/contacts";
 
@@ -132,6 +132,23 @@ interface ToolResult {
   data: unknown;
   /** Human-readable one-liner for the reasoning trace. */
   summary: string;
+}
+
+interface OpenThreadRow {
+  contactId: string;
+  contactName: string;
+  subject: string | null;
+  raisedBy: string | null;
+  raisedAt: string | null;
+  status: string | null;
+}
+
+interface PersonalMentionRow {
+  contactId: string;
+  contactName: string;
+  subject: string | null;
+  context: string | null;
+  mentionedAt: string | null;
 }
 
 // ─── Tool registry ─────────────────────────────────────────
@@ -460,41 +477,40 @@ const TOOLS: RegisteredTool[] = [
         DEFAULT_OPEN_THREAD_LIMIT,
         25,
       );
-      const memories = await ctx.prisma.contactMemory.findMany({
-        where: contactId
-          ? { contactId, contact: { userId: ctx.userId } }
-          : { contact: { userId: ctx.userId } },
-        select: {
-          openThreads: true,
-          contact: { select: { id: true, name: true } },
-        },
-      });
-      const allThreads: Array<{
-        contactId: string;
-        contactName: string;
-        subject: string;
-        raisedBy: string;
-        raisedAt: string;
-        status: string;
-      }> = [];
-      for (const m of memories) {
-        if (!Array.isArray(m.openThreads)) continue;
-        for (const t of m.openThreads as Array<Record<string, unknown>>) {
-          if (typeof t !== "object" || t === null) continue;
-          if (t.status === "resolved") continue;
-          allThreads.push({
-            contactId: m.contact.id,
-            contactName: m.contact.name,
-            subject: String(t.subject ?? ""),
-            raisedBy: String(t.raisedBy ?? ""),
-            raisedAt: String(t.raisedAt ?? ""),
-            status: String(t.status ?? "open"),
-          });
-        }
-      }
-      // Sort by raisedAt desc so most-recent unresolved threads land first.
-      allThreads.sort((a, b) => b.raisedAt.localeCompare(a.raisedAt));
-      const trimmed = allThreads.slice(0, limit);
+      const contactFilter = contactId
+        ? Prisma.sql`AND cm."contactId" = ${contactId}`
+        : Prisma.empty;
+      const rows = await ctx.prisma.$queryRaw<OpenThreadRow[]>(Prisma.sql`
+        SELECT cm."contactId" AS "contactId",
+               c."name" AS "contactName",
+               thread->>'subject' AS "subject",
+               thread->>'raisedBy' AS "raisedBy",
+               thread->>'raisedAt' AS "raisedAt",
+               COALESCE(thread->>'status', 'open') AS "status"
+        FROM "ContactMemory" cm
+        JOIN "Contact" c ON c.id = cm."contactId"
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(cm."openThreads"::jsonb) = 'array'
+              THEN cm."openThreads"::jsonb
+            ELSE '[]'::jsonb
+          END
+        ) AS thread
+        WHERE c."userId" = ${ctx.userId}
+          AND c."isNoise" = FALSE
+          AND COALESCE(thread->>'status', 'open') <> 'resolved'
+          ${contactFilter}
+        ORDER BY NULLIF(thread->>'raisedAt', '') DESC NULLS LAST
+        LIMIT ${limit}
+      `);
+      const trimmed = rows.map((row) => ({
+        contactId: row.contactId,
+        contactName: row.contactName,
+        subject: row.subject ?? "",
+        raisedBy: row.raisedBy ?? "",
+        raisedAt: row.raisedAt ?? "",
+        status: row.status ?? "open",
+      }));
       return {
         data: trimmed,
         summary: `${trimmed.length} open thread${trimmed.length === 1 ? "" : "s"}${contactId ? " for this contact" : " across all contacts"}`,
@@ -529,45 +545,48 @@ const TOOLS: RegisteredTool[] = [
         DEFAULT_PERSONAL_MENTION_LIMIT,
         20,
       );
-      const memories = await ctx.prisma.contactMemory.findMany({
-        where: { contact: { userId: ctx.userId } },
-        select: {
-          theyMentioned: true,
-          contact: { select: { id: true, name: true } },
-        },
-      });
-      const q = query.toLowerCase();
-      const matches: Array<{
-        contactId: string;
-        contactName: string;
-        subject: string;
-        context: string;
-        mentionedAt: string;
-      }> = [];
-      for (const m of memories) {
-        if (!Array.isArray(m.theyMentioned)) continue;
-        for (const item of m.theyMentioned as Array<Record<string, unknown>>) {
-          if (typeof item !== "object" || item === null) continue;
-          const subject = String(item.subject ?? "");
-          const context = String(item.context ?? "");
-          if (
-            subject.toLowerCase().includes(q) ||
-            context.toLowerCase().includes(q)
-          ) {
-            matches.push({
-              contactId: m.contact.id,
-              contactName: m.contact.name,
-              subject,
-              context,
-              mentionedAt: String(item.mentionedAt ?? ""),
-            });
-          }
-        }
+      const q = query.trim();
+      if (!q) {
+        return {
+          data: [],
+          summary: "No search term provided for personal mentions",
+        };
       }
-      matches.sort((a, b) => b.mentionedAt.localeCompare(a.mentionedAt));
+      const pattern = `%${q}%`;
+      const rows = await ctx.prisma.$queryRaw<PersonalMentionRow[]>(Prisma.sql`
+        SELECT cm."contactId" AS "contactId",
+               c."name" AS "contactName",
+               mention->>'subject' AS "subject",
+               mention->>'context' AS "context",
+               mention->>'mentionedAt' AS "mentionedAt"
+        FROM "ContactMemory" cm
+        JOIN "Contact" c ON c.id = cm."contactId"
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(cm."theyMentioned"::jsonb) = 'array'
+              THEN cm."theyMentioned"::jsonb
+            ELSE '[]'::jsonb
+          END
+        ) AS mention
+        WHERE c."userId" = ${ctx.userId}
+          AND c."isNoise" = FALSE
+          AND (
+            mention->>'subject' ILIKE ${pattern}
+            OR mention->>'context' ILIKE ${pattern}
+          )
+        ORDER BY NULLIF(mention->>'mentionedAt', '') DESC NULLS LAST
+        LIMIT ${limit}
+      `);
+      const matches = rows.map((row) => ({
+        contactId: row.contactId,
+        contactName: row.contactName,
+        subject: row.subject ?? "",
+        context: row.context ?? "",
+        mentionedAt: row.mentionedAt ?? "",
+      }));
       return {
-        data: matches.slice(0, limit),
-        summary: `${matches.length} contact${matches.length === 1 ? "" : "s"} mentioned something matching "${query}"`,
+        data: matches,
+        summary: `${matches.length} contact${matches.length === 1 ? "" : "s"} mentioned something matching "${q}"`,
       };
     },
   },
