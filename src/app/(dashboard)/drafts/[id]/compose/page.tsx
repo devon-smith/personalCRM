@@ -251,6 +251,7 @@ export default function ComposePage({
       if (!trimmed || isRefining) return;
       setIsRefining(true);
       setStreamingContent("");
+      setVariants(null);
       try {
         const res = await fetch(`/api/drafts/${id}/refine?stream=1`, {
           method: "POST",
@@ -335,6 +336,7 @@ export default function ComposePage({
   );
 
   const handleVariants = useCallback(async () => {
+    if (loadingVariants || (variants?.length ?? 0) > 0) return;
     setLoadingVariants(true);
     try {
       const res = await fetch(`/api/drafts/${id}/variants`, {
@@ -348,7 +350,7 @@ export default function ComposePage({
     } finally {
       setLoadingVariants(false);
     }
-  }, [id]);
+  }, [id, loadingVariants, variants]);
 
   // ─── Manual edit persistence ───────────────────────────────
 
@@ -358,6 +360,7 @@ export default function ComposePage({
     // Skip auto-save while a refinement is streaming — that would
     // race with the new version write.
     if (isRefining) return;
+    setVariants(null);
     saveVersion.mutate({
       content: current,
       subjectLine: editorSubject,
@@ -525,7 +528,10 @@ export default function ComposePage({
                 </p>
                 <input
                   value={editorSubject ?? ""}
-                  onChange={(e) => setEditorSubject(e.target.value)}
+                  onChange={(e) => {
+                    setEditorSubject(e.target.value);
+                    setVariants(null);
+                  }}
                   onBlur={handleEditorBlur}
                   className="w-full rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-[14px]"
                   style={{
@@ -561,6 +567,7 @@ export default function ComposePage({
                   ref={editorRef}
                   contentEditable={!isRefining}
                   suppressContentEditableWarning
+                  onInput={() => setVariants(null)}
                   onBlur={handleEditorBlur}
                   className="rounded-[var(--radius-md)] border px-4 py-3 outline-none whitespace-pre-wrap min-h-[200px]"
                   style={{
