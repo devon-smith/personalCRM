@@ -7,16 +7,23 @@ import {
 
 describe("isEligibleForAutoDraft", () => {
   it.each([["email"], ["gmail"]])(
-    'returns true for channel="%s"',
+    'returns true for classified response-needed channel="%s"',
     (channel) => {
-      expect(isEligibleForAutoDraft({ channel })).toBe(true);
+      expect(isEligibleForAutoDraft({ channel, needsResponse: true })).toBe(true);
     },
   );
 
   it.each([["text"], ["iMessage"], ["SMS"], ["linkedin"], ["whatsapp"]])(
     'returns false for non-email channel="%s"',
     (channel) => {
-      expect(isEligibleForAutoDraft({ channel })).toBe(false);
+      expect(isEligibleForAutoDraft({ channel, needsResponse: true })).toBe(false);
+    },
+  );
+
+  it.each([[null], [false]])(
+    "returns false unless the classifier marked needsResponse=true",
+    (needsResponse) => {
+      expect(isEligibleForAutoDraft({ channel: "email", needsResponse })).toBe(false);
     },
   );
 });
@@ -64,6 +71,7 @@ describe("buildDraftInputFromInboxItem", () => {
     userId: "user-1",
     contactId: "contact-1",
     channel: "email",
+    needsResponse: true,
   };
 
   it("returns null for ineligible channels", () => {

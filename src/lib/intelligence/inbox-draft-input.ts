@@ -19,6 +19,7 @@ export interface InboxItemForDraft {
   readonly userId: string;
   readonly contactId: string;
   readonly channel: string;
+  readonly needsResponse: boolean | null;
   readonly messagePreview: unknown;
   /** Gmail thread key ("gmail:<id>"). Passed through to the draft
    *  generator so it can load the actual inbound body. (M0.x.4) */
@@ -38,7 +39,9 @@ interface MessagePreviewEntry {
  */
 export function isEligibleForAutoDraft(item: {
   channel: string;
+  needsResponse: boolean | null;
 }): boolean {
+  if (item.needsResponse !== true) return false;
   return item.channel === "email" || item.channel === "gmail";
 }
 

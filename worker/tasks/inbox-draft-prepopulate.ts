@@ -32,6 +32,7 @@ import {
 } from "../../src/lib/intelligence/inbox-draft-input";
 
 const ITEMS_PER_RUN = 20;
+const MAX_ITEMS_PER_RUN = 20;
 
 interface PrepopulatePayload {
   userId?: string;
@@ -56,7 +57,7 @@ const inboxDraftPrepopulate: Task = async (rawPayload, helpers) => {
 
   const payload = (rawPayload ?? {}) as PrepopulatePayload;
   const prisma = createWorkerPrismaClient();
-  const limit = payload.limit ?? ITEMS_PER_RUN;
+  const limit = normalizeLimit(payload.limit);
 
   try {
     const userIds = payload.userId
@@ -87,16 +88,15 @@ async function prepopulateForUser(
   // `draft: null` in the where clause — no race between SELECT and
   // INSERT (the INSERT will fail if a parallel writer beat us).
   //
-  // M0.x.2: skip items the classifier explicitly marked as not
-  // needing a reply. Unclassified (needsResponse=null) still qualifies
-  // — fail-open avoids missing a real reply because the worker
-  // hadn't run yet.
+  // Only auto-draft when the classifier positively marked this item as
+  // needing a response. Unclassified rows remain visible in the reply
+  // queue, but they should not spend Sonnet calls in the background.
   const candidates = await prisma.inboxItem.findMany({
     where: {
       userId,
       status: "OPEN",
       draft: null,
-      OR: [{ needsResponse: null }, { needsResponse: true }],
+      needsResponse: true,
     },
     orderBy: { triggerAt: "desc" },
     take: limit,
@@ -106,6 +106,7 @@ async function prepopulateForUser(
       contactId: true,
       contactName: true,
       channel: true,
+      needsResponse: true,
       messagePreview: true,
       threadKey: true,
     },
@@ -129,6 +130,7 @@ async function prepopulateForUser(
       userId: item.userId,
       contactId: item.contactId,
       channel: item.channel,
+      needsResponse: item.needsResponse,
       messagePreview: item.messagePreview,
       threadKey: item.threadKey,
     });
@@ -170,6 +172,11 @@ async function prepopulateForUser(
   }
 
   return summary;
+}
+
+function normalizeLimit(limit: number | undefined): number {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return ITEMS_PER_RUN;
+  return Math.max(0, Math.min(MAX_ITEMS_PER_RUN, Math.floor(limit)));
 }
 
 export default inboxDraftPrepopulate;
