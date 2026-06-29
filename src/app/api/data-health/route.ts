@@ -78,14 +78,13 @@ export async function GET(request: Request) {
   }
 
   const [googleAccounts, user, syncState, contactsCursors] = await Promise.all([
-    // Check ALL linked Google accounts for tokens and scopes.
+    // Check ALL linked Google accounts for source capability and reconnect state.
     prisma.account.findMany({
       where: { userId, provider: "google" },
       select: {
         id: true,
-        access_token: true,
+        providerAccountId: true,
         scope: true,
-        id_token: true,
         needsReconnect: true,
         lastRefreshAt: true,
         lastRefreshError: true,
@@ -111,21 +110,21 @@ export async function GET(request: Request) {
     }),
   ]);
 
-  const hasGoogleOAuth = googleAccounts.some((a) => !!a.access_token);
+  const hasGoogleOAuth = googleAccounts.length > 0;
+  const activeGoogleAccounts = googleAccounts.filter((a) => !a.needsReconnect);
 
-  const hasGmailScope = googleAccounts.some(
-    (a) => a.access_token && (!a.scope || a.scope.includes("gmail.readonly")),
+  const hasGmailScope = activeGoogleAccounts.some(
+    (a) => !a.scope || a.scope.includes("gmail.readonly"),
   );
-  const hasContactsScope = googleAccounts.some(
+  const hasContactsScope = activeGoogleAccounts.some(
     (a) =>
-      a.access_token &&
-      (!a.scope || /\/auth\/contacts(\.readonly)?(\s|$)/.test(a.scope)),
+      !a.scope || /\/auth\/contacts(\.readonly)?(\s|$)/.test(a.scope),
   );
-  const hasCalendarScope = googleAccounts.some(
-    (a) => a.access_token && (!a.scope || a.scope.includes("calendar.readonly")),
+  const hasCalendarScope = activeGoogleAccounts.some(
+    (a) => !a.scope || a.scope.includes("calendar.readonly"),
   );
 
-  // Build per-account info with email extracted from id_token
+  // Build per-account info without selecting OAuth token material.
   const latestContactsSync = contactsCursors
     .map((c) => c.lastSyncAt)
     .filter((d): d is Date => d !== null)
@@ -136,29 +135,23 @@ export async function GET(request: Request) {
     ...(syncState?.additionalUserEmails ?? []),
   ].filter((e): e is string => !!e);
 
-  // Map accounts to emails by decoding id_token JWT payload
+  // Map accounts to emails using non-token fields. Added secondary
+  // account emails are stored on GmailSyncState during OAuth callback.
   const accountInfos: GoogleAccountInfo[] = googleAccounts
-    .filter((a) => !!a.access_token)
     .map((a, idx) => {
-      let email = allUserEmails[idx] ?? `Account ${idx + 1}`;
-      // Try to extract email from id_token (JWT payload)
-      if (a.id_token) {
-        try {
-          const payload = JSON.parse(
-            Buffer.from(a.id_token.split(".")[1], "base64").toString(),
-          );
-          if (payload.email) email = payload.email;
-        } catch {
-          // ignore decode errors
-        }
-      }
+      const email = allUserEmails[idx] ?? `Google account ${a.providerAccountId}`;
       return {
         id: a.id,
         email,
-        hasGmail: !a.scope || a.scope.includes("gmail.readonly"),
-        hasCalendar: !a.scope || a.scope.includes("calendar.readonly"),
+        hasGmail:
+          !a.needsReconnect &&
+          (!a.scope || a.scope.includes("gmail.readonly")),
+        hasCalendar:
+          !a.needsReconnect &&
+          (!a.scope || a.scope.includes("calendar.readonly")),
         hasContacts:
-          !a.scope || /\/auth\/contacts(\.readonly)?(\s|$)/.test(a.scope),
+          !a.needsReconnect &&
+          (!a.scope || /\/auth\/contacts(\.readonly)?(\s|$)/.test(a.scope)),
         needsReconnect: a.needsReconnect,
         lastRefreshAt: a.lastRefreshAt?.toISOString() ?? null,
         lastRefreshError: a.lastRefreshError,
