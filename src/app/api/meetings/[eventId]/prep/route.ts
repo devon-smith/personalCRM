@@ -26,10 +26,15 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // 30-day window covers most prep cases. Could be widened if needed.
+  // Most prep links originate from Home/Calendar, which both load the
+  // 7-day upcoming window. Try that shared cached range first, then
+  // widen to 30 days for direct deep links or further-out meetings.
   let events;
   try {
-    events = await getUpcomingEvents(session.user.id, 30);
+    events = await getUpcomingEvents(session.user.id, 7);
+    if (!events.some((event) => event.id === eventId)) {
+      events = await getUpcomingEvents(session.user.id, 30);
+    }
   } catch {
     return NextResponse.json({ error: "Calendar not connected" }, { status: 503 });
   }

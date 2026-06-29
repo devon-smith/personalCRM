@@ -108,6 +108,7 @@
 - The default `/api/data-health` payload no longer computes or returns gap previews. Those optional zero-interaction/unmatched-sender lists are only built through `scope=gaps`, so normal Sources loads skip the extra contact preview and candidate email lookup.
 - Default data-health account/bootstrap reads now run in parallel and select only the `GmailSyncState` fields rendered by Sources. Large sync-state fields such as `unmatchedSenders` and `mutedThreads` stay off normal source-status loads.
 - Live upcoming Calendar reads now use a short per-user in-process cache shared by Home, Calendar, meeting prep, and morning brief calls. Reopening those surfaces within a minute reuses the assembled event/contact context instead of repeating Google Calendar list calls; manual Calendar sync clears that user's cache before refetching.
+- Meeting prep now checks the shared 7-day upcoming Calendar window before widening to 30 days. Prep links opened from Home or Calendar can reuse the existing cached Calendar context instead of triggering a second, broader Google Calendar list call.
 
 ## Next Highest-Impact Efficiency Work
 
