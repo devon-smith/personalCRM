@@ -74,6 +74,7 @@
 - Converted unused legacy inbox debug/migration routes into fail-closed stubs so direct requests cannot run raw inbox diagnostics or all-interaction chat-id backfills.
 - Converted unused legacy interaction cleanup/dedup routes into fail-closed stubs so direct requests cannot scan or delete historical interaction rows.
 - Converted unused legacy `/api/threads/backfill` into a fail-closed stub. Current Gmail/iMessage sync paths create and link threads directly.
+- Converted unused admin/debug and contact-maintenance HTTP routes into fail-closed stubs: admin job inspection, morning-brief preview/manual trigger, legacy duplicate scan, and CSV contact cleanup. Worker/source health and duplicate review now stay on the focused Sources, usage telemetry, and Merge bootstrap flows.
 
 ## Next Highest-Impact Efficiency Work
 
