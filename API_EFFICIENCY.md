@@ -70,6 +70,7 @@
 - Converted unused legacy `/api/suggestions` and `/api/scheduling` routes into fail-closed stubs, removing accidental Calendar/provider and broad contact-query work from retired dashboard widgets.
 - Converted unused legacy `/api/dashboard/stats` and `/api/inbox` reads into fail-closed stubs. Active home and inbox surfaces use `/api/dashboard/bootstrap` and `/api/inbox-items`.
 - Converted unused legacy `/api/changelog` routes into fail-closed stubs. Meeting prep and imports still use changelog data through focused server-side library calls.
+- Converted unused legacy HTTP backfill routes into fail-closed stubs so direct requests cannot trigger large source imports or relationship coverage scans. Maintenance scripts remain available for intentional backfills.
 
 ## Next Highest-Impact Efficiency Work
 
