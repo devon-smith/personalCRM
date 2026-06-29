@@ -33,6 +33,9 @@ export interface CircleSyncResult {
   removed: number;
   unresolved: number; // members we couldn't map to a People API resource
   googleGroupResourceName: string;
+  googleSyncEnabled: boolean;
+  googleSyncedAt: string;
+  googleSyncError: null;
 }
 
 export async function syncCircleToGoogle(
@@ -165,10 +168,11 @@ export async function syncCircleToGoogle(
     throw err;
   }
 
+  const syncedAt = new Date();
   await prisma.circle.update({
     where: { id: circleId },
     data: {
-      googleSyncedAt: new Date(),
+      googleSyncedAt: syncedAt,
       googleSyncError: null,
     },
   });
@@ -179,6 +183,9 @@ export async function syncCircleToGoogle(
     removed: toRemove.length,
     unresolved,
     googleGroupResourceName: groupResourceName,
+    googleSyncEnabled: true,
+    googleSyncedAt: syncedAt.toISOString(),
+    googleSyncError: null,
   };
 }
 

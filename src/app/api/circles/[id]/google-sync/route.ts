@@ -3,6 +3,20 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { syncCircleToGoogle } from "@/lib/circle-google-sync";
 
+function serializeCircleSyncState(circle: {
+  id: string;
+  googleSyncEnabled: boolean;
+  googleSyncedAt: Date | null;
+  googleSyncError: string | null;
+}) {
+  return {
+    id: circle.id,
+    googleSyncEnabled: circle.googleSyncEnabled,
+    googleSyncedAt: circle.googleSyncedAt?.toISOString() ?? null,
+    googleSyncError: circle.googleSyncError,
+  };
+}
+
 /**
  * PATCH /api/circles/[id]/google-sync
  * Body: { enabled: boolean }
@@ -27,14 +41,24 @@ export async function PATCH(
   }
 
   try {
-    const updated = await prisma.circle.updateMany({
+    const circle = await prisma.circle.findFirst({
       where: { id, userId: session.user.id },
-      data: { googleSyncEnabled: body.enabled, googleSyncError: null },
+      select: { id: true },
     });
-    if (updated.count === 0) {
+    if (!circle) {
       return NextResponse.json({ error: "Circle not found" }, { status: 404 });
     }
-    return NextResponse.json({ ok: true });
+    const updated = await prisma.circle.update({
+      where: { id },
+      data: { googleSyncEnabled: body.enabled, googleSyncError: null },
+      select: {
+        id: true,
+        googleSyncEnabled: true,
+        googleSyncedAt: true,
+        googleSyncError: true,
+      },
+    });
+    return NextResponse.json(serializeCircleSyncState(updated));
   } catch (err) {
     // Surface the real error so the user / browser can see what's
     // wrong instead of the UI silently swallowing a 500. Common causes:

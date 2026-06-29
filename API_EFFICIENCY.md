@@ -159,6 +159,7 @@
 - Contact detail alias and secondary-phone edits now patch focused contact caches plus visible contact-list rows without refetching `/api/contacts`. Secondary-email edits still refresh contact lists because email search membership can change.
 - Manual Gmail sync in Inbox and Reply Queue now uses one shared client helper. It only calls action extraction when Gmail returns changed thread refs, still refreshes visible inbox/queue caches when message content changed, and refreshes the lightweight Google source-status cache after explicit sync attempts.
 - Circle metadata edits now patch open circle, circle-summary, and People filter caches locally. Follow-up cadence and membership changes still refresh circle payloads because they affect warmth/health and filtered membership.
+- Circle-to-Google sync toggles now return authoritative sync metadata and patch circle caches locally. Turning sync on/off or completing a Google group sync no longer refetches the full circle/contact payload just to update synced/error status.
 
 ## Next Highest-Impact Efficiency Work
 

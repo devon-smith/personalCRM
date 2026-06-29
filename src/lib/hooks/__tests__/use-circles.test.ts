@@ -22,6 +22,9 @@ describe("circle cache helpers", () => {
       name: "Research Partners",
       color: "#B5613F",
       sortOrder: 2,
+      googleSyncEnabled: true,
+      googleSyncedAt: "2026-06-29T12:00:00.000Z",
+      googleSyncError: null,
     });
 
     const circles = queryClient.getQueryData<CircleWithContacts[]>(["circles"]);
@@ -30,6 +33,9 @@ describe("circle cache helpers", () => {
       id: "c1",
       name: "Research Partners",
       color: "#B5613F",
+      googleSyncEnabled: true,
+      googleSyncedAt: "2026-06-29T12:00:00.000Z",
+      googleSyncError: null,
       contacts: [{ id: "contact-c1" }],
       health: { good: 1, mid: 0, cold: 0 },
     });

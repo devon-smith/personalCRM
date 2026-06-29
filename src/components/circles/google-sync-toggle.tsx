@@ -4,12 +4,21 @@ import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { patchCircleMetadataCaches } from "@/lib/hooks/use-circles";
 
 interface GoogleSyncToggleProps {
   circleId: string;
   enabled: boolean;
   syncedAt: string | null;
   error: string | null;
+}
+
+interface CircleSyncStateResponse {
+  id?: string;
+  circleId?: string;
+  googleSyncEnabled?: boolean;
+  googleSyncedAt?: string | null;
+  googleSyncError?: string | null;
 }
 
 /**
@@ -34,6 +43,7 @@ export function GoogleSyncToggle({
 
   const enableAndSync = useCallback(async () => {
     setBusy(true);
+    let syncAttempted = enabled;
     try {
       // Enable first if needed
       if (!enabled) {
@@ -46,13 +56,17 @@ export function GoogleSyncToggle({
           const e = await patch.json().catch(() => ({}));
           throw new Error(e.error ?? "Couldn't enable sync");
         }
+        const patchResult = (await patch.json().catch(() => ({}))) as CircleSyncStateResponse;
+        patchCircleSyncState(queryClient, circleId, patchResult);
       }
       // Trigger sync
+      syncAttempted = true;
       const sync = await fetch(`/api/circles/${circleId}/google-sync`, {
         method: "POST",
       });
       const result = await sync.json().catch(() => ({}));
       if (!sync.ok) throw new Error(result.error ?? "Sync failed");
+      patchCircleSyncState(queryClient, circleId, result as CircleSyncStateResponse);
 
       const parts: string[] = [];
       if (typeof result.added === "number") parts.push(`+${result.added}`);
@@ -61,10 +75,17 @@ export function GoogleSyncToggle({
         parts.push(`${result.unresolved} unresolved`);
       }
       toast.success(`Synced to Google ${parts.join(" ")}`.trim());
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sync failed");
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
+      const message = err instanceof Error ? err.message : "Sync failed";
+      toast.error(message);
+      if (syncAttempted) {
+        patchCircleMetadataCaches(queryClient, {
+          id: circleId,
+          googleSyncEnabled: true,
+          googleSyncedAt: null,
+          googleSyncError: message,
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -79,8 +100,9 @@ export function GoogleSyncToggle({
         body: JSON.stringify({ enabled: false }),
       });
       if (!res.ok) throw new Error("Couldn't disable sync");
+      const result = (await res.json().catch(() => ({}))) as CircleSyncStateResponse;
+      patchCircleSyncState(queryClient, circleId, result);
       toast("Google sync turned off");
-      queryClient.invalidateQueries({ queryKey: ["circles"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
     } finally {
@@ -164,4 +186,23 @@ function formatRelative(iso: string): string {
   if (hr < 24) return `${hr}h ago`;
   const d = Math.floor(hr / 24);
   return `${d}d ago`;
+}
+
+function patchCircleSyncState(
+  queryClient: ReturnType<typeof useQueryClient>,
+  circleId: string,
+  result: CircleSyncStateResponse,
+) {
+  patchCircleMetadataCaches(queryClient, {
+    id: result.id ?? result.circleId ?? circleId,
+    ...(result.googleSyncEnabled !== undefined && {
+      googleSyncEnabled: result.googleSyncEnabled,
+    }),
+    ...(result.googleSyncedAt !== undefined && {
+      googleSyncedAt: result.googleSyncedAt,
+    }),
+    ...(result.googleSyncError !== undefined && {
+      googleSyncError: result.googleSyncError,
+    }),
+  });
 }
