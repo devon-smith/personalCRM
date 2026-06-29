@@ -50,6 +50,11 @@ interface AIClassification {
   readonly reasoning: string;
 }
 
+interface ContactEmailMaps {
+  readonly contactByEmail: Map<string, string>;
+  readonly contactNameByEmail: Map<string, string>;
+}
+
 export interface ExtractResult {
   threadsAnalyzed: number;
   actionsFound: number;
@@ -84,6 +89,16 @@ function extractEmail(headerValue: string): string | null {
     headerValue.match(/<([^>]+)>/) ??
     headerValue.match(/([^\s<,]+@[^\s>,]+)/);
   return match?.[1]?.toLowerCase() ?? null;
+}
+
+function extractEmails(headerValue: string | null): string[] {
+  if (!headerValue) return [];
+
+  const emails = new Set<string>();
+  for (const match of headerValue.matchAll(/([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/gi)) {
+    emails.add(match[1].toLowerCase());
+  }
+  return [...emails];
 }
 
 /**
@@ -173,6 +188,61 @@ function normalizeChangedThreadRefs(
   }
 
   return normalized;
+}
+
+function collectThreadLookupEmails(threads: readonly GmailThread[]): string[] {
+  const emails = new Set<string>();
+
+  for (const thread of threads) {
+    for (const message of thread.messages) {
+      for (const header of ["From", "Reply-To"] as const) {
+        for (const email of extractEmails(getHeader(message.payload.headers, header))) {
+          emails.add(email);
+        }
+      }
+    }
+  }
+
+  return [...emails];
+}
+
+async function loadContactEmailMaps(
+  userId: string,
+  lookupEmails: readonly string[],
+): Promise<ContactEmailMaps> {
+  const normalizedEmails = [...new Set(lookupEmails.map((e) => e.toLowerCase()).filter(Boolean))];
+  const normalizedEmailSet = new Set(normalizedEmails);
+  const contactByEmail = new Map<string, string>();
+  const contactNameByEmail = new Map<string, string>();
+
+  if (normalizedEmails.length === 0) {
+    return { contactByEmail, contactNameByEmail };
+  }
+
+  const contacts = await prisma.contact.findMany({
+    where: {
+      userId,
+      OR: [
+        { email: { in: normalizedEmails, mode: "insensitive" } },
+        { additionalEmails: { hasSome: normalizedEmails } },
+      ],
+    },
+    select: { id: true, name: true, email: true, additionalEmails: true },
+  });
+
+  for (const contact of contacts) {
+    const emails = [contact.email, ...contact.additionalEmails]
+      .filter((email): email is string => !!email)
+      .map((email) => email.toLowerCase());
+
+    for (const email of emails) {
+      if (!normalizedEmailSet.has(email)) continue;
+      contactByEmail.set(email, contact.id);
+      contactNameByEmail.set(email, contact.name);
+    }
+  }
+
+  return { contactByEmail, contactNameByEmail };
 }
 
 // ─── Gmail fetching ───
@@ -503,23 +573,11 @@ export async function extractActionItems(
       ? await fetchChangedThreads(userId, changedThreads)
       : await fetchRecentThreads(userId, 7, 30);
 
-  // 2. Load contacts for matching (including additionalEmails)
-  const contacts = await prisma.contact.findMany({
-    where: { userId, email: { not: null } },
-    select: { id: true, name: true, email: true, additionalEmails: true },
-  });
-  const contactByEmail = new Map<string, string>();
-  const contactNameByEmail = new Map<string, string>();
-  for (const c of contacts) {
-    if (c.email) {
-      contactByEmail.set(c.email.toLowerCase(), c.id);
-      contactNameByEmail.set(c.email.toLowerCase(), c.name);
-    }
-    for (const ae of c.additionalEmails) {
-      contactByEmail.set(ae.toLowerCase(), c.id);
-      contactNameByEmail.set(ae.toLowerCase(), c.name);
-    }
-  }
+  // 2. Load only contacts that can match senders in the fetched threads.
+  const { contactByEmail, contactNameByEmail } = await loadContactEmailMaps(
+    userId,
+    collectThreadLookupEmails(threads),
+  );
 
   // 3. Load existing action item threadIds to avoid reprocessing
   const existingThreadIds = new Set(
@@ -665,23 +723,10 @@ export async function extractActionItemsBackfill(
 
   console.log(`[extract-actions] Backfill: ${allThreads.length} threads from ${days} days across ${accountTokens.length} accounts`);
 
-  // Load contacts for matching (including additionalEmails)
-  const contacts = await prisma.contact.findMany({
-    where: { userId, email: { not: null } },
-    select: { id: true, name: true, email: true, additionalEmails: true },
-  });
-  const contactByEmail = new Map<string, string>();
-  const contactNameByEmail = new Map<string, string>();
-  for (const c of contacts) {
-    if (c.email) {
-      contactByEmail.set(c.email.toLowerCase(), c.id);
-      contactNameByEmail.set(c.email.toLowerCase(), c.name);
-    }
-    for (const ae of c.additionalEmails) {
-      contactByEmail.set(ae.toLowerCase(), c.id);
-      contactNameByEmail.set(ae.toLowerCase(), c.name);
-    }
-  }
+  const { contactByEmail, contactNameByEmail } = await loadContactEmailMaps(
+    userId,
+    collectThreadLookupEmails(allThreads),
+  );
 
   // Load existing action item threadIds to avoid reprocessing
   const existingThreadIds = new Set(
