@@ -23,8 +23,9 @@ import {
   buildPersonFactsPromptBlock,
   loadPersonFactsForPrompt,
 } from "@/lib/person-facts";
+import { getAnthropicSonnetModel } from "@/lib/anthropic-models";
 
-const DRAFT_MODEL = "claude-sonnet-4-20250514";
+const DRAFT_MODEL = getAnthropicSonnetModel();
 
 /** Cap retrieved examples — more than 4 dilutes the signal + bloats tokens. */
 const VOICE_EXAMPLE_COUNT = 4;
@@ -62,6 +63,11 @@ export interface DraftResult {
     examples: Array<{ toEmail: string; sentAt: string }>;
     relationshipType: string;
   };
+}
+
+interface DraftQualityContext {
+  readonly context: DraftContext;
+  readonly replyContext: ReplyContext | null;
 }
 
 const TONE_LABELS: Record<DraftTone, string> = {
@@ -251,7 +257,18 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
         inputRefs,
         error: err instanceof Error ? err.message : String(err),
       });
+      if (params.context === "reply_email") {
+        throw new Error(
+          "Contextual reply generation failed; generic reply fallback is disabled.",
+        );
+      }
     }
+  }
+
+  if (params.context === "reply_email") {
+    throw new Error(
+      "ANTHROPIC_API_KEY is required for contextual email replies; generic reply fallback is disabled.",
+    );
   }
 
   return generateFromTemplate({
@@ -306,6 +323,9 @@ Also generate a subject line if this is an email (not for texts).
 IMPORTANT:
 - If a "YOU ARE REPLYING TO THIS MESSAGE" block is present, the draft MUST be a direct reply to that message — answer questions asked, acknowledge specific points, match its tone. Do NOT write a generic catch-up email. Pull subject + recipient from the inbound, not invented context.
 - When the inbound asks a factual/scheduling/logistics question, look across the prior thread context, recent interactions, source-backed facts, and memory before asking the recipient to repeat themselves. If the answer is known, answer it directly. If it is unknown, be clear and concise about what still needs confirmation.
+- Before drafting, silently identify: (1) what the latest message is asking for, (2) what answer or next action ${profile.firstName} can give from the thread/facts/memory, (3) what information is missing, and (4) the relationship-appropriate tone. Do not output this analysis — use it to write the draft.
+- Avoid non-answers. Do not say "appreciate you sending this over", "I'll take a closer look", "I'll review and get back to you shortly", or "follow up with thoughts by end of week" unless the inbound message specifically asks for review of attached material and the draft names what will be reviewed.
+- Never leave placeholders such as INSERT_MOMS_FIRST_NAME, INSERT_MOMS_FULL_NAME, [name], or TODO in the draft.
 - If replying to an email, acknowledge the delay if it's been more than 3 days. Don't be overly apologetic, just briefly.
 - Reference specific things from past interactions when possible.
 - If the contact is at a specific company, you can reference it naturally.
@@ -397,27 +417,6 @@ Return ONLY valid JSON with no markdown:
 
   const userContent = `${replyPromptBlock}DRAFT METADATA (use to tune tone + reference context):\n${jsonPayload}`;
 
-  const message = await anthropic.messages.create({
-    model: DRAFT_MODEL,
-    max_tokens: 800,
-    system: systemBlocks,
-    messages: [{ role: "user", content: userContent }],
-  });
-
-  await logAIGeneration({
-    userId: params.userId,
-    feature: "draft",
-    model: DRAFT_MODEL,
-    inputRefs: params.inputRefs,
-    tokensIn: message.usage?.input_tokens ?? null,
-    tokensOut: message.usage?.output_tokens ?? null,
-    cacheHit:
-      (message.usage?.cache_read_input_tokens ?? 0) > 0 ? true : null,
-    latencyMs: Date.now() - startedAt,
-  });
-
-  const text = message.content[0].type === "text" ? message.content[0].text : "";
-
   // M0.x.5: surface what fed the prompt so the draft modal can show
   // an audit trail ("Voice references: 3 files · Past emails: 2").
   const voiceContextUsed = params.voiceContext
@@ -435,22 +434,212 @@ Return ONLY valid JSON with no markdown:
       }
     : undefined;
 
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let cacheHit = false;
+  let lastIssues: string[] = [];
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const attemptContent =
+      attempt === 0
+        ? userContent
+        : `${userContent}\n\nDRAFT QUALITY CORRECTION:\nYour previous draft was rejected because:\n${lastIssues
+            .map((issue) => `- ${issue}`)
+            .join("\n")}\n\nRewrite from scratch. The new draft must directly respond to the exact latest message, name the concrete topic/request, answer what can be answered from the supplied context, and avoid generic review/follow-up language.`;
+
+    const message = await anthropic.messages.create({
+      model: DRAFT_MODEL,
+      max_tokens: 900,
+      system: systemBlocks,
+      messages: [{ role: "user", content: attemptContent }],
+    });
+
+    tokensIn += message.usage?.input_tokens ?? 0;
+    tokensOut += message.usage?.output_tokens ?? 0;
+    cacheHit ||= (message.usage?.cache_read_input_tokens ?? 0) > 0;
+
+    const text =
+      message.content[0].type === "text" ? message.content[0].text : "";
+    const result = parseDraftResponse(text, voiceContextUsed);
+    lastIssues = findDraftQualityIssues(result, {
+      context: params.context,
+      replyContext: params.replyContext,
+    });
+
+    if (lastIssues.length === 0) {
+      await logAIGeneration({
+        userId: params.userId,
+        feature: "draft",
+        model: DRAFT_MODEL,
+        inputRefs: params.inputRefs,
+        tokensIn,
+        tokensOut,
+        cacheHit: cacheHit ? true : null,
+        latencyMs: Date.now() - startedAt,
+      });
+      return result;
+    }
+  }
+
+  await logAIGeneration({
+    userId: params.userId,
+    feature: "draft",
+    model: DRAFT_MODEL,
+    inputRefs: params.inputRefs,
+    tokensIn,
+    tokensOut,
+    cacheHit: cacheHit ? true : null,
+    latencyMs: Date.now() - startedAt,
+    error: `Draft failed quality gate: ${lastIssues.join("; ")}`,
+  });
+
+  throw new Error(`Draft failed quality gate: ${lastIssues.join("; ")}`);
+}
+
+function parseDraftResponse(
+  text: string,
+  voiceContextUsed: DraftResult["voiceContextUsed"],
+): DraftResult {
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
       return {
-        quick: parsed.quick ?? "",
-        detailed: parsed.detailed ?? "",
-        subjectLine: parsed.subjectLine ?? null,
+        quick: typeof parsed.quick === "string" ? parsed.quick : "",
+        detailed: typeof parsed.detailed === "string" ? parsed.detailed : "",
+        subjectLine:
+          typeof parsed.subjectLine === "string" && parsed.subjectLine.trim()
+            ? parsed.subjectLine
+            : null,
         voiceContextUsed,
       };
     }
   } catch {
-    // Parse failure — fall through to template
+    // Parse failure — caller quality gate will decide whether raw text
+    // is acceptable for non-reply workflows.
   }
 
   return { quick: text, detailed: text, subjectLine: null, voiceContextUsed };
+}
+
+const GENERIC_REPLY_PATTERNS: RegExp[] = [
+  /appreciate you sending this over/i,
+  /take a closer look/i,
+  /follow up with thoughts by (?:the )?end of (?:the )?week/i,
+  /thanks for the email\.?\s+i(?:'|’)ll review and get back to you shortly/i,
+  /i(?:'|’)ll review and get back to you shortly/i,
+];
+
+const PLACEHOLDER_PATTERN =
+  /\b(?:INSERT_[A-Z0-9_]+|\[[a-z _-]*name[a-z _-]*\]|TODO)\b/i;
+
+export function findDraftQualityIssues(
+  result: Pick<DraftResult, "quick" | "detailed">,
+  ctx: DraftQualityContext,
+): string[] {
+  const issues: string[] = [];
+  const variants = [
+    ["quick", result.quick],
+    ["detailed", result.detailed],
+  ] as const;
+
+  for (const [label, body] of variants) {
+    const text = body.trim();
+    if (!text) {
+      issues.push(`${label} draft is empty`);
+      continue;
+    }
+    if (PLACEHOLDER_PATTERN.test(text)) {
+      issues.push(`${label} draft contains a placeholder`);
+    }
+    if (GENERIC_REPLY_PATTERNS.some((pattern) => pattern.test(text))) {
+      issues.push(`${label} draft uses generic review/follow-up template language`);
+    }
+  }
+
+  if (ctx.context === "reply_email" && ctx.replyContext) {
+    const inboundText = [
+      ctx.replyContext.latestInbound.subject,
+      ctx.replyContext.latestInbound.body,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const terms = extractSignificantTerms(inboundText);
+    if (terms.length >= 3) {
+      for (const [label, body] of variants) {
+        if (!body.trim()) continue;
+        const overlap = countTermOverlap(body, terms);
+        if (overlap === 0) {
+          issues.push(
+            `${label} reply does not reference any specific topic from the latest inbound message`,
+          );
+        }
+      }
+    }
+  }
+
+  return Array.from(new Set(issues));
+}
+
+const TERM_STOPWORDS = new Set([
+  "about",
+  "after",
+  "again",
+  "also",
+  "because",
+  "before",
+  "being",
+  "could",
+  "email",
+  "from",
+  "have",
+  "hello",
+  "here",
+  "just",
+  "know",
+  "like",
+  "look",
+  "more",
+  "much",
+  "need",
+  "note",
+  "over",
+  "please",
+  "quick",
+  "really",
+  "said",
+  "send",
+  "sending",
+  "should",
+  "thanks",
+  "thank",
+  "that",
+  "their",
+  "there",
+  "these",
+  "thing",
+  "think",
+  "this",
+  "thought",
+  "through",
+  "wanted",
+  "would",
+  "your",
+]);
+
+function extractSignificantTerms(text: string): string[] {
+  const terms =
+    text
+      .toLowerCase()
+      .match(/[a-z][a-z'-]{3,}/g)
+      ?.map((term) => term.replace(/^'+|'+$/g, ""))
+      .filter((term) => !TERM_STOPWORDS.has(term)) ?? [];
+  return Array.from(new Set(terms)).slice(0, 32);
+}
+
+function countTermOverlap(text: string, terms: string[]): number {
+  const normalized = ` ${text.toLowerCase()} `;
+  return terms.filter((term) => normalized.includes(term)).length;
 }
 
 /**
@@ -705,13 +894,13 @@ function generateFromTemplate(params: {
       subjectLine: `Quick check-in`,
     },
     "casual_reply_email": {
-      quick: `Hey ${firstName}, sorry for the late reply! ${threadSubject ? `Re the ${threadSubject.replace(/^Re:\s*/i, "")} — ` : ""}sounds good, let's do it.`,
-      detailed: `Hey ${firstName}, apologies for sitting on this — been heads down with school. ${threadSubject ? `Regarding "${threadSubject.replace(/^Re:\s*/i, "")}" — ` : ""}I think that works well. Let me know if you want to hop on a quick call to hash out the details. Free later this week?`,
+      quick: `Hey ${firstName}, I saw your note${threadSubject ? ` about ${threadSubject.replace(/^Re:\s*/i, "")}` : ""}. I want to answer this specifically, but I need the full thread context before drafting a real reply.`,
+      detailed: `Hey ${firstName}, I saw your note${threadSubject ? ` about "${threadSubject.replace(/^Re:\s*/i, "")}"` : ""}. I don't want to send a generic response here without the actual thread context. Once the message body is available, I can answer the specific question or next step directly.`,
       subjectLine: threadSubject ? `Re: ${threadSubject.replace(/^Re:\s*/i, "")}` : null,
     },
     "professional_reply_email": {
-      quick: `Hi ${firstName}, thanks for the email. I'll review and get back to you shortly.`,
-      detailed: `Hi ${firstName}, appreciate you sending this over. ${threadSubject ? `Re: "${threadSubject.replace(/^Re:\s*/i, "")}" — ` : ""}I'll take a closer look and follow up with thoughts by end of week.${signoff}`,
+      quick: `Hi ${firstName}, I saw your note${threadSubject ? ` about ${threadSubject.replace(/^Re:\s*/i, "")}` : ""}. I need the full thread context before drafting a specific reply.`,
+      detailed: `Hi ${firstName}, I saw your note${threadSubject ? ` about "${threadSubject.replace(/^Re:\s*/i, "")}"` : ""}. I don't want to send a generic response without the actual message context. Once the full thread is available, I can answer the specific question or next step directly.${signoff}`,
       subjectLine: threadSubject ? `Re: ${threadSubject.replace(/^Re:\s*/i, "")}` : null,
     },
     "congratulatory_congratulate": {

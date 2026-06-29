@@ -19,8 +19,9 @@ import type {
   WorkspaceVersion,
 } from "./workspace-types";
 import type { VoiceReferenceForPrompt } from "@/lib/voice/draft-prompt";
+import { getAnthropicSonnetModel } from "@/lib/anthropic-models";
 
-const REFINE_MODEL = "claude-sonnet-4-20250514";
+const REFINE_MODEL = getAnthropicSonnetModel();
 
 export interface RefineContextSummary {
   /** Recipient first name — used in any model-side framing. */

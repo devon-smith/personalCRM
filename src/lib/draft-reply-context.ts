@@ -226,9 +226,11 @@ export function buildReplyPromptBlock(ctx: ReplyContext): string {
     ? ""
     : "\n\n[Note: only the message snippet is available — Gmail's full body could not be fetched. Reply based on what's here without inventing details.]";
 
-  return `YOU ARE REPLYING TO THIS MESSAGE. Read it carefully and write a reply that directly addresses what was said. Reference specific points from their message — do NOT write a generic catch-up email.
+  return `YOU ARE REPLYING TO THIS MESSAGE. Read it carefully and write a reply that directly addresses what was said. Reference specific points from their message — do NOT write a generic catch-up email or a generic "I'll review and follow up" acknowledgment.
 
 If the latest message asks questions, first look for answers in the prior thread context and the draft metadata. Answer from known context when possible. If the answer is not available, ask a concise clarifying question instead of inventing.
+
+Do not write a placeholder holding reply. The draft must make it obvious you read the latest message: name the concrete topic, request, event, document, or decision they raised.
 
 ${historyBlock}THE MESSAGE TO REPLY TO:
 From: ${fromLine}

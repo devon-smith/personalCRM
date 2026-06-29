@@ -25,10 +25,10 @@ export interface UserProfile {
 }
 
 const DEFAULT_PROFILE: UserProfile = {
-  firstName: process.env.CRM_USER_FIRST_NAME || "INSERT_MOMS_FIRST_NAME",
-  fullName: process.env.CRM_USER_FULL_NAME || "INSERT_MOMS_FULL_NAME",
-  bio: process.env.CRM_USER_BIO || "INSERT_SHORT_BIO",
-  emailSignoff: process.env.CRM_USER_EMAIL_SIGNOFF || "Love, INSERT_MOMS_FIRST_NAME",
+  firstName: process.env.CRM_USER_FIRST_NAME || "Jennifer",
+  fullName: process.env.CRM_USER_FULL_NAME || "Jennifer",
+  bio: process.env.CRM_USER_BIO || "a professor, author, and researcher",
+  emailSignoff: process.env.CRM_USER_EMAIL_SIGNOFF || "Jennifer",
   casualSignoff: false,
   style:
     process.env.CRM_USER_STYLE ||

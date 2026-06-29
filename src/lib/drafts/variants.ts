@@ -9,8 +9,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getUserProfile } from "@/lib/user-profile";
 import type { RefineContextSummary } from "./refine";
+import { getAnthropicSonnetModel } from "@/lib/anthropic-models";
 
-const VARIANTS_MODEL = "claude-sonnet-4-20250514";
+const VARIANTS_MODEL = getAnthropicSonnetModel();
 
 export type VariantLabel = "shorter_direct" | "warmer_personal" | "with_humor";
 

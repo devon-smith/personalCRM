@@ -17,7 +17,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-const EXTRACT_MODEL = "claude-sonnet-4-20250514";
+const EXTRACT_MODEL = "claude-sonnet-4-6";
 const EXTRACT_MAX_TOKENS = 1500;
 
 export interface InteractionInput {
