@@ -41,6 +41,22 @@ const KNOWN_COMPANY_LOCATIONS: Record<string, { city: string; state: string; cou
   "stanford university": { city: "Stanford", state: "CA", country: "US", lat: 37.4275, lng: -122.1697 },
 };
 
+const MAX_CONTACTS_PER_RUN = 120;
+const MAX_CITY_GEOCODES_PER_RUN = 10;
+const MAX_AI_COMPANIES_PER_RUN = 25;
+
+interface LocationEnrichmentResult {
+  enriched: number;
+  total: number;
+  processed: number;
+  remaining: number;
+  geocodeCalls: number;
+  aiCompaniesConsidered: number;
+  capped: boolean;
+}
+
+const inFlightEnrichment = new Map<string, Promise<LocationEnrichmentResult>>();
+
 // ─── Nominatim geocoding (free, 1 req/sec) ──────────────────
 async function geocodeCity(city: string, country?: string): Promise<{ lat: number; lng: number } | null> {
   const query = country ? `${city}, ${country}` : city;
@@ -75,130 +91,24 @@ export async function POST() {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const userId = session.user.id;
 
-    // Find contacts without lat/lng
-    const contacts = await prisma.contact.findMany({
-      where: {
-        userId: session.user.id,
-        latitude: null,
-      },
-      select: {
-        id: true,
-        company: true,
-        city: true,
-        state: true,
-        country: true,
-      },
-    });
-
-    if (contacts.length === 0) {
-      return NextResponse.json({ enriched: 0, total: 0 });
+    const existing = inFlightEnrichment.get(userId);
+    if (existing) {
+      const result = await existing;
+      return NextResponse.json({ ...result, cached: true });
     }
 
-    let enriched = 0;
-
-    // ─── Layer 1: Contacts that already have city info but no lat/lng
-    const withCity = contacts.filter((c) => c.city);
-    for (const c of withCity) {
-      const coords = await geocodeCity(c.city!, c.country ?? undefined);
-      if (coords) {
-        await prisma.contact.update({
-          where: { id: c.id },
-          data: { latitude: coords.lat, longitude: coords.lng },
-        });
-        enriched++;
-      }
-      await sleep(1100); // Nominatim rate limit
-    }
-
-    // ─── Layer 2: Known company lookup
-    const remaining = contacts.filter((c) => !c.city && c.company);
-    for (const c of remaining) {
-      const key = c.company!.toLowerCase().trim();
-      const match = KNOWN_COMPANY_LOCATIONS[key];
-      if (match) {
-        await prisma.contact.update({
-          where: { id: c.id },
-          data: {
-            city: match.city,
-            state: match.state,
-            country: match.country,
-            latitude: match.lat,
-            longitude: match.lng,
-          },
-        });
-        enriched++;
+    const run = runLocationEnrichment(userId);
+    inFlightEnrichment.set(userId, run);
+    try {
+      const result = await run;
+      return NextResponse.json(result);
+    } finally {
+      if (inFlightEnrichment.get(userId) === run) {
+        inFlightEnrichment.delete(userId);
       }
     }
-
-    // ─── Layer 3: AI inference for remaining companies
-    const stillMissing = remaining.filter((c) => {
-      const key = c.company!.toLowerCase().trim();
-      return !KNOWN_COMPANY_LOCATIONS[key];
-    });
-
-    if (stillMissing.length > 0 && process.env.ANTHROPIC_API_KEY) {
-      const batch = stillMissing.slice(0, 50);
-      const companyNames = [...new Set(batch.map((c) => c.company!))];
-
-      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const message = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 2000,
-        system: `You map company names to their most likely headquarters city. Return ONLY valid JSON — an array of objects with "company", "city", and "country" fields. If unsure, omit that company. No markdown.`,
-        messages: [
-          {
-            role: "user",
-            content: `Map these companies to their HQ cities:\n${companyNames.map((n) => `- ${n}`).join("\n")}`,
-          },
-        ],
-      });
-
-      const text = message.content[0].type === "text" ? message.content[0].text : "";
-
-      try {
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const results = JSON.parse(jsonMatch[0]) as Array<{
-            company: string;
-            city: string;
-            country?: string;
-          }>;
-
-          const cityMap = new Map<string, { city: string; country?: string }>();
-          for (const r of results) {
-            cityMap.set(r.company.toLowerCase().trim(), { city: r.city, country: r.country });
-          }
-
-          for (const c of batch) {
-            const match = cityMap.get(c.company!.toLowerCase().trim());
-            if (!match) continue;
-
-            const coords = await geocodeCity(match.city, match.country);
-            if (coords) {
-              await prisma.contact.update({
-                where: { id: c.id },
-                data: {
-                  city: match.city,
-                  country: match.country ?? null,
-                  latitude: coords.lat,
-                  longitude: coords.lng,
-                },
-              });
-              enriched++;
-            }
-            await sleep(1100); // Nominatim rate limit
-          }
-        }
-      } catch {
-        // AI response parse failure — skip
-      }
-    }
-
-    return NextResponse.json({
-      enriched,
-      total: contacts.length,
-    });
   } catch (error) {
     console.error("[POST /api/contacts/enrich-locations]", error);
     return NextResponse.json(
@@ -206,4 +116,179 @@ export async function POST() {
       { status: 500 },
     );
   }
+}
+
+async function runLocationEnrichment(userId: string): Promise<LocationEnrichmentResult> {
+  const totalMissing = await prisma.contact.count({
+    where: {
+      userId,
+      latitude: null,
+    },
+  });
+
+  if (totalMissing === 0) {
+    return {
+      enriched: 0,
+      total: 0,
+      processed: 0,
+      remaining: 0,
+      geocodeCalls: 0,
+      aiCompaniesConsidered: 0,
+      capped: false,
+    };
+  }
+
+  // Process a bounded slice per request. Location enrichment can involve
+  // 1 req/sec geocoding, so this must stay incremental for serverless.
+  const contacts = await prisma.contact.findMany({
+    where: {
+      userId,
+      latitude: null,
+    },
+    orderBy: { updatedAt: "desc" },
+    take: MAX_CONTACTS_PER_RUN,
+    select: {
+      id: true,
+      company: true,
+      city: true,
+      state: true,
+      country: true,
+    },
+  });
+
+  let enriched = 0;
+  let geocodeCalls = 0;
+  let aiCompaniesConsidered = 0;
+  const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
+
+  async function geocodeOnce(
+    city: string,
+    country?: string | null,
+  ): Promise<{ lat: number; lng: number } | null> {
+    const key = `${city.toLowerCase().trim()}|${country?.toLowerCase().trim() ?? ""}`;
+    if (geocodeCache.has(key)) return geocodeCache.get(key) ?? null;
+    if (geocodeCalls >= MAX_CITY_GEOCODES_PER_RUN) return null;
+
+    const coords = await geocodeCity(city, country ?? undefined);
+    geocodeCache.set(key, coords);
+    geocodeCalls++;
+    await sleep(1100); // Nominatim rate limit.
+    return coords;
+  }
+
+  // ─── Layer 1: Contacts that already have city info but no lat/lng
+  const withCity = contacts.filter((c) => c.city);
+  for (const c of withCity) {
+    const coords = await geocodeOnce(c.city!, c.country);
+    if (coords) {
+      await prisma.contact.update({
+        where: { id: c.id },
+        data: { latitude: coords.lat, longitude: coords.lng },
+      });
+      enriched++;
+    }
+  }
+
+  // ─── Layer 2: Known company lookup
+  const remaining = contacts.filter((c) => !c.city && c.company);
+  for (const c of remaining) {
+    const key = c.company!.toLowerCase().trim();
+    const match = KNOWN_COMPANY_LOCATIONS[key];
+    if (match) {
+      await prisma.contact.update({
+        where: { id: c.id },
+        data: {
+          city: match.city,
+          state: match.state,
+          country: match.country,
+          latitude: match.lat,
+          longitude: match.lng,
+        },
+      });
+      enriched++;
+    }
+  }
+
+  // ─── Layer 3: AI inference for remaining companies
+  const stillMissing = remaining.filter((c) => {
+    const key = c.company!.toLowerCase().trim();
+    return !KNOWN_COMPANY_LOCATIONS[key];
+  });
+
+  if (
+    stillMissing.length > 0 &&
+    geocodeCalls < MAX_CITY_GEOCODES_PER_RUN &&
+    process.env.ANTHROPIC_API_KEY
+  ) {
+    const batch = stillMissing.slice(0, MAX_AI_COMPANIES_PER_RUN);
+    const companyNames = [...new Set(batch.map((c) => c.company!))];
+    aiCompaniesConsidered = companyNames.length;
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 2000,
+      system: `You map company names to their most likely headquarters city. Return ONLY valid JSON — an array of objects with "company", "city", and "country" fields. If unsure, omit that company. No markdown.`,
+      messages: [
+        {
+          role: "user",
+          content: `Map these companies to their HQ cities:\n${companyNames.map((n) => `- ${n}`).join("\n")}`,
+        },
+      ],
+    });
+
+    const text = message.content[0].type === "text" ? message.content[0].text : "";
+
+    try {
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const results = JSON.parse(jsonMatch[0]) as Array<{
+          company: string;
+          city: string;
+          country?: string;
+        }>;
+
+        const cityMap = new Map<string, { city: string; country?: string }>();
+        for (const r of results) {
+          cityMap.set(r.company.toLowerCase().trim(), { city: r.city, country: r.country });
+        }
+
+        for (const c of batch) {
+          const match = cityMap.get(c.company!.toLowerCase().trim());
+          if (!match) continue;
+
+          const coords = await geocodeOnce(match.city, match.country);
+          if (coords) {
+            await prisma.contact.update({
+              where: { id: c.id },
+              data: {
+                city: match.city,
+                country: match.country ?? null,
+                latitude: coords.lat,
+                longitude: coords.lng,
+              },
+            });
+            enriched++;
+          }
+        }
+      }
+    } catch {
+      // AI response parse failure — skip
+    }
+  }
+
+  const remainingAfterRun = Math.max(totalMissing - enriched, 0);
+
+  return {
+    enriched,
+    total: totalMissing,
+    processed: contacts.length,
+    remaining: remainingAfterRun,
+    geocodeCalls,
+    aiCompaniesConsidered,
+    capped:
+      totalMissing > contacts.length ||
+      geocodeCalls >= MAX_CITY_GEOCODES_PER_RUN ||
+      stillMissing.length > MAX_AI_COMPANIES_PER_RUN,
+  };
 }
