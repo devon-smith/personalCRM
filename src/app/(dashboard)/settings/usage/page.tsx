@@ -8,6 +8,7 @@ import {
   Activity,
   AlertCircle,
   BarChart3,
+  Cable,
   CheckCircle2,
   RefreshCw,
   TriangleAlert,
@@ -65,8 +66,9 @@ export default function UsagePage() {
           className="ds-body-sm mt-1"
           style={{ color: "var(--text-tertiary)" }}
         >
-          Token spend across Claude, Voyage, and search APIs. Costs are
-          estimates based on published per-million-token rates.
+          Generation spend, provider-call telemetry, and sync health.
+          Costs are estimates based on published per-million-token rates
+          where token data is available.
         </p>
       </div>
 
@@ -111,7 +113,7 @@ export default function UsagePage() {
           {/* Totals strip */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
-              label="Estimated cost"
+              label="Generation cost"
               value={formatUsd(data.totalCostUsd)}
               tone="primary"
             />
@@ -235,6 +237,42 @@ export default function UsagePage() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+          </section>
+
+          {/* External provider calls */}
+          <section>
+            <h2 className="ds-heading-md mb-3 flex items-center gap-2">
+              <Cable className="h-4 w-4" />
+              External provider calls
+            </h2>
+            {data.providerCalls.totalCalls === 0 ? (
+              <EmptyState message="No non-generation provider calls in this window yet." />
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard
+                    label="Provider calls"
+                    value={data.providerCalls.totalCalls.toLocaleString()}
+                  />
+                  <StatCard
+                    label="Items handled"
+                    value={data.providerCalls.totalItems.toLocaleString()}
+                  />
+                  <StatCard
+                    label="Embedding cost"
+                    value={formatUsd(data.providerCalls.estimatedCostUsd)}
+                  />
+                  <StatCard
+                    label="Errors"
+                    value={data.providerCalls.totalErrors.toLocaleString()}
+                    tone={
+                      data.providerCalls.totalErrors > 0 ? "warning" : undefined
+                    }
+                  />
+                </div>
+                <ProviderCallTable rows={data.providerCalls.byFeature} />
               </div>
             )}
           </section>
@@ -545,6 +583,78 @@ function formatBudgetAlertValue(
       ? `${alert.limit.toLocaleString()}%`
       : `${alert.limit.toLocaleString()} ${alert.unit}`;
   return `${actual} / ${limit}`;
+}
+
+function ProviderCallTable({
+  rows,
+}: {
+  rows: UsageResponse["providerCalls"]["byFeature"];
+}) {
+  return (
+    <div className="crm-card overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px]">
+        <thead>
+          <tr
+            className="text-left"
+            style={{
+              color: "var(--text-tertiary)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            <th className="px-4 py-2 font-medium">Feature</th>
+            <th className="px-4 py-2 font-medium">Provider</th>
+            <th className="px-4 py-2 font-medium text-right">Calls</th>
+            <th className="px-4 py-2 font-medium text-right">Items</th>
+            <th className="px-4 py-2 font-medium text-right">Tokens</th>
+            <th className="px-4 py-2 font-medium text-right">Errors</th>
+            <th className="px-4 py-2 font-medium text-right">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={`${row.provider}:${row.service}:${row.feature}`}
+              style={{ borderBottom: "1px solid var(--border-subtle)" }}
+            >
+              <td className="px-4 py-2.5">{row.label}</td>
+              <td
+                className="px-4 py-2.5 capitalize"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                {formatLabel(row.provider)} · {formatLabel(row.service)}
+              </td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {row.callCount.toLocaleString()}
+              </td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {row.itemCount.toLocaleString()}
+              </td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {formatTokens(row.tokensIn + row.tokensOut)}
+              </td>
+              <td
+                className="px-4 py-2.5 text-right tabular-nums"
+                style={{
+                  color:
+                    row.errorCalls > 0
+                      ? "var(--status-urgent)"
+                      : "var(--text-tertiary)",
+                }}
+              >
+                {row.errorCalls.toLocaleString()}
+              </td>
+              <td
+                className="px-4 py-2.5 text-right tabular-nums font-medium"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {formatUsd(row.estimatedCostUsd)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function SyncSourceTable({

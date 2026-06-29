@@ -303,7 +303,11 @@ async function semanticSearch(
 ): Promise<RawHit[]> {
   if (!process.env.VOYAGE_API_KEY) return [];
 
-  const { embeddings } = await embedBatch([query], "query");
+  const { embeddings } = await embedBatch([query], "query", {
+    userId,
+    feature: "contact_search",
+    metadata: { limit },
+  });
   if (embeddings.length === 0) return [];
 
   const literal = formatVectorLiteral(embeddings[0]);

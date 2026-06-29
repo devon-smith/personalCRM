@@ -31,6 +31,7 @@ const embeddingRefresh: Task = async (_payload, helpers) => {
   try {
     const stale = await prisma.$queryRaw<Array<{
       id: string;
+      userId: string;
       name: string;
       email: string | null;
       role: string | null;
@@ -40,7 +41,7 @@ const embeddingRefresh: Task = async (_payload, helpers) => {
       country: string | null;
       circleNames: string[];
     }>>(Prisma.sql`
-      SELECT c.id, c.name, c.email, c.role, c.company, c.city, c.state, c.country,
+      SELECT c.id, c."userId", c.name, c.email, c.role, c.company, c.city, c.state, c.country,
              COALESCE(
                ARRAY(
                  SELECT cc.name
@@ -71,9 +72,18 @@ const embeddingRefresh: Task = async (_payload, helpers) => {
     }
 
     const texts = stale.map(buildContactEmbedText);
+    const userIds = new Set(stale.map((contact) => contact.userId));
+    const singleUserId = userIds.size === 1 ? stale[0]?.userId : null;
     let embeddings: number[][];
     try {
-      const result = await embedBatch(texts, "document");
+      const result = await embedBatch(texts, "document", {
+        userId: singleUserId,
+        feature: "contact_embedding_refresh",
+        metadata: {
+          contactCount: stale.length,
+          userCount: userIds.size,
+        },
+      });
       embeddings = result.embeddings;
     } catch (err) {
       // Voyage transient failures bubble up so Graphile retries with

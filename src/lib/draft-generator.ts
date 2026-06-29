@@ -787,6 +787,14 @@ async function tryFetchVoiceContext(args: {
         const { embeddings } = await embedBatch(
           [args.draftIntent.slice(0, 4000)],
           "query",
+          {
+            userId: args.userId,
+            feature: "draft_voice_context",
+            metadata: {
+              hasRecipientEmail: Boolean(args.recipientEmail),
+              relationshipType,
+            },
+          },
         );
         if (embeddings.length > 0) {
           queryEmbeddingLiteral = formatVectorLiteral(embeddings[0]);

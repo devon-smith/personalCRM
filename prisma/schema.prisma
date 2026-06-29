@@ -49,6 +49,7 @@ model User {
   classifierFeedback   ClassifierFeedback[]
   lifeEventSignals     LifeEventSignal[]
   feedItems            FeedItem[]
+  providerCallLogs     ProviderCallLog[]
   apiUsageLog          ApiUsageLog[]
   importLog            ImportLog[]
   mergeLog             MergeLog[]
@@ -134,6 +135,35 @@ model AIGenerationLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt(sort: Desc)])
+  @@index([feature, createdAt(sort: Desc)])
+}
+
+/// Generic provider-call telemetry for non-LLM-generation usage:
+/// embeddings, Gmail user actions, People/Calendar utility calls, and
+/// other external APIs that do not naturally fit AIGenerationLog.
+model ProviderCallLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  provider   String // "google" | "voyage" | "openai" | ...
+  service    String // "gmail" | "embeddings" | "calendar" | ...
+  operation  String // "gmail.drafts.create" | "voyage.embeddings.create" | ...
+  feature    String // Product surface, e.g. "draft_save_to_gmail"
+  model      String?
+  callCount  Int      @default(1)
+  itemCount  Int?
+  tokensIn   Int?
+  tokensOut  Int?
+  status     String   @default("success") // "success" | "error"
+  latencyMs  Int?
+  error      String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([provider, createdAt(sort: Desc)])
+  @@index([service, createdAt(sort: Desc)])
   @@index([feature, createdAt(sort: Desc)])
 }
 

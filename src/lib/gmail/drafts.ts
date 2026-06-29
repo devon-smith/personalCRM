@@ -1,5 +1,6 @@
 import { getAllGoogleAccessTokens, googleFetchWithToken, getGoogleAccessToken } from "./client";
 import { buildRawMessage, buildReplySubject } from "./mime";
+import { logProviderCall } from "@/lib/provider-call-log";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ export async function getThreadsWithDrafts(userId: string): Promise<Set<string>>
 
   const threadIds = new Set<string>();
 
-  for (const { token } of tokens) {
+  for (const { accountId, token } of tokens) {
     let pageToken: string | undefined;
 
     do {
@@ -90,10 +91,46 @@ export async function getThreadsWithDrafts(userId: string): Promise<Set<string>>
         url.searchParams.set("pageToken", pageToken);
       }
 
-      const res = await googleFetchWithToken(token, url.toString());
-      if (!res.ok) break;
+      const startedAt = Date.now();
+      let res: Response;
+      try {
+        res = await googleFetchWithToken(token, url.toString());
+      } catch (err) {
+        await logGmailProviderCall({
+          userId,
+          operation: "gmail.drafts.list",
+          feature: "gmail_draft_thread_scan",
+          status: "error",
+          latencyMs: Date.now() - startedAt,
+          error: err instanceof Error ? err.message : "network error",
+        });
+        throw err;
+      }
+      if (!res.ok) {
+        await logGmailProviderCall({
+          userId,
+          operation: "gmail.drafts.list",
+          feature: "gmail_draft_thread_scan",
+          status: "error",
+          latencyMs: Date.now() - startedAt,
+          error: `Gmail drafts.list failed: ${res.status}`,
+        });
+        break;
+      }
 
       const data = (await res.json()) as GmailDraftsResponse;
+      await logGmailProviderCall({
+        userId,
+        operation: "gmail.drafts.list",
+        feature: "gmail_draft_thread_scan",
+        status: "success",
+        latencyMs: Date.now() - startedAt,
+        itemCount: data.drafts?.length ?? 0,
+        metadata: {
+          accountId,
+          hasNextPage: Boolean(data.nextPageToken),
+        },
+      });
 
       for (const draft of data.drafts ?? []) {
         if (draft.message?.threadId) {
@@ -160,14 +197,44 @@ export async function createGmailDraft(
     : "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
   const method = input.existingDraftId ? "PUT" : "POST";
 
-  const res = await googleFetchWithToken(token, url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const operation = input.existingDraftId
+    ? "gmail.drafts.update"
+    : "gmail.drafts.create";
+  const startedAt = Date.now();
+  let res: Response;
+  try {
+    res = await googleFetchWithToken(token, url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    await logGmailProviderCall({
+      userId,
+      operation,
+      feature: "gmail_draft_save",
+      status: "error",
+      latencyMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : "network error",
+    });
+    throw err;
+  }
 
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "");
+    await logGmailProviderCall({
+      userId,
+      operation,
+      feature: "gmail_draft_save",
+      status: "error",
+      latencyMs: Date.now() - startedAt,
+      error: `Gmail drafts.${input.existingDraftId ? "update" : "create"} failed: ${res.status}`,
+      metadata: {
+        isReply: input.isReply ?? false,
+        hasThreadId: Boolean(input.threadId),
+        hasExistingDraftId: Boolean(input.existingDraftId),
+      },
+    });
     throw new Error(`Gmail drafts.${input.existingDraftId ? "update" : "create"} failed: ${res.status} ${errorBody}`);
   }
 
@@ -175,6 +242,19 @@ export async function createGmailDraft(
     id: string;
     message: { id: string; threadId: string };
   };
+  await logGmailProviderCall({
+    userId,
+    operation,
+    feature: "gmail_draft_save",
+    status: "success",
+    latencyMs: Date.now() - startedAt,
+    itemCount: 1,
+    metadata: {
+      isReply: input.isReply ?? false,
+      hasThreadId: Boolean(input.threadId),
+      hasExistingDraftId: Boolean(input.existingDraftId),
+    },
+  });
 
   // Invalidate the read cache so "has draft" badges refresh on next read.
   draftCache.delete(userId);
@@ -195,26 +275,83 @@ export async function sendGmailDraft(
     throw new Error("No valid Google access token. Reconnect Google to send drafts.");
   }
 
-  const res = await googleFetchWithToken(
-    token,
-    "https://gmail.googleapis.com/gmail/v1/users/me/drafts/send",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: draftId }),
-    },
-  );
+  const startedAt = Date.now();
+  let res: Response;
+  try {
+    res = await googleFetchWithToken(
+      token,
+      "https://gmail.googleapis.com/gmail/v1/users/me/drafts/send",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: draftId }),
+      },
+    );
+  } catch (err) {
+    await logGmailProviderCall({
+      userId,
+      operation: "gmail.drafts.send",
+      feature: "gmail_draft_send",
+      status: "error",
+      latencyMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : "network error",
+    });
+    throw err;
+  }
 
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "");
+    await logGmailProviderCall({
+      userId,
+      operation: "gmail.drafts.send",
+      feature: "gmail_draft_send",
+      status: "error",
+      latencyMs: Date.now() - startedAt,
+      error: `Gmail drafts.send failed: ${res.status}`,
+      metadata: { draftId },
+    });
     throw new Error(`Gmail drafts.send failed: ${res.status} ${errorBody}`);
   }
 
   const data = (await res.json()) as { id: string; threadId: string };
+  await logGmailProviderCall({
+    userId,
+    operation: "gmail.drafts.send",
+    feature: "gmail_draft_send",
+    status: "success",
+    latencyMs: Date.now() - startedAt,
+    itemCount: 1,
+    metadata: { draftId },
+  });
   draftCache.delete(userId);
 
   return {
     messageId: data.id,
     threadId: data.threadId,
   };
+}
+
+async function logGmailProviderCall(input: {
+  userId: string;
+  operation: string;
+  feature: string;
+  status: "success" | "error";
+  latencyMs: number;
+  itemCount?: number;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  await logProviderCall({
+    userId: input.userId,
+    provider: "google",
+    service: "gmail",
+    operation: input.operation,
+    feature: input.feature,
+    callCount: 1,
+    itemCount: input.itemCount ?? null,
+    status: input.status,
+    latencyMs: input.latencyMs,
+    error: input.error,
+    metadata: input.metadata,
+  });
 }

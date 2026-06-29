@@ -63,6 +63,11 @@ export async function buildRefineContext(args: {
       const { embeddings } = await embedBatch(
         [args.queryText.slice(0, 4000)],
         "query",
+        {
+          userId: args.userId,
+          feature: "draft_context_voice_references",
+          metadata: { contactId: args.contactId },
+        },
       );
       if (embeddings.length > 0) {
         queryEmbeddingLiteral = formatVectorLiteral(embeddings[0]);

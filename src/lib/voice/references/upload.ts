@@ -72,7 +72,14 @@ export async function uploadVoiceReference(
       // Embed the first 8KB — Voyage's voyage-3-lite handles plenty
       // more, but for retrieval relevance the opening of a KB file
       // is usually most representative.
-      const result = await embedBatch([parsed.text.slice(0, 8000)], "document");
+      const result = await embedBatch([parsed.text.slice(0, 8000)], "document", {
+        userId: args.userId,
+        feature: "voice_reference_upload",
+        metadata: {
+          filename: args.filename,
+          sourceType: args.sourceType,
+        },
+      });
       if (result.embeddings.length > 0) {
         embeddingLiteral = formatVectorLiteral(result.embeddings[0]);
       }

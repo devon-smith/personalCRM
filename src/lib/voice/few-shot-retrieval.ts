@@ -100,7 +100,11 @@ export async function getVoiceExamples(
   // documented asymmetric retrieval pattern — stored examples are
   // "document", search vectors are "query".
   const truncated = draftIntent.slice(0, INTENT_MAX_CHARS);
-  const { embeddings } = await embedBatch([truncated], "query");
+  const { embeddings } = await embedBatch([truncated], "query", {
+    userId,
+    feature: "voice_few_shot_retrieval",
+    metadata: { relationshipType, k },
+  });
   if (embeddings.length === 0) return [];
   const literal = formatVectorLiteral(embeddings[0]);
 

@@ -28,10 +28,11 @@
 - Sync-run telemetry now has a daily retention worker and structured error categories for auth, rate-limit, provider, network, and unknown failures.
 - API usage now includes sync health aggregates from `SyncRun`: run counts, Google calls, success/error totals, source/trigger breakdowns, and error categories.
 - Settings usage now computes explicit sync budget alerts from existing telemetry: total Google calls per day, browser-fallback call volume, elevated sync error rate, and long-running sync runs.
+- Non-generation provider calls now write to `ProviderCallLog`: Voyage embedding batches for search/draft voice retrieval/voice corpus/contact embedding refresh, plus Gmail draft list/save/send user actions. Settings usage aggregates those rows separately from LLM generations and sync runs.
 
 ## Next Highest-Impact Efficiency Work
 
-- Add provider-call telemetry outside `AIGenerationLog`: embedding batch counts and non-sync Google requests.
+- Expand `ProviderCallLog` coverage to People/Calendar utility calls and OAuth refreshes once the higher-signal draft and embedding surfaces have production data.
 - Make sync budgets configurable per environment or user once production call patterns are known.
 
 ## Product Polish Before App Finalization

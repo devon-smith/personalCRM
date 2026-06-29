@@ -59,6 +59,7 @@ function parseArgs(): Args {
 
 interface ContactRow {
   id: string;
+  userId: string;
   name: string;
   email: string | null;
   role: string | null;
@@ -87,7 +88,7 @@ async function loadStaleContacts(args: Args): Promise<ContactRow[]> {
   const where = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
   const rows = await prisma.$queryRawUnsafe<ContactRow[]>(`
-    SELECT c.id, c.name, c.email, c.role, c.company, c.city, c.state, c.country,
+    SELECT c.id, c."userId", c.name, c.email, c.role, c.company, c.city, c.state, c.country,
            COALESCE(
              ARRAY(
                SELECT cc.name
@@ -198,7 +199,18 @@ async function main() {
 
     while (attempt < 4 && !embeddings) {
       try {
-        const r = await embedBatch(texts, "document");
+        const batchUserIds = new Set(batch.map((contact) => contact.userId));
+        const r = await embedBatch(texts, "document", {
+          userId: batchUserIds.size === 1 ? batch[0]?.userId : null,
+          feature: "contact_embedding_backfill",
+          metadata: {
+            batchStart: i,
+            batchSize: batch.length,
+            userCount: batchUserIds.size,
+            rebuild: args.rebuild,
+            dryRun: args.dryRun,
+          },
+        });
         embeddings = r.embeddings;
         batchTokens = r.tokens;
       } catch (err) {

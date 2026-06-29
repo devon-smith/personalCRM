@@ -255,7 +255,16 @@ async function indexForUser(
       let succeeded = false;
       for (let attempt = 0; attempt < 2 && !succeeded; attempt++) {
         try {
-          const { embeddings: vecs } = await embedBatch(texts, "document");
+          const { embeddings: vecs } = await embedBatch(texts, "document", {
+            userId,
+            feature: "voice_corpus_email_index",
+            metadata: {
+              batchStart: i,
+              batchSize: slice.length,
+              attempt: attempt + 1,
+              rebuild,
+            },
+          });
           slice.forEach((p, j) => embeddings.set(p.emailMessageId, vecs[j]));
           succeeded = true;
         } catch (err) {
@@ -433,7 +442,16 @@ async function indexWhatsAppForUser(
       let succeeded = false;
       for (let attempt = 0; attempt < 2 && !succeeded; attempt++) {
         try {
-          const { embeddings: vecs } = await embedBatch(texts, "document");
+          const { embeddings: vecs } = await embedBatch(texts, "document", {
+            userId,
+            feature: "voice_corpus_whatsapp_index",
+            metadata: {
+              batchStart: i,
+              batchSize: slice.length,
+              attempt: attempt + 1,
+              rebuild,
+            },
+          });
           slice.forEach((p, j) => embeddings.set(p.interactionId, vecs[j]));
           succeeded = true;
         } catch (err) {

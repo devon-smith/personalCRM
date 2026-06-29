@@ -114,6 +114,18 @@ export const FEATURE_LABELS: Record<string, string> = {
   voice_reference_guidance: "Voice reference parsing",
   meeting_prep_web_search: "Meeting prep — web search",
   brave_search: "Network search (Brave)",
+  contact_search: "Contact semantic search",
+  contact_embedding_refresh: "Contact embedding refresh",
+  contact_embedding_backfill: "Contact embedding backfill",
+  draft_context_voice_references: "Draft voice reference search",
+  draft_voice_context: "Draft voice context search",
+  voice_few_shot_retrieval: "Voice example retrieval",
+  voice_reference_upload: "Voice reference upload",
+  voice_corpus_email_index: "Voice corpus indexing — email",
+  voice_corpus_whatsapp_index: "Voice corpus indexing — WhatsApp",
+  gmail_draft_thread_scan: "Gmail draft scan",
+  gmail_draft_save: "Gmail draft save",
+  gmail_draft_send: "Gmail draft send",
 };
 
 export function featureLabel(feature: string): string {

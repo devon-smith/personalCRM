@@ -68,6 +68,42 @@ export interface UsageResponse {
     tokensOut: number;
     estimatedCostUsd: number;
   }>;
+  providerCalls: {
+    totalCalls: number;
+    totalItems: number;
+    totalTokensIn: number;
+    totalTokensOut: number;
+    totalErrors: number;
+    estimatedCostUsd: number;
+    byProvider: Array<{
+      provider: string;
+      label: string;
+      callCount: number;
+      itemCount: number;
+      tokensIn: number;
+      tokensOut: number;
+      errorCalls: number;
+      estimatedCostUsd: number;
+    }>;
+    byFeature: Array<{
+      feature: string;
+      label: string;
+      provider: string;
+      service: string;
+      callCount: number;
+      itemCount: number;
+      tokensIn: number;
+      tokensOut: number;
+      errorCalls: number;
+      estimatedCostUsd: number;
+    }>;
+    byService: Array<{
+      service: string;
+      provider: string;
+      callCount: number;
+      errorCalls: number;
+    }>;
+  };
   sync: {
     totalRuns: number;
     totalProviderCalls: number;
@@ -135,7 +171,7 @@ export async function GET(request: Request) {
   const windowEnd = new Date();
   const windowStart = new Date(windowEnd.getTime() - days * 24 * 60 * 60 * 1000);
 
-  const [rows, dailyRows, syncRows] = await Promise.all([
+  const [rows, dailyRows, providerCallRows, syncRows] = await Promise.all([
     prisma.aIGenerationLog.groupBy({
       by: ["feature", "model"],
       where: {
@@ -166,6 +202,40 @@ export async function GET(request: Request) {
         AND "createdAt" <= ${windowEnd}
       GROUP BY day, model
       ORDER BY day DESC
+    `,
+    prisma.$queryRaw<
+      Array<{
+        provider: string;
+        service: string;
+        operation: string;
+        feature: string;
+        model: string | null;
+        status: string;
+        row_count: bigint;
+        call_count: bigint | null;
+        item_count: bigint | null;
+        tokens_in: bigint | null;
+        tokens_out: bigint | null;
+      }>
+    >`
+      SELECT
+        provider,
+        service,
+        operation,
+        feature,
+        model,
+        status,
+        COUNT(*)::bigint AS row_count,
+        COALESCE(SUM("callCount"), 0)::bigint AS call_count,
+        COALESCE(SUM("itemCount"), 0)::bigint AS item_count,
+        COALESCE(SUM("tokensIn"), 0)::bigint AS tokens_in,
+        COALESCE(SUM("tokensOut"), 0)::bigint AS tokens_out
+      FROM "ProviderCallLog"
+      WHERE "userId" = ${session.user.id}
+        AND "createdAt" >= ${windowStart}
+        AND "createdAt" <= ${windowEnd}
+      GROUP BY provider, service, operation, feature, model, status
+      ORDER BY provider ASC, service ASC, feature ASC
     `,
     prisma.$queryRaw<
       Array<{
@@ -346,6 +416,7 @@ export async function GET(request: Request) {
       estimatedCostUsd: agg.cost,
     }))
     .sort((a, b) => b.date.localeCompare(a.date));
+  const providerCalls = buildProviderCallUsage(providerCallRows);
 
   const totals = usageRows.reduce(
     (acc, r) => ({
@@ -371,12 +442,177 @@ export async function GET(request: Request) {
     byModel,
     byProvider,
     byDay,
+    providerCalls,
     sync,
   };
 
   return NextResponse.json(response, {
     headers: privateCacheHeaders(5 * 60, 30 * 60),
   });
+}
+
+function buildProviderCallUsage(
+  rows: Array<{
+    provider: string;
+    service: string;
+    operation: string;
+    feature: string;
+    model: string | null;
+    status: string;
+    row_count: bigint;
+    call_count: bigint | null;
+    item_count: bigint | null;
+    tokens_in: bigint | null;
+    tokens_out: bigint | null;
+  }>,
+): UsageResponse["providerCalls"] {
+  const providerMap = new Map<
+    string,
+    {
+      callCount: number;
+      itemCount: number;
+      tokensIn: number;
+      tokensOut: number;
+      errorCalls: number;
+      cost: number;
+    }
+  >();
+  const featureMap = new Map<
+    string,
+    {
+      feature: string;
+      provider: string;
+      service: string;
+      callCount: number;
+      itemCount: number;
+      tokensIn: number;
+      tokensOut: number;
+      errorCalls: number;
+      cost: number;
+    }
+  >();
+  const serviceMap = new Map<
+    string,
+    {
+      service: string;
+      provider: string;
+      callCount: number;
+      errorCalls: number;
+    }
+  >();
+
+  let totalCalls = 0;
+  let totalItems = 0;
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
+  let totalErrors = 0;
+  let estimatedCostUsd = 0;
+
+  for (const row of rows) {
+    const callCount = Number(row.call_count ?? row.row_count);
+    const itemCount = Number(row.item_count ?? 0);
+    const tokensIn = Number(row.tokens_in ?? 0);
+    const tokensOut = Number(row.tokens_out ?? 0);
+    const errorCalls = row.status === "error" ? callCount : 0;
+    const cost = row.model ? estimateCost(row.model, tokensIn, tokensOut) : 0;
+
+    totalCalls += callCount;
+    totalItems += itemCount;
+    totalTokensIn += tokensIn;
+    totalTokensOut += tokensOut;
+    totalErrors += errorCalls;
+    estimatedCostUsd += cost;
+
+    const provider = providerMap.get(row.provider) ?? {
+      callCount: 0,
+      itemCount: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      errorCalls: 0,
+      cost: 0,
+    };
+    providerMap.set(row.provider, {
+      callCount: provider.callCount + callCount,
+      itemCount: provider.itemCount + itemCount,
+      tokensIn: provider.tokensIn + tokensIn,
+      tokensOut: provider.tokensOut + tokensOut,
+      errorCalls: provider.errorCalls + errorCalls,
+      cost: provider.cost + cost,
+    });
+
+    const featureKey = `${row.provider}:${row.service}:${row.feature}`;
+    const feature = featureMap.get(featureKey) ?? {
+      feature: row.feature,
+      provider: row.provider,
+      service: row.service,
+      callCount: 0,
+      itemCount: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      errorCalls: 0,
+      cost: 0,
+    };
+    featureMap.set(featureKey, {
+      ...feature,
+      callCount: feature.callCount + callCount,
+      itemCount: feature.itemCount + itemCount,
+      tokensIn: feature.tokensIn + tokensIn,
+      tokensOut: feature.tokensOut + tokensOut,
+      errorCalls: feature.errorCalls + errorCalls,
+      cost: feature.cost + cost,
+    });
+
+    const serviceKey = `${row.provider}:${row.service}`;
+    const service = serviceMap.get(serviceKey) ?? {
+      service: row.service,
+      provider: row.provider,
+      callCount: 0,
+      errorCalls: 0,
+    };
+    serviceMap.set(serviceKey, {
+      ...service,
+      callCount: service.callCount + callCount,
+      errorCalls: service.errorCalls + errorCalls,
+    });
+  }
+
+  return {
+    totalCalls,
+    totalItems,
+    totalTokensIn,
+    totalTokensOut,
+    totalErrors,
+    estimatedCostUsd,
+    byProvider: Array.from(providerMap.entries())
+      .map(([provider, aggregate]) => ({
+        provider,
+        label: providerLabel(provider),
+        callCount: aggregate.callCount,
+        itemCount: aggregate.itemCount,
+        tokensIn: aggregate.tokensIn,
+        tokensOut: aggregate.tokensOut,
+        errorCalls: aggregate.errorCalls,
+        estimatedCostUsd: aggregate.cost,
+      }))
+      .sort((a, b) => b.callCount - a.callCount),
+    byFeature: Array.from(featureMap.values())
+      .map((aggregate) => ({
+        feature: aggregate.feature,
+        label: featureLabel(aggregate.feature),
+        provider: aggregate.provider,
+        service: aggregate.service,
+        callCount: aggregate.callCount,
+        itemCount: aggregate.itemCount,
+        tokensIn: aggregate.tokensIn,
+        tokensOut: aggregate.tokensOut,
+        errorCalls: aggregate.errorCalls,
+        estimatedCostUsd: aggregate.cost,
+      }))
+      .sort((a, b) => b.callCount - a.callCount),
+    byService: Array.from(serviceMap.values()).sort(
+      (a, b) => b.callCount - a.callCount,
+    ),
+  };
 }
 
 function buildSyncUsage(
