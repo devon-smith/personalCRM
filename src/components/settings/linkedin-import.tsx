@@ -192,7 +192,6 @@ export function LinkedInImport() {
       }
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       queryClient.invalidateQueries({ queryKey: ["duplicates"] });
-      queryClient.invalidateQueries({ queryKey: ["sightings-review"] });
     },
     onError: (err) => {
       toast.error(err.message);

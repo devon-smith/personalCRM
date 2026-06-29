@@ -65,6 +65,7 @@
 - Contact edit and draft composer preset resolution now use a lightweight `/api/contacts/:id?scope=summary` payload instead of loading interactions, facts, profile, and memory that those flows do not render.
 - LinkedIn circle assignment now uses `/api/circles?scope=summary` for selector options instead of loading every contact in every circle just to populate a dropdown.
 - Manual merge contact pickers now run debounced, capped server-side contact searches instead of fetching the default contact list when the manual merge panel opens.
+- Removed the unused generic sightings review component and converted `/api/sightings` into a fail-closed legacy stub. Current duplicate/contact-sighting review flows use the Merge and LinkedIn review surfaces instead.
 
 ## Next Highest-Impact Efficiency Work
 
