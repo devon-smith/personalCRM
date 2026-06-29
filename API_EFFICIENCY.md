@@ -132,6 +132,7 @@
 - Removed the unused legacy circle-health HTTP routes and their standalone analytics helper. Active circle warmth counts already ride on `/api/circles`, so direct `/api/circles/health` calls can no longer trigger per-circle multi-query analytics work.
 - Contact journal add/delete now update the open contact panel's React Query cache directly from mutation results instead of invalidating and immediately re-reading `/api/journal`.
 - Contact momentum queries now canonicalize requested contact IDs and use five-minute private response caching, so re-sorting the same People list does not spend a duplicate `/api/momentum` read for identical sparkline data.
+- Removed the unused contact conversations route. The active contact Story feed already uses interactions bundled with the contact detail payload, so direct `/api/contacts/:id/conversations` calls can no longer fetch and group broad per-channel interaction windows.
 
 ## Next Highest-Impact Efficiency Work
 
