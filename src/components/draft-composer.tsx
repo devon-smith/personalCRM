@@ -144,6 +144,7 @@ export function DraftComposer() {
       setContextDetail("");
       setSearch("");
       setShowFullThread(false);
+      setRelationshipTypeOverride(null);
 
       if (presetTone) setTone(presetTone);
       else setTone("warm");
@@ -168,6 +169,7 @@ export function DraftComposer() {
   // is derived, not state, so we don't fight the picker's own setState.
   const { data: presetContact } = useContactSummary(
     presetContactId && !selectedContact ? presetContactId : null,
+    { enabled: isOpen },
   );
   const resolvedPresetContact: ContactWithCount | null = presetContact
     ? presetContact
