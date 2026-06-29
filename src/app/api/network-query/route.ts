@@ -3,10 +3,13 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   NETWORK_QUERY_MODEL,
+  type NetworkQueryResult,
   runNetworkQuery,
   runNetworkQueryStream,
 } from "@/lib/intelligence/network-query";
 import { logAIGeneration } from "@/lib/ai-generation-log";
+
+const RECENT_QUERY_REUSE_WINDOW_MS = 2 * 60 * 1000;
 
 /**
  * POST /api/network-query
@@ -53,15 +56,48 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const verifiedParentQueryId = await verifyParentQueryId(
+    session.user.id,
+    parentQueryId,
+  );
+
+  // Rapid exact-match retries are almost always double submits,
+  // reloads, or network retries. Reuse the saved answer for a short
+  // window so they don't launch a second Claude/tool loop. Asking the
+  // same question later still produces a fresh snapshot.
+  const cached = await loadRecentSavedResult(
+    session.user.id,
+    query,
+    verifiedParentQueryId,
+  );
+  if (cached) {
+    if (new URL(req.url).searchParams.get("stream") === "1") {
+      return cachedStreamResponse(cached.id, cached.result);
+    }
+    return NextResponse.json({
+      ...cached.result,
+      savedQueryId: cached.id,
+      cached: true,
+    });
+  }
+
   // M0.x.11 — when a parentQueryId is set (follow-up flow), load
   // the parent's question + answer and seed the orchestrator with
   // them as turn 1. Refines stopped producing empty answers as
   // soon as Claude saw the prior turn structurally.
-  const priorContext = await loadPriorContext(session.user.id, parentQueryId);
+  const priorContext = await loadPriorContext(
+    session.user.id,
+    verifiedParentQueryId,
+  );
 
   const url = new URL(req.url);
   if (url.searchParams.get("stream") === "1") {
-    return streamResponse(session.user.id, query, parentQueryId, priorContext);
+    return streamResponse(
+      session.user.id,
+      query,
+      verifiedParentQueryId,
+      priorContext,
+    );
   }
 
   // Non-streaming path (unchanged from M7.3).
@@ -80,7 +116,7 @@ export async function POST(req: NextRequest) {
       session.user.id,
       query,
       result,
-      parentQueryId,
+      verifiedParentQueryId,
     );
     await logAIGeneration({
       userId: session.user.id,
@@ -108,6 +144,31 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+function cachedStreamResponse(
+  savedQueryId: string,
+  result: NetworkQueryResult,
+): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      const payload = `event: complete\ndata: ${JSON.stringify({
+        result: { ...result, savedQueryId, cached: true },
+      })}\n\n`;
+      controller.enqueue(encoder.encode(payload));
+      controller.close();
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 function streamResponse(
@@ -215,7 +276,7 @@ function streamResponse(
 async function persistSavedQuery(
   userId: string,
   query: string,
-  result: import("@/lib/intelligence/network-query").NetworkQueryResult,
+  result: NetworkQueryResult,
   parentQueryId: string | null,
 ): Promise<{ id: string }> {
   // M0.x.9 — guard against persisting "ghost" rows when Claude
@@ -274,6 +335,104 @@ async function persistSavedQuery(
       : []),
   ]);
   return saved;
+}
+
+async function verifyParentQueryId(
+  userId: string,
+  parentQueryId: string | null,
+): Promise<string | null> {
+  if (!parentQueryId) return null;
+  const parent = await prisma.savedQuery.findFirst({
+    where: { id: parentQueryId, userId },
+    select: { id: true },
+  });
+  return parent?.id ?? null;
+}
+
+async function loadRecentSavedResult(
+  userId: string,
+  query: string,
+  parentQueryId: string | null,
+): Promise<{ id: string; result: NetworkQueryResult } | null> {
+  const since = new Date(Date.now() - RECENT_QUERY_REUSE_WINDOW_MS);
+  const saved = await prisma.savedQuery.findFirst({
+    where: {
+      userId,
+      query,
+      parentQueryId,
+      answer: { not: null },
+      createdAt: { gte: since },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      answer: true,
+      evidence: true,
+    },
+  });
+  if (!saved?.answer) return null;
+  return {
+    id: saved.id,
+    result: {
+      title: saved.title,
+      answer: saved.answer,
+      suggestedContacts: parseSavedSuggestions(saved.evidence),
+      reasoningTrace: parseSavedReasoningTrace(saved.evidence),
+      rawAnswer: saved.answer,
+      usage: parseSavedUsage(saved.evidence),
+    },
+  };
+}
+
+function parseSavedSuggestions(evidence: unknown): NetworkQueryResult["suggestedContacts"] {
+  const value = getEvidenceArray(evidence, "suggestedContacts");
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item) => ({
+      contactId: typeof item.contactId === "string" ? item.contactId : "",
+      name: typeof item.name === "string" ? item.name : "",
+      reason: typeof item.reason === "string" ? item.reason : "",
+    }))
+    .filter((item) => item.contactId && item.name);
+}
+
+function parseSavedReasoningTrace(evidence: unknown): NetworkQueryResult["reasoningTrace"] {
+  const value = getEvidenceArray(evidence, "reasoningTrace");
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item) => ({
+      tool: typeof item.tool === "string" ? item.tool : "unknown",
+      input: item.input,
+      summary: typeof item.summary === "string" ? item.summary : "",
+    }))
+    .filter((item) => item.summary);
+}
+
+function parseSavedUsage(evidence: unknown): NetworkQueryResult["usage"] {
+  if (!isRecord(evidence)) {
+    return { inputTokens: 0, outputTokens: 0 };
+  }
+  return {
+    inputTokens:
+      typeof evidence.tokensIn === "number" && Number.isFinite(evidence.tokensIn)
+        ? evidence.tokensIn
+        : 0,
+    outputTokens:
+      typeof evidence.tokensOut === "number" && Number.isFinite(evidence.tokensOut)
+        ? evidence.tokensOut
+        : 0,
+  };
+}
+
+function getEvidenceArray(evidence: unknown, key: string): unknown[] {
+  if (!isRecord(evidence)) return [];
+  const value = evidence[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
