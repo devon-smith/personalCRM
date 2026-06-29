@@ -6,45 +6,28 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 /**
- * Renders the M7.1 "About them" + M7.2 "People who know them" panels
- * for a contact. Both load lazily — null/empty state on first render
- * if the worker hasn't extracted yet.
+ * Renders the M7.1 "About them" + M7.2 "People who know them" +
+ * M8.1 memory panels for a contact. The section loads through one
+ * bundled DB-backed request and self-hides if workers have not
+ * extracted anything yet.
  *
  * Conscious design call: keep this collapsed by default in the
  * contact panel. The data is reference info, not the chronological
  * story Jennifer actually wants to read.
  */
 export function IntelligenceSection({ contactId }: { contactId: string }) {
-  const { data: profileData } = useQuery({
-    queryKey: ["contact", contactId, "profile"],
+  const { data } = useQuery<ContactIntelligenceResponse>({
+    queryKey: ["contact", contactId, "intelligence"],
     queryFn: async () => {
-      const res = await fetch(`/api/contacts/${contactId}/profile`);
-      if (!res.ok) throw new Error("Failed to load profile");
-      return res.json() as Promise<{ profile: ProfileShape | null }>;
+      const res = await fetch(`/api/contacts/${encodeURIComponent(contactId)}/intelligence`);
+      if (!res.ok) throw new Error("Failed to load contact intelligence");
+      return res.json();
     },
   });
 
-  const { data: networkData } = useQuery({
-    queryKey: ["contact", contactId, "network"],
-    queryFn: async () => {
-      const res = await fetch(`/api/contacts/${contactId}/network`);
-      if (!res.ok) throw new Error("Failed to load network");
-      return res.json() as Promise<{ neighbors: NeighborShape[] }>;
-    },
-  });
-
-  const { data: memoryData } = useQuery({
-    queryKey: ["contact", contactId, "memory"],
-    queryFn: async () => {
-      const res = await fetch(`/api/contacts/${contactId}/memory`);
-      if (!res.ok) throw new Error("Failed to load memory");
-      return res.json() as Promise<{ memory: MemoryShape | null }>;
-    },
-  });
-
-  const profile = profileData?.profile;
-  const neighbors = networkData?.neighbors ?? [];
-  const memory = memoryData?.memory;
+  const profile = data?.profile;
+  const neighbors = data?.neighbors ?? [];
+  const memory = data?.memory;
 
   if (!profile && neighbors.length === 0 && !memory) {
     return null;
@@ -73,6 +56,12 @@ interface MemoryShape {
   personalContext: Record<string, string>;
   recurringThemes: string[];
   synthesizedAt: string;
+}
+
+interface ContactIntelligenceResponse {
+  profile: ProfileShape | null;
+  neighbors: NeighborShape[];
+  memory: MemoryShape | null;
 }
 
 function MemoryPanel({ memory }: { memory: MemoryShape }) {

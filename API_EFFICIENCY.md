@@ -51,6 +51,7 @@
 - Removed unused legacy dashboard widget components that each carried standalone fetches for action items, drafts, changelog, scheduling, Calendar, birthdays, and suggestions. The current home surface stays on `/api/dashboard/bootstrap`, while explicit pages keep their manual/intentional request paths.
 - Inbox "Sync Gmail" no longer runs the legacy `/api/message-actions` AI classifier or invalidates its query. The unused action-items card was removed from the inbox bundle, leaving Gmail sync plus the current Gmail action extractor as the explicit manual path; manual sync now surfaces a real failure if either remaining POST fails.
 - Removed the backend-only legacy `/api/message-actions` route and `src/lib/message-actions.ts` after verifying no app, worker, script, or test reference still used them. This closes an unused AI-classification endpoint and leaves Gmail action extraction as the single action-item scan path.
+- Contact detail intelligence now loads profile, memory, and relationship graph neighbors through one DB-backed `/api/contacts/:id/intelligence` endpoint with a short private cache, replacing three parallel client requests and three separate auth/ownership checks on every contact story open.
 
 ## Next Highest-Impact Efficiency Work
 
