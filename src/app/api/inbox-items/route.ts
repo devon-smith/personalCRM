@@ -14,7 +14,7 @@ let inboxCache: CachedResponse | null = null;
 const CACHE_TTL_MS = 3000; // 3 seconds
 const READ_CACHE_HEADERS = privateCacheHeaders(3, 15);
 
-/** Invalidate the inbox cache (call after resolve, dismiss, sync, etc.) */
+/** Invalidate the inbox cache after resolve, sync, classifier override, etc. */
 export function invalidateInboxCache() {
   inboxCache = null;
 }
@@ -23,7 +23,9 @@ export function invalidateInboxCache() {
  * GET /api/inbox-items
  *
  * Reads directly from the InboxItem table (single source of truth).
- * Returns OPEN items and SNOOZED items whose snooze has expired.
+ * Returns open actionable items. Historical SNOOZED rows whose snooze has
+ * expired are also surfaced so old data can clear naturally, but new snoozes
+ * are no longer created by the app UI/API.
  *
  * Query params:
  *   ?view=needs-reply (default) — needsResponse IS NULL OR needsResponse=true

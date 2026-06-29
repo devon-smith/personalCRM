@@ -5,15 +5,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
   MessageCircle,
-  Clock,
   Check,
   Loader2,
   RefreshCw,
   ChevronDown,
   ArrowUpRight,
-  X,
   Linkedin,
-  Bell,
   ExternalLink,
   Pencil,
 } from "lucide-react";
@@ -48,7 +45,7 @@ function apiErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-function useSwipe(onSwipeRight: () => void, onSwipeLeft: () => void) {
+function useSwipe(onSwipeRight: () => void, onSwipeLeft?: () => void) {
   const startX = useRef(0);
   const currentX = useRef(0);
   const swiping = useRef(false);
@@ -62,17 +59,18 @@ function useSwipe(onSwipeRight: () => void, onSwipeLeft: () => void) {
   const onTouchMove = useCallback((e: React.TouchEvent) => {
     if (!swiping.current) return;
     currentX.current = e.touches[0].clientX;
-    const diff = currentX.current - startX.current;
+    const rawDiff = currentX.current - startX.current;
+    const diff = onSwipeLeft ? rawDiff : Math.max(0, rawDiff);
     // Dampen the swipe beyond threshold
     const dampened = Math.sign(diff) * Math.min(Math.abs(diff), 120);
     setOffset(dampened);
-  }, []);
+  }, [onSwipeLeft]);
 
   const onTouchEnd = useCallback(() => {
     swiping.current = false;
     if (offset > SWIPE_THRESHOLD) {
       onSwipeRight();
-    } else if (offset < -SWIPE_THRESHOLD) {
+    } else if (offset < -SWIPE_THRESHOLD && onSwipeLeft) {
       onSwipeLeft();
     }
     setOffset(0);
@@ -275,15 +273,6 @@ function groupByTime<T extends { occurredAt?: string; lastInboundAt?: string }>(
     .map((g) => ({ group: g, items: map.get(g)! }));
 }
 
-// ─── Snooze options ──────────────────────────────────────────
-
-const SNOOZE_OPTIONS = [
-  { label: "1 hour", hours: 1 },
-  { label: "4 hours", hours: 4 },
-  { label: "Tomorrow", hours: 14 },
-  { label: "Next week", hours: 168 },
-] as const;
-
 // ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
@@ -398,68 +387,6 @@ export function Inbox() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-  });
-
-  const dismissMutation = useMutation({
-    mutationFn: async ({ itemId, channel }: { itemId: string; channel: string }) => {
-      const res = await fetch(`/api/inbox-items/${encodeURIComponent(itemId)}/dismiss`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel }),
-      });
-      if (!res.ok) throw new Error("Failed");
-    },
-    onMutate: async ({ itemId }) => {
-      await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
-      const snapshots = queryClient.getQueriesData<InboxItemsData>({
-        queryKey: ["inbox-items"],
-      });
-      queryClient.setQueriesData<InboxItemsData>(
-        { queryKey: ["inbox-items"] },
-        (prev) => removeItemFromInboxData(prev, itemId),
-      );
-      return { snapshots };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.snapshots) {
-        restoreInboxSnapshots(queryClient, context.snapshots);
-      }
-      toast.error("Failed to dismiss");
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-    },
-  });
-
-  const snoozeMutation = useMutation({
-    mutationFn: async (args: { itemId: string; hours: number; channel: string }) => {
-      const res = await fetch(`/api/inbox-items/${encodeURIComponent(args.itemId)}/snooze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hours: args.hours, channel: args.channel }),
-      });
-      if (!res.ok) throw new Error("Failed");
-    },
-    onMutate: async ({ itemId }) => {
-      await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
-      const snapshots = queryClient.getQueriesData<InboxItemsData>({
-        queryKey: ["inbox-items"],
-      });
-      queryClient.setQueriesData<InboxItemsData>(
-        { queryKey: ["inbox-items"] },
-        (prev) => removeItemFromInboxData(prev, itemId),
-      );
-      return { snapshots };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.snapshots) {
-        restoreInboxSnapshots(queryClient, context.snapshots);
-      }
-      toast.error("Failed to snooze");
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
     },
   });
 
@@ -736,10 +663,6 @@ export function Inbox() {
             filteredOut={inboxData?.filteredOut ?? 0}
             needsReplyCount={inboxData?.needsReplyCount ?? 0}
             onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
-            onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
-            onSnooze={(itemId, hours, channel) =>
-              snoozeMutation.mutate({ itemId, hours, channel })
-            }
             onOverride={(itemId, needsResponse) =>
               overrideMutation.mutate({ itemId, needsResponse })
             }
@@ -751,10 +674,6 @@ export function Inbox() {
             showAll={showAll}
             onToggleShowAll={toggleShowAll}
             onResolve={(itemId, channel) => resolveMutation.mutate({ itemId, channel })}
-            onDismiss={(itemId, channel) => dismissMutation.mutate({ itemId, channel })}
-            onSnooze={(itemId, hours, channel) =>
-              snoozeMutation.mutate({ itemId, hours, channel })
-            }
           />
         )}
       </div>
@@ -864,8 +783,6 @@ function InboxTab({
   filteredOut,
   needsReplyCount,
   onResolve,
-  onDismiss,
-  onSnooze,
   onOverride,
   onBulkResolve,
 }: {
@@ -877,8 +794,6 @@ function InboxTab({
   filteredOut: number;
   needsReplyCount: number;
   onResolve: (itemId: string, channel: string) => void;
-  onDismiss: (itemId: string, channel: string) => void;
-  onSnooze: (itemId: string, hours: number, channel: string) => void;
   onOverride: (itemId: string, needsResponse: boolean) => void;
   onBulkResolve: () => void;
 }) {
@@ -942,8 +857,7 @@ function InboxTab({
     <div className="space-y-4">
       {toggle}
       {/* Bulk "Clear all replied" — quiet moss chip, top-right of the
-          waiting list. Bulk dismiss should not shout louder than the
-          things being dismissed. */}
+          waiting list. */}
       {waitingItems.length >= 3 && (
         <div className="flex justify-end">
           <button
@@ -981,14 +895,11 @@ function InboxTab({
                 <SwipeableRow
                   key={item.id}
                   onSwipeRight={() => onResolve(item.id, item.channel)}
-                  onSwipeLeft={() => onDismiss(item.id, item.channel)}
                 >
                   <InboxRow
                     item={item}
                     view={view}
                     onResolve={() => onResolve(item.id, item.channel)}
-                    onDismiss={() => onDismiss(item.id, item.channel)}
-                    onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
                     onOverride={(needsResponse) =>
                       onOverride(item.id, needsResponse)
                     }
@@ -1037,15 +948,11 @@ function GroupsTab({
   showAll,
   onToggleShowAll,
   onResolve,
-  onDismiss,
-  onSnooze,
 }: {
   groupItems: InboxItemData[];
   showAll: boolean;
   onToggleShowAll: () => void;
   onResolve: (itemId: string, channel: string) => void;
-  onDismiss: (itemId: string, channel: string) => void;
-  onSnooze: (itemId: string, hours: number, channel: string) => void;
 }) {
   if (groupItems.length === 0) {
     return (
@@ -1089,7 +996,7 @@ function GroupsTab({
         className="text-[12px]"
         style={{ color: "var(--text-tertiary)", letterSpacing: "-0.01em" }}
       >
-        Group chats with recent inbound messages. Dismiss to hide.
+        Group chats with recent inbound messages. Mark replied when handled.
       </p>
 
       <div>
@@ -1109,13 +1016,10 @@ function GroupsTab({
                 <SwipeableRow
                   key={item.id}
                   onSwipeRight={() => onResolve(item.id, item.channel)}
-                  onSwipeLeft={() => onDismiss(item.id, item.channel)}
                 >
                   <GroupChatRow
                     item={item}
                     onResolve={() => onResolve(item.id, item.channel)}
-                    onDismiss={() => onDismiss(item.id, item.channel)}
-                    onSnooze={(hours) => onSnooze(item.id, hours, item.channel)}
                   />
                 </SwipeableRow>
               ))}
@@ -1156,18 +1060,11 @@ function GroupsTab({
 
 function GroupChatRow({
   item,
-  // onResolve omitted from destructure — the "Already replied" chip
-  // that consumed it was removed in M0.5b. Prop kept on the type so
-  // callers' shape doesn't change.
-  onDismiss,
-  onSnooze,
+  onResolve,
 }: {
   item: InboxItemData;
   onResolve: () => void;
-  onDismiss: () => void;
-  onSnooze: (hours: number) => void;
 }) {
-  const [showSnooze, setShowSnooze] = useState(false);
   const color = getAvatarColor(item.contactName);
 
   const previews = (item.messagePreview ?? []) as MessagePreview[];
@@ -1284,17 +1181,10 @@ function GroupChatRow({
         </div>
       )}
 
-      {/* "Already replied" manual chip was removed in M0.5b.
-          onOutboundInteraction in lib/inbox.ts auto-resolves any
-          OPEN item on the next Gmail sync once Jennifer sends a
-          reply. Manual mark-as-replied is no longer needed; if the
-          auto-resolve misses a case, that's a sync gap worth fixing
-          rather than papering over with a user-visible button. */}
-
-      {/* Actions: Dismiss + Snooze */}
+      {/* Actions */}
       <div className="flex items-center gap-2 mt-2">
         <button
-          onClick={onDismiss}
+          onClick={onResolve}
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
           style={{
             border: "1px solid #E2E4E8",
@@ -1309,40 +1199,9 @@ function GroupChatRow({
             e.currentTarget.style.backgroundColor = "transparent";
           }}
         >
-          <X className="h-3 w-3" />
-          Dismiss
+          <Check className="h-3 w-3" />
+          Mark replied
         </button>
-
-        <div className="relative">
-          <button
-            onClick={() => setShowSnooze(!showSnooze)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors"
-            style={{
-              border: "1px solid #E2E4E8",
-              color: "#4A4E54",
-              backgroundColor: "transparent",
-              letterSpacing: "-0.01em",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F5F6F8";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-          >
-            <Bell className="h-3 w-3" />
-            Snooze
-          </button>
-          {showSnooze && (
-            <SnoozeDropdown
-              onSelect={(hours) => {
-                onSnooze(hours);
-                setShowSnooze(false);
-              }}
-              onClose={() => setShowSnooze(false)}
-            />
-          )}
-        </div>
 
         {item.messageCount > 1 && (
           <span
@@ -1371,18 +1230,13 @@ function InboxRow({
   // hatch. Auto-resolve handles most cases, but legitimately stale
   // items (cross-channel replies, sync lag) still need a way out.
   onResolve,
-  onDismiss,
-  onSnooze,
   onOverride,
 }: {
   item: InboxItemData;
   view: "needs-reply" | "all";
   onResolve: () => void;
-  onDismiss: () => void;
-  onSnooze: (hours: number) => void;
   onOverride: (needsResponse: boolean) => void;
 }) {
-  const [showSnooze, setShowSnooze] = useState(false);
   const { openComposer } = useDraftComposer();
   const color = getAvatarColor(item.contactName);
   const replyUrl = getReplyUrl(item);
@@ -1691,38 +1545,6 @@ function InboxRow({
           </a>
         )}
 
-        {/* Snooze */}
-        <div className="relative">
-          <button
-            onClick={() => setShowSnooze(!showSnooze)}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
-            style={{
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-              backgroundColor: "transparent",
-              letterSpacing: "-0.01em",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-          >
-            <Bell className="h-3 w-3" />
-            Snooze
-          </button>
-          {showSnooze && (
-            <SnoozeDropdown
-              onSelect={(hours) => {
-                onSnooze(hours);
-                setShowSnooze(false);
-              }}
-              onClose={() => setShowSnooze(false)}
-            />
-          )}
-        </div>
-
         {/* Mark replied — manual resolve escape hatch (M0.9). Auto-
             resolve handles the canonical case; this covers cross-
             channel replies, sync lag, and items the user wants gone. */}
@@ -1818,29 +1640,6 @@ function InboxRow({
           </button>
         ) : null}
 
-        {/* Dismiss for group chats */}
-        {item.isGroupChat && (
-          <button
-            onClick={onDismiss}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
-            style={{
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-              backgroundColor: "transparent",
-              letterSpacing: "-0.01em",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--accent-soft)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-          >
-            <X className="h-3 w-3" />
-            Dismiss
-          </button>
-        )}
-
         {/* Message count + channel */}
         {item.messageCount > 1 && (
           <span
@@ -1911,7 +1710,7 @@ function SwipeableRow({
 }: {
   children: React.ReactNode;
   onSwipeRight: () => void;
-  onSwipeLeft: () => void;
+  onSwipeLeft?: () => void;
 }) {
   const { offset, onTouchStart, onTouchMove, onTouchEnd } = useSwipe(
     onSwipeRight,
@@ -1928,17 +1727,13 @@ function SwipeableRow({
             inset: 0,
             display: "flex",
             alignItems: "center",
-            justifyContent: offset > 0 ? "flex-start" : "flex-end",
+            justifyContent: "flex-start",
             padding: "0 24px",
-            backgroundColor: offset > 0 ? "rgba(5,150,105,0.12)" : "rgba(107,114,128,0.08)",
+            backgroundColor: "rgba(5,150,105,0.12)",
             transition: "none",
           }}
         >
-          {offset > 0 ? (
-            <Check className="h-5 w-5" style={{ color: "#059669" }} />
-          ) : (
-            <X className="h-5 w-5" style={{ color: "#6B7280" }} />
-          )}
+          <Check className="h-5 w-5" style={{ color: "#059669" }} />
         </div>
       )}
       <div
@@ -1956,50 +1751,5 @@ function SwipeableRow({
         {children}
       </div>
     </div>
-  );
-}
-
-// ─── Snooze Dropdown ─────────────────────────────────────────
-
-function SnoozeDropdown({
-  onSelect,
-  onClose,
-}: {
-  onSelect: (hours: number) => void;
-  onClose: () => void;
-}) {
-  return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        className="absolute left-0 top-full mt-1 z-50 min-w-[140px] rounded-xl py-1"
-        style={{
-          backgroundColor: "#fff",
-          border: "1px solid #E2E4E8",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
-        }}
-        role="menu"
-      >
-        {SNOOZE_OPTIONS.map((opt) => (
-          <button
-            key={opt.hours}
-            role="menuitem"
-            onClick={() => onSelect(opt.hours)}
-            className="flex w-full items-center gap-2 px-3 py-2 text-[12px] font-medium text-left transition-colors"
-            style={{ color: "#4A4E54", letterSpacing: "-0.01em" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#F5F6F8";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "";
-            }}
-          >
-            <Clock className="h-3 w-3 shrink-0" style={{ color: "#B5BAC0" }} />
-            {opt.label}
-          </button>
-        ))}
-      </div>
-    </>
   );
 }
