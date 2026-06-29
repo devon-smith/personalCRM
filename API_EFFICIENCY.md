@@ -53,6 +53,7 @@
 - Removed the backend-only legacy `/api/message-actions` route and `src/lib/message-actions.ts` after verifying no app, worker, script, or test reference still used them. This closes an unused AI-classification endpoint and leaves Gmail action extraction as the single action-item scan path.
 - Contact detail intelligence now loads profile, memory, and relationship graph neighbors through one DB-backed `/api/contacts/:id/intelligence` endpoint with a short private cache, replacing three parallel client requests and three separate auth/ownership checks on every contact story open.
 - Removed the now-unused individual contact intelligence routes (`/profile`, `/memory`, `/network`) so the consolidated endpoint is the only internal contact-intelligence API surface.
+- Voice settings now loads profile, corpus stats, and reference-material summaries through one DB-backed `/api/voice/bootstrap` request with a short private cache, replacing three page-load requests while leaving upload/delete/reindex mutations on their focused endpoints.
 
 ## Next Highest-Impact Efficiency Work
 

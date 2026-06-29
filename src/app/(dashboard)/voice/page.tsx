@@ -33,6 +33,12 @@ interface StatsResponse {
   countsByType: Record<string, number>;
 }
 
+interface VoiceBootstrapResponse {
+  profile: ProfileResponse;
+  stats: StatsResponse;
+  references: VoiceReferenceRow[];
+}
+
 interface VoiceReferenceRow {
   id: string;
   filename: string;
@@ -74,20 +80,11 @@ export default function VoiceSettingsPage() {
   const [sourceType, setSourceType] = useState("gpt_knowledge_base");
   const [lastOutcomes, setLastOutcomes] = useState<UploadOutcome[] | null>(null);
 
-  const { data: profile, isLoading: profileLoading } = useQuery<ProfileResponse>({
-    queryKey: ["voice", "profile"],
+  const { data: bootstrap, isLoading: bootstrapLoading } = useQuery<VoiceBootstrapResponse>({
+    queryKey: ["voice", "bootstrap"],
     queryFn: async () => {
-      const res = await fetch("/api/voice/profile");
-      if (!res.ok) throw new Error("Failed to load voice profile");
-      return res.json();
-    },
-  });
-
-  const { data: stats } = useQuery<StatsResponse>({
-    queryKey: ["voice", "stats"],
-    queryFn: async () => {
-      const res = await fetch("/api/voice/stats");
-      if (!res.ok) throw new Error("Failed to load voice stats");
+      const res = await fetch("/api/voice/bootstrap");
+      if (!res.ok) throw new Error("Failed to load voice settings");
       return res.json();
     },
   });
@@ -102,17 +99,6 @@ export default function VoiceSettingsPage() {
       toast.success("Reindex queued — refresh in a minute to see updates");
     },
     onError: () => toast.error("Failed to queue reindex"),
-  });
-
-  const { data: referenceData, isLoading: referencesLoading } = useQuery<{
-    references: VoiceReferenceRow[];
-  }>({
-    queryKey: ["voice-references"],
-    queryFn: async () => {
-      const res = await fetch("/api/voice/references");
-      if (!res.ok) throw new Error("Failed to load references");
-      return res.json();
-    },
   });
 
   const uploadReference = useMutation({
@@ -137,6 +123,7 @@ export default function VoiceSettingsPage() {
     },
     onSuccess: (result) => {
       setLastOutcomes(result.outcomes);
+      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
       qc.invalidateQueries({ queryKey: ["voice-references"] });
       const { imported, duplicates, failed } = result.summary;
       const parts: string[] = [];
@@ -158,6 +145,7 @@ export default function VoiceSettingsPage() {
       if (!res.ok) throw new Error("Delete failed");
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
       qc.invalidateQueries({ queryKey: ["voice-references"] });
       toast.success("Reference removed");
     },
@@ -176,6 +164,7 @@ export default function VoiceSettingsPage() {
       return res.json();
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
       qc.invalidateQueries({ queryKey: ["voice", "profile"] });
       toast.success("Voice instructions saved — applied to every draft now");
     },
@@ -199,7 +188,9 @@ export default function VoiceSettingsPage() {
     [handleFiles],
   );
 
-  const refs = referenceData?.references ?? [];
+  const profile = bootstrap?.profile;
+  const stats = bootstrap?.stats;
+  const refs = bootstrap?.references ?? [];
 
   return (
     <div className="crm-stagger space-y-8 pt-14">
@@ -220,7 +211,7 @@ export default function VoiceSettingsPage() {
         <div>
           <SectionLabel>Corpus</SectionLabel>
           <div className="ds-body-md mt-1" style={{ color: "#1B1A17" }}>
-            {profileLoading ? (
+            {bootstrapLoading ? (
               <span style={{ color: "#8C8A82" }}>Loading…</span>
             ) : stats && stats.indexedEmailCount > 0 ? (
               <>
@@ -296,7 +287,7 @@ export default function VoiceSettingsPage() {
 
       <ReferenceMaterialsSection
         refs={refs}
-        isLoading={referencesLoading}
+        isLoading={bootstrapLoading}
         isDragging={isDragging}
         sourceType={sourceType}
         lastOutcomes={lastOutcomes}
@@ -311,7 +302,7 @@ export default function VoiceSettingsPage() {
         onRemove={(id) => removeReference.mutate(id)}
       />
 
-      {!profileLoading && (!profile || profile.learned.overallCount === 0) && (
+      {!bootstrapLoading && (!profile || profile.learned.overallCount === 0) && (
         <Surface tone="sand" padded>
           <p className="ds-body-md" style={{ color: "#1B1A17" }}>
             Click <strong>Re-index now</strong> to pull your sent mail and
