@@ -22,8 +22,50 @@ dotenv.config({ path: ".env", quiet: true });
 const DEFAULT_USER_EMAIL = "jaaker@stanford.edu";
 const RETIRED_CHANNELS = ["iMessage", "SMS", "imessage", "sms", "whatsapp", "text"];
 const RETIRED_SOURCES = ["imessage", "sms", "whatsapp"];
-const DEV_TEST_TERMS = ["devon", "devontjsmith", "test"];
 const SAMPLE_LIMIT = 20;
+const INSENSITIVE = "insensitive" as const;
+
+const CONTACT_DEV_TEST_FILTERS = [
+  { name: { contains: "devon", mode: INSENSITIVE } },
+  { email: { contains: "devon", mode: INSENSITIVE } },
+  { notes: { contains: "devon", mode: INSENSITIVE } },
+  { howWeMet: { contains: "devon", mode: INSENSITIVE } },
+  { name: { equals: "test", mode: INSENSITIVE } },
+  { name: { equals: "testing", mode: INSENSITIVE } },
+  { name: { startsWith: "apptest", mode: INSENSITIVE } },
+  { name: { startsWith: "testdoc", mode: INSENSITIVE } },
+  { email: { startsWith: "apptest", mode: INSENSITIVE } },
+  { email: { startsWith: "scaltest", mode: INSENSITIVE } },
+  { email: { startsWith: "test@", mode: INSENSITIVE } },
+  { email: { startsWith: "testing@", mode: INSENSITIVE } },
+  { email: { contains: "devontjsmith", mode: INSENSITIVE } },
+] as const;
+
+const EMAIL_DEV_TEST_FILTERS = [
+  { fromEmail: { contains: "devon", mode: INSENSITIVE } },
+  { toEmail: { contains: "devon", mode: INSENSITIVE } },
+  { subject: { contains: "devon", mode: INSENSITIVE } },
+  { fromEmail: { startsWith: "apptest", mode: INSENSITIVE } },
+  { toEmail: { startsWith: "apptest", mode: INSENSITIVE } },
+  { fromEmail: { startsWith: "scaltest", mode: INSENSITIVE } },
+  { toEmail: { startsWith: "scaltest", mode: INSENSITIVE } },
+  { fromEmail: { startsWith: "test@", mode: INSENSITIVE } },
+  { toEmail: { startsWith: "test@", mode: INSENSITIVE } },
+  { subject: { contains: "[TEST", mode: INSENSITIVE } },
+] as const;
+
+const INBOX_DEV_TEST_FILTERS = [
+  { contactName: { contains: "devon", mode: INSENSITIVE } },
+  { contactName: { equals: "test", mode: INSENSITIVE } },
+  { contactName: { equals: "testing", mode: INSENSITIVE } },
+  { contactName: { startsWith: "apptest", mode: INSENSITIVE } },
+] as const;
+
+const DRAFT_DEV_TEST_FILTERS = [
+  { content: { contains: "devon", mode: INSENSITIVE } },
+  { subjectLine: { contains: "devon", mode: INSENSITIVE } },
+  { subjectLine: { contains: "[TEST", mode: INSENSITIVE } },
+] as const;
 
 interface Args {
   readonly strict: boolean;
@@ -319,18 +361,9 @@ async function auditRetiredResidue(userId: string) {
 }
 
 async function auditDevResidue(userId: string) {
-  const containsTerm = DEV_TEST_TERMS.map((term) => ({
-    OR: [
-      { name: { contains: term, mode: "insensitive" as const } },
-      { email: { contains: term, mode: "insensitive" as const } },
-      { notes: { contains: term, mode: "insensitive" as const } },
-      { howWeMet: { contains: term, mode: "insensitive" as const } },
-    ],
-  }));
-
   const [contacts, emailMessages, inboxItems, drafts] = await Promise.all([
     prisma.contact.findMany({
-      where: { userId, OR: containsTerm },
+      where: { userId, OR: [...CONTACT_DEV_TEST_FILTERS] },
       select: {
         id: true,
         name: true,
@@ -345,11 +378,7 @@ async function auditDevResidue(userId: string) {
     prisma.emailMessage.findMany({
       where: {
         userId,
-        OR: DEV_TEST_TERMS.flatMap((term) => [
-          { fromEmail: { contains: term, mode: "insensitive" as const } },
-          { toEmail: { contains: term, mode: "insensitive" as const } },
-          { subject: { contains: term, mode: "insensitive" as const } },
-        ]),
+        OR: [...EMAIL_DEV_TEST_FILTERS],
       },
       select: {
         id: true,
@@ -365,9 +394,7 @@ async function auditDevResidue(userId: string) {
     prisma.inboxItem.findMany({
       where: {
         userId,
-        OR: DEV_TEST_TERMS.map((term) => ({
-          contactName: { contains: term, mode: "insensitive" as const },
-        })),
+        OR: [...INBOX_DEV_TEST_FILTERS],
       },
       select: {
         id: true,
@@ -383,10 +410,7 @@ async function auditDevResidue(userId: string) {
     prisma.draft.findMany({
       where: {
         userId,
-        OR: DEV_TEST_TERMS.flatMap((term) => [
-          { content: { contains: term, mode: "insensitive" as const } },
-          { subjectLine: { contains: term, mode: "insensitive" as const } },
-        ]),
+        OR: [...DRAFT_DEV_TEST_FILTERS],
       },
       select: {
         id: true,
@@ -533,7 +557,7 @@ function buildFindings(input: {
 
   const additionalEmails = input.accountAudit.gmailSync?.additionalUserEmails ?? [];
   const devAdditionalEmails = additionalEmails.filter((email) =>
-    DEV_TEST_TERMS.some((term) => email.toLowerCase().includes(term)),
+    /devon|devontjsmith|^apptest|^scaltest|^test@|^testing@/i.test(email),
   );
   if (devAdditionalEmails.length > 0) {
     findings.push({
