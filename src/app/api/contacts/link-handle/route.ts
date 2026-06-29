@@ -248,55 +248,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Re-match existing interactions from this handle to the contact
-    let rematchedCount = 0;
-
-    if (!isEmail) {
-      // Match iMessage interactions by handle
-      // Find interactions that are currently unmatched or matched to a different contact
-      // and whose sourceId contains a message from this handle
-      const handleNorm = normalizePhone(handle);
-      const handleDigits = handleNorm.replace(/\D/g, "");
-      const last10 = handleDigits.slice(-10);
-
-      // Find iMessage sync states for this handle
-      const syncStates = await prisma.iMessageSyncState.findMany({
-        where: { userId: session.user.id },
-        select: { handleId: true },
-      });
-
-      const matchingHandles = syncStates
-        .filter((s) => {
-          const sDigits = normalizePhone(s.handleId).replace(/\D/g, "");
-          return sDigits.slice(-10) === last10;
-        })
-        .map((s) => s.handleId);
-
-      if (matchingHandles.length > 0) {
-        // Update interactions that came from these handles
-        // They're stored with sourceId like "imsg:{guid}" — we need to find them
-        // via the IMessageSyncState handle mapping
-        // For now, update any unmatched interactions from this handle
-        const result = await prisma.interaction.updateMany({
-          where: {
-            userId: session.user.id,
-            channel: { in: ["iMessage", "SMS"] },
-            contactId: { not: contactId },
-          },
-          data: { contactId },
-        });
-        rematchedCount = result.count;
-        // Note: This is a simplified re-match. In production, you'd want to
-        // track handle→interaction mappings more precisely.
-      }
-    }
-
     return NextResponse.json({
       status: "linked",
       contactId,
       handle,
       isEmail,
-      rematchedCount,
+      rematchedCount: 0,
     });
   } catch (error) {
     console.error("[POST /api/contacts/link-handle]", error);

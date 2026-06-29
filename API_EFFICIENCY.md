@@ -152,6 +152,7 @@
 - Draft workspace saves and streamed refinements now patch the open workspace cache from the returned version payload instead of refetching `/api/drafts/:id/workspace`. Save-to-Gmail also patches Gmail draft metadata locally and opens the API's returned deep link field.
 - Manual interaction logging now patches the affected contact detail, contact summary, and visible contact-list caches from the created interaction. Logging a note/call/meeting no longer refetches all contact detail queries or an unused interactions query; dashboard aggregates still refresh.
 - Voice memo transcription now inserts the returned journal entry into the open contact journal cache. Recording a note no longer refetches `/api/journal` just to show the row returned by `/api/notes/transcribe`.
+- Link-handle phone saves no longer scan retired iMessage sync state or bulk-rematch SMS/iMessage interactions. The active flow still stores the handle on the selected contact, while avoiding stale runtime work after iMessage ingestion was retired.
 
 ## Next Highest-Impact Efficiency Work
 
