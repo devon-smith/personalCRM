@@ -184,6 +184,7 @@
 - Birthday Calendar extraction now dedupes in-flight scans and reuses the last per-user result for 60 seconds. It also parses Calendar events before loading contacts, so non-birthday event results do not trigger a broad contact matching read.
 - Circle intelligence now dedupes in-flight generation per user/circle, counts full membership with aggregate DB queries, and sends only the 24 most recently active members into the Haiku prompt. Large circles keep accurate overview counts without turning one Insights open into an unbounded interaction/prompt read.
 - Draft variant generation now dedupes in-flight requests and reuses a two-minute per-draft/current-content result. Repeated mobile taps or retry loops return the existing variants instead of rebuilding voice context, rerunning Voyage retrieval, and spending another Sonnet call.
+- Workspace draft creation now dedupes in-flight generation per inbox item or draft fingerprint. Concurrent "Draft reply" or composer opens share one Sonnet generation/write instead of racing past the recent-draft check and creating duplicate workspace drafts.
 
 ## Next Highest-Impact Efficiency Work
 

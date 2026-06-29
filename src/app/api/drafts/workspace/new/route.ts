@@ -30,6 +30,18 @@ const CONTEXT_TO_TYPE: Record<DraftContext, DraftType> = {
   follow_up: "FOLLOW_UP",
 };
 
+interface WorkspaceDraftCreateResult {
+  readonly id: string;
+  readonly existing: boolean;
+  readonly regenerated?: boolean;
+  readonly cached?: boolean;
+}
+
+const inFlightWorkspaceDraftCreations = new Map<
+  string,
+  Promise<WorkspaceDraftCreateResult>
+>();
+
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
@@ -118,74 +130,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Generate v1 using the existing pipeline. Inline rather than
-    // queued — Jennifer's waiting on this page render and there's
-    // no batching benefit.
-    const result = await generateDraft({
-      contactId,
+    const dedupeKey = buildWorkspaceDraftDedupeKey({
       userId,
+      inboxItemId: body.inboxItemId,
+      generationFingerprint,
+    });
+    const existingCreation = inFlightWorkspaceDraftCreations.get(dedupeKey);
+    if (existingCreation) {
+      const result = await existingCreation;
+      return NextResponse.json({ ...result, cached: true });
+    }
+
+    const pendingCreation = createWorkspaceDraft({
+      userId,
+      contactId,
       tone,
       context,
-      threadKey: threadKey ?? undefined,
-    });
-
-    const initialVersion: WorkspaceVersion = {
-      version: 1,
-      content: result.detailed,
-      subjectLine: result.subjectLine,
-      generatedAt: new Date().toISOString(),
-      sourceRequest: "initial generation",
-      source: "initial",
-    };
-    const resolvedContactId = result.resolvedContactId ?? contactId;
-
-    const draftData = {
-      userId,
-      contactId: resolvedContactId,
-      type: CONTEXT_TO_TYPE[context] ?? "CATCHING_UP",
-      tone,
-      content: result.detailed,
-      subjectLine: result.subjectLine,
-      isWorkspaceDraft: true,
-      threadKey: threadKey ?? undefined,
-      inboxItemId: body.inboxItemId ?? undefined,
+      threadKey,
+      inboxItemId: body.inboxItemId,
       generationFingerprint,
-      workspaceVersions: [initialVersion] as unknown as object,
-      refinementChat: [] as unknown as object,
-    };
-
-    const draft = staleExistingDraftId
-      ? await prisma.draft.update({
-          where: { id: staleExistingDraftId },
-          data: {
-            contactId: resolvedContactId,
-            type: draftData.type,
-            tone,
-            content: result.detailed,
-            subjectLine: result.subjectLine,
-            isWorkspaceDraft: true,
-            threadKey: threadKey ?? undefined,
-            generationFingerprint,
-            workspaceVersions: [initialVersion] as unknown as object,
-            refinementChat: [] as unknown as object,
-            gmailDraftId: null,
-            gmailThreadId: null,
-            inReplyToMessageId: null,
-            recipientEmail: null,
-            savedToGmailAt: null,
-          },
-          select: { id: true },
-        })
-      : await prisma.draft.create({
-          data: draftData,
-          select: { id: true },
-        });
-
-    return NextResponse.json({
-      id: draft.id,
-      existing: false,
-      regenerated: Boolean(staleExistingDraftId),
+      staleExistingDraftId,
     });
+    inFlightWorkspaceDraftCreations.set(dedupeKey, pendingCreation);
+
+    try {
+      return NextResponse.json(await pendingCreation);
+    } finally {
+      if (inFlightWorkspaceDraftCreations.get(dedupeKey) === pendingCreation) {
+        inFlightWorkspaceDraftCreations.delete(dedupeKey);
+      }
+    }
   } catch (error) {
     console.error("[POST /api/drafts/workspace/new]", error);
     return NextResponse.json(
@@ -196,4 +170,94 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+async function createWorkspaceDraft(args: {
+  readonly userId: string;
+  readonly contactId: string;
+  readonly tone: DraftTone;
+  readonly context: DraftContext;
+  readonly threadKey: string | null;
+  readonly inboxItemId?: string;
+  readonly generationFingerprint: string;
+  readonly staleExistingDraftId: string | null;
+}): Promise<WorkspaceDraftCreateResult> {
+  // Generate v1 using the existing pipeline. Inline rather than
+  // queued — Jennifer's waiting on this page render and there's
+  // no batching benefit.
+  const result = await generateDraft({
+    contactId: args.contactId,
+    userId: args.userId,
+    tone: args.tone,
+    context: args.context,
+    threadKey: args.threadKey ?? undefined,
+  });
+
+  const initialVersion: WorkspaceVersion = {
+    version: 1,
+    content: result.detailed,
+    subjectLine: result.subjectLine,
+    generatedAt: new Date().toISOString(),
+    sourceRequest: "initial generation",
+    source: "initial",
+  };
+  const resolvedContactId = result.resolvedContactId ?? args.contactId;
+
+  const draftData = {
+    userId: args.userId,
+    contactId: resolvedContactId,
+    type: CONTEXT_TO_TYPE[args.context] ?? "CATCHING_UP",
+    tone: args.tone,
+    content: result.detailed,
+    subjectLine: result.subjectLine,
+    isWorkspaceDraft: true,
+    threadKey: args.threadKey ?? undefined,
+    inboxItemId: args.inboxItemId ?? undefined,
+    generationFingerprint: args.generationFingerprint,
+    workspaceVersions: [initialVersion] as unknown as object,
+    refinementChat: [] as unknown as object,
+  };
+
+  const draft = args.staleExistingDraftId
+    ? await prisma.draft.update({
+        where: { id: args.staleExistingDraftId },
+        data: {
+          contactId: resolvedContactId,
+          type: draftData.type,
+          tone: args.tone,
+          content: result.detailed,
+          subjectLine: result.subjectLine,
+          isWorkspaceDraft: true,
+          threadKey: args.threadKey ?? undefined,
+          generationFingerprint: args.generationFingerprint,
+          workspaceVersions: [initialVersion] as unknown as object,
+          refinementChat: [] as unknown as object,
+          gmailDraftId: null,
+          gmailThreadId: null,
+          inReplyToMessageId: null,
+          recipientEmail: null,
+          savedToGmailAt: null,
+        },
+        select: { id: true },
+      })
+    : await prisma.draft.create({
+        data: draftData,
+        select: { id: true },
+      });
+
+  return {
+    id: draft.id,
+    existing: false,
+    regenerated: Boolean(args.staleExistingDraftId),
+  };
+}
+
+function buildWorkspaceDraftDedupeKey(args: {
+  readonly userId: string;
+  readonly inboxItemId?: string;
+  readonly generationFingerprint: string;
+}) {
+  return args.inboxItemId
+    ? `${args.userId}:inbox:${args.inboxItemId}`
+    : `${args.userId}:fingerprint:${args.generationFingerprint}`;
 }
