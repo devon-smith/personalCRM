@@ -154,6 +154,7 @@
 - Voice memo transcription now inserts the returned journal entry into the open contact journal cache. Recording a note no longer refetches `/api/journal` just to show the row returned by `/api/notes/transcribe`.
 - Link-handle phone saves no longer scan retired iMessage sync state or bulk-rematch SMS/iMessage interactions. The active flow still stores the handle on the selected contact, while avoiding stale runtime work after iMessage ingestion was retired.
 - Removed the unused link-handle dialog and `/api/contacts/link-handle` route. With message ingestion retired, there is no active UI path for unmatched handles, so direct calls can no longer scan the full contact list for suggestions.
+- Reply queue inbox reads now filter at the DB layer to maintained channels only (`email`, `gmail`, `linkedin`). Historical text/WhatsApp/iMessage InboxItem rows can remain for audit data, but they no longer affect reply counts, queue queries, or visible reply surfaces.
 
 ## Next Highest-Impact Efficiency Work
 

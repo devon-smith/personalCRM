@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 
 export type ReplyQueueInboxView = "needs-reply" | "all";
 
+// Retired message-ingestion rows can remain in the DB for audit/history,
+// but the active reply queue should only surface maintained channels.
+const ACTIVE_REPLY_QUEUE_CHANNELS = ["email", "gmail", "linkedin"] as const;
+
 export interface ReplyQueueMessagePreview {
   summary?: string;
   occurredAt?: string;
@@ -71,21 +75,26 @@ export async function getReplyQueueInbox(
     },
   });
 
+  const activeOpenWhere = {
+    userId,
+    status: "OPEN" as const,
+    channel: { in: [...ACTIVE_REPLY_QUEUE_CHANNELS] },
+  };
+
   const [needsReplyCount, allOpenCount] = await Promise.all([
     prisma.inboxItem.count({
       where: {
-        userId,
-        status: "OPEN",
+        ...activeOpenWhere,
         OR: [{ needsResponse: null }, { needsResponse: true }],
       },
     }),
     prisma.inboxItem.count({
-      where: { userId, status: "OPEN" },
+      where: activeOpenWhere,
     }),
   ]);
   const filteredOut = allOpenCount - needsReplyCount;
 
-  const baseWhere = { userId, status: "OPEN" as const };
+  const baseWhere = activeOpenWhere;
   const where =
     view === "all"
       ? baseWhere
