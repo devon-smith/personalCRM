@@ -51,6 +51,12 @@ export default function SourcesPage() {
     },
   });
 
+  const refreshSourceViews = () => {
+    queryClient.invalidateQueries({ queryKey: ["data-health"] });
+    queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
+    queryClient.invalidateQueries({ queryKey: ["gmail-source-health"] });
+  };
+
   // ─── Sync mutations ───
   const syncGmail = useMutation({
     mutationFn: async () => {
@@ -59,8 +65,8 @@ export default function SourcesPage() {
       return res.json();
     },
     onSuccess: (result) => {
-      toast(`Synced ${result.processed} emails`);
-      queryClient.invalidateQueries({ queryKey: ["data-health"] });
+      toast(`Gmail refreshed ${result.processed} emails`);
+      refreshSourceViews();
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
     },
     onError: (err) => toast.error(err.message),
@@ -81,7 +87,7 @@ export default function SourcesPage() {
     },
     onSuccess: (result) => {
       toast(`Imported ${result.imported} contacts`);
-      queryClient.invalidateQueries({ queryKey: ["data-health"] });
+      refreshSourceViews();
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
     },
     onError: (err) => toast.error(err.message),
@@ -96,8 +102,8 @@ export default function SourcesPage() {
     onSuccess: (result) => {
       toast(result.interactionsLogged > 0
         ? `Calendar: ${result.interactionsLogged} meetings logged`
-        : `Scanned ${result.eventsScanned} events — all synced`);
-      queryClient.invalidateQueries({ queryKey: ["data-health"] });
+        : `Calendar refreshed ${result.eventsScanned} events`);
+      refreshSourceViews();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -113,7 +119,7 @@ export default function SourcesPage() {
       if (result.created > 0) parts.push(`${result.created} created`);
       if (result.enriched > 0) parts.push(`${result.enriched} enriched`);
       toast(parts.length > 0 ? `Apple Contacts: ${parts.join(", ")}` : "All contacts already synced");
-      queryClient.invalidateQueries({ queryKey: ["data-health"] });
+      refreshSourceViews();
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
     },
     onError: (err) => toast.error(err.message),
@@ -129,7 +135,7 @@ export default function SourcesPage() {
       toast(result.messagesCreated > 0
         ? `iMessage: ${result.messagesCreated} messages logged`
         : "All messages already synced");
-      queryClient.invalidateQueries({ queryKey: ["data-health"] });
+      refreshSourceViews();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -207,11 +213,13 @@ export default function SourcesPage() {
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--accent-color)"; }}
         >
           {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Sync all
+          Refresh all
         </button>
       </div>
 
       <SyncRuntimeCard data={data} />
+
+      <ManualRefreshCard data={data} isSyncing={isSyncing} />
 
       {/* ═══ SECTION 1 — Google Accounts ═══ */}
       <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "80ms" }}>
@@ -226,6 +234,7 @@ export default function SourcesPage() {
                 gmailSource={sourceByKey("gmail")}
                 calendarSource={sourceByKey("google-calendar")}
                 contactsSource={sourceByKey("google-contacts")}
+                runtime={data.syncRuntime}
                 syncGmail={syncGmail}
                 syncCalendar={syncCalendar}
                 importContacts={importContacts}
@@ -283,7 +292,7 @@ export default function SourcesPage() {
           source={sourceByKey("apple-contacts")}
           isSyncing={importApple.isPending}
           onSync={() => importApple.mutate()}
-          actionLabel="Import"
+          actionLabel="Refresh"
         />
 
         {showIMessage && (
@@ -458,6 +467,105 @@ function SyncRuntimeCard({ data }: { data: DataHealthResponse }) {
   );
 }
 
+function ManualRefreshCard({
+  data,
+  isSyncing,
+}: {
+  data: DataHealthResponse;
+  isSyncing: boolean;
+}) {
+  const gmail = data.sources.find((source) => source.key === "gmail");
+  const calendar = data.sources.find((source) => source.key === "google-calendar");
+  const gmailRun = latestRunFor(data.syncRuntime, "gmail");
+  const calendarRun = latestRunFor(data.syncRuntime, "calendar");
+
+  return (
+    <div
+      className="crm-animate-enter mt-4 rounded-[14px] p-4"
+      style={{
+        border: "1px solid var(--border)",
+        backgroundColor: "var(--surface)",
+        animationDelay: "60ms",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+          style={{ backgroundColor: "var(--surface-sunken)" }}
+        >
+          {isSyncing ? (
+            <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--accent-color)" }} />
+          ) : (
+            <RefreshCw className="h-4 w-4" style={{ color: "var(--accent-color)" }} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="ds-heading-sm">Manual refresh</h2>
+            {isSyncing && (
+              <span
+                className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                style={{
+                  color: "var(--accent-color)",
+                  backgroundColor: "var(--surface-sunken)",
+                }}
+              >
+                Running
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[12px] leading-5" style={{ color: "var(--text-tertiary)" }}>
+            Gmail and Calendar stay fresh from the worker; refresh now when the reply queue or today&apos;s meetings need the latest server data.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <ManualRefreshMetric
+          label="Gmail"
+          value={gmail?.lastSync ? formatRelativeTime(gmail.lastSync) : "Never refreshed"}
+          detail={gmailRun ? runSummary(gmailRun) : cronDetail(data.syncRuntime, "gmail-sync")}
+        />
+        <ManualRefreshMetric
+          label="Calendar"
+          value={calendar?.lastSync ? formatRelativeTime(calendar.lastSync) : "Never refreshed"}
+          detail={calendarRun ? runSummary(calendarRun) : cronDetail(data.syncRuntime, "calendar-sync")}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ManualRefreshMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div
+      className="rounded-[10px] border px-3 py-2"
+      style={{
+        borderColor: "var(--border-subtle)",
+        backgroundColor: "var(--surface-sunken)",
+      }}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-tertiary)" }}>
+        {label}
+      </div>
+      <div className="mt-0.5 text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>
+        {value}
+      </div>
+      <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+        {detail}
+      </div>
+    </div>
+  );
+}
+
 function SyncRunRow({
   run,
 }: {
@@ -545,6 +653,29 @@ function cronDetail(
   return `Worker ran ${formatRelativeTime(cron.lastExecution)} · every ${cron.cadenceMinutes}m`;
 }
 
+function latestRunFor(
+  runtime: DataHealthResponse["syncRuntime"],
+  source: "gmail" | "calendar",
+) {
+  return runtime.recentRuns.find((run) => run.source === source);
+}
+
+function serviceStatusLine(
+  runtime: DataHealthResponse["syncRuntime"],
+  source: "gmail" | "calendar",
+  task: "gmail-sync" | "calendar-sync",
+): string {
+  const run = latestRunFor(runtime, source);
+  if (run) return `Latest server run: ${runSummary(run)}`;
+  return cronDetail(runtime, task);
+}
+
+function runSummary(
+  run: DataHealthResponse["syncRuntime"]["recentRuns"][number],
+): string {
+  return `${formatTrigger(run.trigger)} ${run.status} ${formatRelativeTime(run.startedAt)}`;
+}
+
 function formatTrigger(trigger: string): string {
   return trigger.replace(/_/g, " ");
 }
@@ -563,6 +694,7 @@ function GoogleAccountCard({
   gmailSource,
   calendarSource,
   contactsSource,
+  runtime,
   syncGmail,
   syncCalendar,
   importContacts,
@@ -571,6 +703,7 @@ function GoogleAccountCard({
   gmailSource?: DataHealthResponse["sources"][0];
   calendarSource?: DataHealthResponse["sources"][0];
   contactsSource?: DataHealthResponse["sources"][0];
+  runtime: DataHealthResponse["syncRuntime"];
   syncGmail: ReturnType<typeof useMutation<unknown, Error>>;
   syncCalendar: ReturnType<typeof useMutation<unknown, Error>>;
   importContacts: ReturnType<typeof useMutation<unknown, Error>>;
@@ -644,8 +777,10 @@ function GoogleAccountCard({
               name="Gmail"
               detail={gmailSource?.captured ?? "Not synced"}
               lastSync={gmailSource?.lastSync}
+              statusLine={serviceStatusLine(runtime, "gmail", "gmail-sync")}
               isSyncing={syncGmail.isPending}
               onSync={() => syncGmail.mutate()}
+              actionLabel="Refresh now"
             />
           )}
           {account.hasCalendar && (
@@ -654,8 +789,10 @@ function GoogleAccountCard({
               name="Calendar"
               detail={calendarSource?.captured ?? "Not synced"}
               lastSync={calendarSource?.lastSync}
+              statusLine={serviceStatusLine(runtime, "calendar", "calendar-sync")}
               isSyncing={syncCalendar.isPending}
               onSync={() => syncCalendar.mutate()}
+              actionLabel="Refresh now"
             />
           )}
           {account.hasContacts && (
@@ -666,7 +803,8 @@ function GoogleAccountCard({
               lastSync={contactsSource?.lastSync}
               isSyncing={importContacts.isPending}
               onSync={() => importContacts.mutate()}
-              actionLabel="Enrich"
+              statusLine="Incremental People API import"
+              actionLabel="Refresh"
             />
           )}
         </div>
@@ -744,6 +882,7 @@ function SubService({
   name,
   detail,
   lastSync,
+  statusLine,
   isSyncing,
   onSync,
   actionLabel = "Sync",
@@ -752,28 +891,36 @@ function SubService({
   name: string;
   detail: string;
   lastSync?: string | null;
+  statusLine?: string;
   isSyncing: boolean;
   onSync: () => void;
   actionLabel?: string;
 }) {
   return (
     <div
-      className="flex items-center gap-3 rounded-[10px] px-3 py-2.5"
+      className="flex flex-col gap-3 rounded-[10px] px-3 py-2.5 sm:flex-row sm:items-center"
       style={{ backgroundColor: "var(--surface-sunken)" }}
     >
-      <Check className="h-4 w-4 shrink-0" style={{ color: "var(--status-success)" }} />
-      <Icon className="h-4 w-4 shrink-0" style={{ color: "var(--text-tertiary)" }} />
-      <div className="min-w-0 flex-1">
-        <span className="ds-body-sm font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
-        <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
-          {detail}
-          {lastSync && ` · ${formatRelativeTime(lastSync)}`}
-        </p>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--status-success)" }} />
+        <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+        <div className="min-w-0 flex-1">
+          <span className="ds-body-sm font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
+          <p className="text-[11px] leading-4" style={{ color: "var(--text-tertiary)" }}>
+            {detail}
+            {lastSync && ` · ${formatRelativeTime(lastSync)}`}
+          </p>
+          {statusLine && (
+            <p className="mt-0.5 text-[11px] leading-4" style={{ color: "var(--text-tertiary)" }}>
+              {statusLine}
+            </p>
+          )}
+        </div>
       </div>
       <button
         onClick={onSync}
         disabled={isSyncing}
-        className="flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50"
+        className="flex shrink-0 items-center justify-center gap-1 rounded-[6px] px-2.5 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50 sm:min-w-[92px]"
         style={{
           backgroundColor: "var(--surface)",
           color: "var(--text-secondary)",

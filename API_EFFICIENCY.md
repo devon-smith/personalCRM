@@ -32,6 +32,7 @@
 - `ProviderCallLog` now also covers Google OAuth refresh attempts, Calendar utility calls, birthday/scheduling Calendar scans, Calendar watch setup/stop, Google Contacts incremental/full People API import pages, and Circle-to-Google contact-group sync calls.
 - Sync budget alert thresholds are now deployment-configurable through `SYNC_BUDGET_PROVIDER_CALLS_PER_DAY`, `SYNC_BUDGET_BROWSER_FALLBACK_CALLS_PER_DAY`, and `SYNC_BUDGET_ERROR_RATE_PERCENT`.
 - Detailed provider-call telemetry now has a daily retention worker. `PROVIDER_CALL_LOG_RETENTION_DAYS` defaults to 180 days, which preserves the 7/30/90-day Settings usage windows plus debugging headroom.
+- Sources now frames manual Gmail/Calendar actions as "Refresh now", shows recent server-run status beside each service, and refreshes connected source indicators after manual runs.
 - Calendar empty states now use DB-only sync status returned with `/api/calendar`, so the Calendar and home meeting surfaces distinguish disconnected/missing-scope, never-synced, failed-sync, and genuinely-empty states without extra Google calls.
 - Legacy/development surfaces are now hidden from the main UI unless enabled by public deployment flags: `NEXT_PUBLIC_ENABLE_IMESSAGE`, `NEXT_PUBLIC_ENABLE_WHATSAPP`, `NEXT_PUBLIC_ENABLE_ACTIVITY`, and `NEXT_PUBLIC_ENABLE_FEED`. Their direct API routes also fail closed with disabled/404 responses, including Feed, Activity, extension Feed/Activity writes, iMessage, and WhatsApp.
 
@@ -43,5 +44,4 @@
 ## Product Polish Before App Finalization
 
 - Add draft audit copy in the reply modal: exact inbound message used, thread messages loaded, voice references used, and known missing context.
-- Add a user-facing "Refresh now" control for Gmail/Calendar that explains it may take a moment, rather than relying on background polling.
 - Decide after launch whether disabled legacy routes should stay flag-gated for admin/debug use or be removed permanently.
