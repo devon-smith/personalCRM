@@ -23,13 +23,6 @@ interface GmailListResponse {
   resultSizeEstimate?: number;
 }
 
-interface DiscoveredPerson {
-  email: string;
-  name: string;
-  messageCount: number;
-  latestDate: Date;
-}
-
 export interface DiscoverResult {
   contactsCreated: number;
   contactsExisted: number;

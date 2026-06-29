@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Link2, Phone, Mail, Search, Check, X } from "lucide-react";
+import { Loader2, Link2, Phone, Mail, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 // ─── Types ───────────────────────────────────────────────────

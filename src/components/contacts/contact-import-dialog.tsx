@@ -20,7 +20,7 @@ import {
 import { Upload, FileText, Check, AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { parseCsv, detectLinkedInCsv, type ParsedContact, type CsvParseResult } from "@/lib/csv-parser";
+import { parseCsv, detectLinkedInCsv, type CsvParseResult } from "@/lib/csv-parser";
 import { parseVcf, isVcardContent } from "@/lib/vcard-parser";
 
 type Step = "upload" | "preview" | "result";

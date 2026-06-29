@@ -16,7 +16,6 @@ import {
   Linkedin,
   Bell,
   ExternalLink,
-  AlertTriangle,
   Pencil,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

@@ -314,6 +314,12 @@
 
   function createSidebar() {
     const existing = document.getElementById("crm-sidebar");
+    if (existing && sidebarInjected) {
+      const body = document.getElementById("crm-body");
+      if (body) body.innerHTML = '<div class="crm-loading">Loading...</div>';
+      return existing;
+    }
+
     if (existing) existing.remove();
 
     const sidebar = document.createElement("div");

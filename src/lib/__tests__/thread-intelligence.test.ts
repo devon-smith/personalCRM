@@ -133,14 +133,12 @@ describe("scoreReplyPriority", () => {
   });
 
   it("scores higher for deep threads", () => {
-    const shallow = scoreReplyPriority("Hi", "Hello", 1, 1, null);
     const deep = scoreReplyPriority("Hi", "Hello", 1, 4, null);
     // Deep thread adds points
     expect(deep.reason).toContain("Active thread");
   });
 
   it("scores higher for longer wait times", () => {
-    const recent = scoreReplyPriority("Hey", "What's up", 0, 1, null);
     const old = scoreReplyPriority("Hey", "What's up", 8, 1, null);
     expect(old.reason).toContain("waiting");
   });

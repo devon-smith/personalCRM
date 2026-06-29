@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   // Handle CORS preflight for extension API routes
   if (req.nextUrl.pathname.startsWith("/api/extension/")) {
     if (req.method === "OPTIONS") {

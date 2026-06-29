@@ -6,8 +6,6 @@ import {
   Upload,
   Loader2,
   Check,
-  AlertTriangle,
-  ExternalLink,
   Users,
   Merge,
   UserPlus,
@@ -16,7 +14,6 @@ import {
   Link2,
   PenLine,
   ChevronDown,
-  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

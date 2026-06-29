@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
-import { ArrowRightLeft, Briefcase, Check, X, Mail } from "lucide-react";
+import { ArrowRightLeft, Briefcase, X, Mail } from "lucide-react";
 import Link from "next/link";
 
 interface ChangelogEntry {

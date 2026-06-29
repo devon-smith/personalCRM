@@ -34,6 +34,7 @@ export function WarmthAvatar({ initials, warmth, size = 34, avatarUrl }: WarmthA
       }}
     >
       {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- Contact avatars can come from arbitrary external sources.
         <img
           src={avatarUrl}
           alt={initials}

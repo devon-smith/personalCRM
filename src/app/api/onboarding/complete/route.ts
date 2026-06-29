@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createDefaultCircles } from "@/lib/circles/defaults";
 
 interface CircleInput {
   name: string;

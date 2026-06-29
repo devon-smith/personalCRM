@@ -10,7 +10,6 @@ describe("combinedScore", () => {
   });
 
   it("decays with time", () => {
-    const now = new Date();
     const month = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const sixMonths = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
     const year = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);

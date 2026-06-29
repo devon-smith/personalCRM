@@ -407,7 +407,6 @@ export async function extractActionItems(
 ): Promise<ExtractResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const userEmail = user?.email?.toLowerCase();
-  const userName = user?.name ?? "the user";
   if (!userEmail) throw new Error("User has no email address");
 
   // Build set of all user emails
@@ -513,8 +512,6 @@ export async function extractActionItems(
 
     actionsFound++;
 
-    // Get subject and preview
-    const subject = getHeader(lastMsg.payload.headers, "Subject");
     const preview = getMessageBody(lastMsg);
     const cleanPreview = cleanEmailBody(preview).slice(0, 200);
 
@@ -552,7 +549,6 @@ export async function extractActionItemsBackfill(
 ): Promise<ExtractResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const userEmail = user?.email?.toLowerCase();
-  const userName = user?.name ?? "the user";
   if (!userEmail) throw new Error("User has no email address");
 
   // Build set of all user emails

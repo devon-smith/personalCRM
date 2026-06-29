@@ -114,7 +114,6 @@ function classifyTrend(
   if (total === 0) return "inactive";
 
   const recentHalf = buckets[4] + buckets[5];
-  const olderHalf = buckets[0] + buckets[1];
 
   if (velocity > 0.3) return "accelerating";
   if (velocity < -0.3 && recentHalf === 0) return "fading";
