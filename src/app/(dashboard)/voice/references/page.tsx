@@ -173,8 +173,16 @@ export default function VoiceReferencesPage() {
       );
       if (!res.ok) throw new Error("Delete failed");
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
+    onSuccess: (_data, id) => {
+      qc.setQueryData<VoiceReferencesBootstrapResponse>(
+        ["voice", "bootstrap"],
+        (current) => current
+          ? {
+              ...current,
+              references: current.references.filter((ref) => ref.id !== id),
+            }
+          : current,
+      );
       toast.success("Removed");
     },
     onError: () => toast.error("Couldn't remove"),

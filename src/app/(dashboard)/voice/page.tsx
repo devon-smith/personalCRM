@@ -143,8 +143,16 @@ export default function VoiceSettingsPage() {
       });
       if (!res.ok) throw new Error("Delete failed");
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
+    onSuccess: (_data, id) => {
+      qc.setQueryData<VoiceBootstrapResponse>(
+        ["voice", "bootstrap"],
+        (current) => current
+          ? {
+              ...current,
+              references: current.references.filter((ref) => ref.id !== id),
+            }
+          : current,
+      );
       toast.success("Reference removed");
     },
     onError: () => toast.error("Couldn't remove reference"),
@@ -159,10 +167,26 @@ export default function VoiceSettingsPage() {
         body: JSON.stringify({ userInstructions: text }),
       });
       if (!res.ok) throw new Error("Failed to save voice instructions");
-      return res.json();
+      return res.json() as Promise<{
+        ok: boolean;
+        overrides: VoiceOverrides;
+        userInstructions: string | null;
+      }>;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
+    onSuccess: (result) => {
+      qc.setQueryData<VoiceBootstrapResponse>(
+        ["voice", "bootstrap"],
+        (current) => current
+          ? {
+              ...current,
+              profile: {
+                ...current.profile,
+                overrides: result.overrides,
+                userInstructions: result.userInstructions,
+              },
+            }
+          : current,
+      );
       toast.success("Voice instructions saved — applied to every draft now");
     },
     onError: () => toast.error("Failed to save voice instructions"),
