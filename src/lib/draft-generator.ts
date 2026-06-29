@@ -24,6 +24,7 @@ import {
   loadPersonFactsForPrompt,
 } from "@/lib/person-facts";
 import { getAnthropicSonnetModel } from "@/lib/anthropic-models";
+import { contactHasEmail, displayNameFromEmail } from "@/lib/contact-email";
 
 const DRAFT_MODEL = getAnthropicSonnetModel();
 
@@ -351,24 +352,6 @@ async function resolveReplyContactId(args: {
   });
 
   return created.id;
-}
-
-function contactHasEmail(
-  contact: { email: string | null; additionalEmails: string[] } | null,
-  email: string,
-): boolean {
-  if (!contact) return false;
-  if (contact.email?.toLowerCase() === email) return true;
-  return contact.additionalEmails.some((candidate) => candidate.toLowerCase() === email);
-}
-
-function displayNameFromEmail(email: string): string {
-  const local = email.split("@")[0] || email;
-  return local
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || email;
 }
 
 async function generateWithAI(params: Omit<GenerateDraftParams, "replyContext"> & {

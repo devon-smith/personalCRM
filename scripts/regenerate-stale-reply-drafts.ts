@@ -6,6 +6,7 @@ import {
 import { loadReplyContext } from "../src/lib/draft-reply-context";
 import type { DraftTone } from "../src/lib/draft-composer-context";
 import type { WorkspaceVersion } from "../src/lib/drafts/workspace-types";
+import { contactHasEmail } from "../src/lib/contact-email";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -179,14 +180,6 @@ async function main() {
   }
 
   console.log(JSON.stringify(result, null, 2));
-}
-
-function contactHasEmail(
-  contact: { email: string | null; additionalEmails: string[] },
-  email: string,
-): boolean {
-  if (contact.email?.toLowerCase() === email) return true;
-  return contact.additionalEmails.some((candidate) => candidate.toLowerCase() === email);
 }
 
 main()

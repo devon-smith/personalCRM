@@ -140,10 +140,11 @@ async function prepopulateForUser(
 
     try {
       const result = await generateDraft(draftInput);
+      const resolvedContactId = result.resolvedContactId ?? item.contactId;
       await prisma.draft.create({
         data: {
           userId: item.userId,
-          contactId: item.contactId,
+          contactId: resolvedContactId,
           inboxItemId: item.id,
           status: "DRAFT",
           // REPLY_EMAIL is the only DraftType that matches the
@@ -155,6 +156,7 @@ async function prepopulateForUser(
           // — quick is for inline previews. Store detailed.
           content: result.detailed,
           subjectLine: result.subjectLine,
+          threadKey: item.threadKey ?? undefined,
         },
       });
       summary.drafted++;
