@@ -213,7 +213,7 @@ export function DraftComposer() {
   }, []);
 
   const generateDraft = useCallback(async () => {
-    if (!effectiveContact) return;
+    if (!effectiveContact || isGenerating) return;
 
     setIsGenerating(true);
     setDrafts(null);
@@ -248,9 +248,10 @@ export function DraftComposer() {
     } finally {
       setIsGenerating(false);
     }
-  }, [effectiveContact, tone, context, contextDetail, threadSubject, threadSnippet, threadKey, relationshipTypeOverride]);
+  }, [effectiveContact, isGenerating, tone, context, contextDetail, threadSubject, threadSnippet, threadKey, relationshipTypeOverride]);
 
   const saveToGmail = useCallback(async () => {
+    if (savingToGmail || gmailDeepLink) return;
     if (!draftId || !effectiveContact) return;
     if (!effectiveContact.email) {
       toast.error("No email on file for this contact");
@@ -279,7 +280,7 @@ export function DraftComposer() {
     } finally {
       setSavingToGmail(false);
     }
-  }, [draftId, effectiveContact, context]);
+  }, [draftId, effectiveContact, context, savingToGmail, gmailDeepLink]);
 
   const copyDraft = useCallback(async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -620,7 +621,7 @@ export function DraftComposer() {
                 <Button
                   size="sm"
                   onClick={saveToGmail}
-                  disabled={savingToGmail || !draftId}
+                  disabled={savingToGmail || !draftId || !!gmailDeepLink}
                   style={{
                     backgroundColor: "var(--accent-color)",
                     color: "var(--text-inverse)",

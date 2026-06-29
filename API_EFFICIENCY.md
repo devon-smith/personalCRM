@@ -172,6 +172,7 @@
 - Removed the unused top-level `/api/drafts` list route. Active draft surfaces use Reply Queue bootstrap or focused workspace endpoints, so direct `/api/drafts` calls can no longer run a broad draft list read with contact joins.
 - Voice read surfaces now stay on `/api/voice/bootstrap`: the unused `/api/voice/stats` route was removed, and `/api/voice/profile` is mutation-only for saving voice instructions. Direct voice profile/stats reads can no longer duplicate the bundled bootstrap DB work.
 - Draft workspace variant generation now guards against duplicate in-flight/already-visible requests and clears visible variants whenever the draft changes. Accidental double taps or stale variant panels no longer spend an extra Sonnet call for the same draft state.
+- Quick draft composer actions now guard at the handler boundary too: duplicate generate clicks are ignored while a draft is already generating, and "Save to Gmail" no-ops once a Gmail deep link exists. This prevents repeated provider/Google calls during rapid taps before button disabled state settles.
 
 ## Next Highest-Impact Efficiency Work
 
