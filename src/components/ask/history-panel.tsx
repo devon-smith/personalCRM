@@ -321,46 +321,50 @@ function HistoryRow({
           : "var(--surface)",
       }}
     >
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start gap-2 px-3 py-2 text-left"
-      >
-        <ChevronDown
-          className="h-3 w-3 mt-1 shrink-0"
-          style={{
-            color: "var(--text-tertiary)",
-            transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
-            transition: "transform var(--duration-fast)",
-          }}
-        />
-        <div className="min-w-0 flex-1">
-          <p
-            className="text-[13px] font-medium truncate"
-            style={{ color: "var(--text-primary)" }}
-          >
-            {row.title ?? row.query}
-            {(row.followUpCount ?? 0) > 0 && (
-              <span
-                className="ml-1.5 text-[11px] font-normal"
-                style={{ color: "var(--text-tertiary)" }}
-                title={`${row.followUpCount} follow-up question${
-                  row.followUpCount === 1 ? "" : "s"
-                }`}
-              >
-                · +{row.followUpCount} follow-up
-                {row.followUpCount === 1 ? "" : "s"}
-              </span>
-            )}
-          </p>
-          {row.title && row.title !== row.query && (
+      <div className="flex w-full items-start gap-2 px-3 py-2 text-left">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+        >
+          <ChevronDown
+            className="h-3 w-3 mt-1 shrink-0"
+            style={{
+              color: "var(--text-tertiary)",
+              transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
+              transition: "transform var(--duration-fast)",
+            }}
+          />
+          <div className="min-w-0 flex-1">
             <p
-              className="text-[11.5px] truncate"
-              style={{ color: "var(--text-tertiary)" }}
+              className="text-[13px] font-medium truncate"
+              style={{ color: "var(--text-primary)" }}
             >
-              {row.query}
+              {row.title ?? row.query}
+              {(row.followUpCount ?? 0) > 0 && (
+                <span
+                  className="ml-1.5 text-[11px] font-normal"
+                  style={{ color: "var(--text-tertiary)" }}
+                  title={`${row.followUpCount} follow-up question${
+                    row.followUpCount === 1 ? "" : "s"
+                  }`}
+                >
+                  · +{row.followUpCount} follow-up
+                  {row.followUpCount === 1 ? "" : "s"}
+                </span>
+              )}
             </p>
-          )}
-        </div>
+            {row.title && row.title !== row.query && (
+              <p
+                className="text-[11.5px] truncate"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                {row.query}
+              </p>
+            )}
+          </div>
+        </button>
         <div className="flex items-center gap-1.5 shrink-0">
           <span
             className="text-[11px] tabular-nums"
@@ -369,6 +373,7 @@ function HistoryRow({
             {ago}
           </span>
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onToggleStar();
@@ -386,7 +391,7 @@ function HistoryRow({
             />
           </button>
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <div className="px-3 pb-3 pt-1 space-y-2">
@@ -459,6 +464,7 @@ function HistoryRow({
 
           <div className="flex items-center gap-1.5 pt-1">
             <button
+              type="button"
               onClick={onReRun}
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-medium"
               style={{
@@ -480,6 +486,7 @@ function HistoryRow({
               Permalink
             </Link>
             <button
+              type="button"
               onClick={onDelete}
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-medium ml-auto"
               style={{
@@ -515,6 +522,7 @@ function SegmentedFilter<T extends string>({
     >
       {options.map((opt) => (
         <button
+          type="button"
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors"
