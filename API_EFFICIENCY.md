@@ -138,6 +138,7 @@
 - Remaining hardcoded private response caches were converted to the shared cache helper, preserving existing max-age windows while adding consistent `Vary: Cookie` handling for authenticated route responses.
 - Nickname duplicate merge/dismiss actions now update the open suggestions cache directly instead of invalidating and immediately rescanning all contacts through `/api/contacts/nickname-matches`.
 - Circle suggestion accept actions now remove the accepted suggestion from the open cache instead of invalidating and immediately rescanning `/api/circles/suggestions`.
+- Contact updates now merge the PATCH response into the open contact detail and summary caches instead of refetching those focused reads immediately; the broader contact-list invalidation remains for filtered People views.
 
 ## Next Highest-Impact Efficiency Work
 

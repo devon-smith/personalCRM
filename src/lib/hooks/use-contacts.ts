@@ -97,10 +97,16 @@ export function useUpdateContact() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       }),
-    onSuccess: (_data, variables) => {
+    onSuccess: (contact, variables) => {
+      queryClient.setQueryData<ContactWithDetails>(
+        ["contact", variables.id],
+        (current) => current ? { ...current, ...contact } : current,
+      );
+      queryClient.setQueryData<ContactWithCount>(
+        ["contact-summary", variables.id],
+        (current) => current ? { ...current, ...contact } : current,
+      );
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["contact", variables.id] });
-      queryClient.invalidateQueries({ queryKey: ["contact-summary", variables.id] });
     },
   });
 }
