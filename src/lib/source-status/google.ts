@@ -30,8 +30,7 @@ export async function getGoogleSourceStatus(
       where: { userId, provider: "google" },
       select: {
         id: true,
-        access_token: true,
-        id_token: true,
+        providerAccountId: true,
         needsReconnect: true,
         lastRefreshAt: true,
         lastRefreshError: true,
@@ -44,10 +43,9 @@ export async function getGoogleSourceStatus(
     ...(syncState?.additionalUserEmails ?? []),
   ].filter((email): email is string => Boolean(email));
 
-  const connectedAccounts = accounts.filter((account) => !!account.access_token);
-  const accountStatuses = connectedAccounts.map((account, index) => ({
+  const accountStatuses = accounts.map((account, index) => ({
     id: account.id,
-    email: extractEmailFromIdToken(account.id_token) ?? fallbackEmails[index] ?? `Account ${index + 1}`,
+    email: fallbackEmails[index] ?? `Google account ${account.providerAccountId}`,
     needsReconnect: account.needsReconnect,
     lastSyncedAt: account.lastRefreshAt?.toISOString() ?? null,
     lastRefreshError: account.lastRefreshError,
@@ -55,19 +53,7 @@ export async function getGoogleSourceStatus(
 
   return {
     accounts: accountStatuses,
-    hasGoogleOAuth: connectedAccounts.length > 0,
+    hasGoogleOAuth: accounts.length > 0,
     needsReconnect: accountStatuses.some((account) => account.needsReconnect),
   };
-}
-
-function extractEmailFromIdToken(idToken: string | null): string | null {
-  if (!idToken) return null;
-  try {
-    const payload = JSON.parse(
-      Buffer.from(idToken.split(".")[1] ?? "", "base64").toString(),
-    );
-    return typeof payload.email === "string" ? payload.email : null;
-  } catch {
-    return null;
-  }
 }
