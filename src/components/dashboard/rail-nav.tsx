@@ -19,10 +19,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-
-interface GoogleSourceStatus {
-  needsReconnect: boolean;
-}
+import type { GoogleSourceStatus } from "@/lib/source-status/google";
 
 interface RailItem {
   href: string;

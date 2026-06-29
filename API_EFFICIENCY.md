@@ -46,6 +46,7 @@
 - Removed the unused legacy `UnrespondedThreads` widget and `/api/interactions/unresponded` path, which were the last source of explicit React Query interval polling.
 - Persistent Google/source-status surfaces no longer force refetches on every window focus event. Rail nav, reconnect banner, and legacy sync alerts now rely on normal stale windows, mount loads, and explicit invalidation after sync/reconnect actions.
 - Dashboard assistant observations now ride on `/api/dashboard/bootstrap`, reusing the stale-observation cleanup helper and removing the extra `/api/observations` GET during normal home page loads.
+- Removed the unused legacy `SyncAlerts` component so the old `/api/health` dashboard cleanup UI cannot be accidentally remounted. Source-status rail/banner consumers now share the server response type.
 
 ## Next Highest-Impact Efficiency Work
 

@@ -3,15 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { AlertCircle } from "lucide-react";
-
-interface GoogleSourceAccountStatus {
-  email: string;
-  needsReconnect: boolean;
-}
-
-interface GoogleSourceStatus {
-  accounts: GoogleSourceAccountStatus[];
-}
+import type { GoogleSourceStatus } from "@/lib/source-status/google";
 
 /**
  * A calm "needs reconnect" row. Terracotta on warm-paper, not a red
