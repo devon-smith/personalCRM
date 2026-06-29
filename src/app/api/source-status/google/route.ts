@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { getGoogleSourceStatus } from "@/lib/source-status/google";
 
 export async function GET() {
@@ -9,7 +10,9 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    return NextResponse.json(await getGoogleSourceStatus(session.user.id));
+    return NextResponse.json(await getGoogleSourceStatus(session.user.id), {
+      headers: privateCacheHeaders(60, 5 * 60),
+    });
   } catch (error) {
     console.error("[GET /api/source-status/google]", error);
     return NextResponse.json(

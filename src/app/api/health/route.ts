@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAllGoogleAccessTokens } from "@/lib/gmail/client";
+import { noStoreHeaders, privateCacheHeaders } from "@/lib/http/cache";
 import { checkIMessageAccess } from "@/lib/imessage";
 import { getUserProfile } from "@/lib/user-profile";
 
@@ -154,42 +155,49 @@ export async function GET(request: Request) {
     },
   });
 
-  return NextResponse.json({
-    gmail: {
-      status: gmailStatus,
-      error: gmailError,
-      accountCount: googleAccounts.length,
-      lastSyncAt: gmailSync?.lastSyncAt ?? null,
-      syncEnabled: gmailSync?.syncEnabled ?? false,
+  return NextResponse.json(
+    {
+      gmail: {
+        status: gmailStatus,
+        error: gmailError,
+        accountCount: googleAccounts.length,
+        lastSyncAt: gmailSync?.lastSyncAt ?? null,
+        syncEnabled: gmailSync?.syncEnabled ?? false,
+      },
+      imessage: {
+        status: imessageStatus,
+        error: imessageError,
+        handlesTracked: imessageSyncCount,
+      },
+      whatsapp: {
+        status: whatsappSync
+          ? whatsappSync.connected
+            ? "connected"
+            : "disconnected"
+          : "not_configured",
+        lastSyncAt: whatsappSync?.updatedAt ?? null,
+        messagesSynced: whatsappSync?.messagesSynced ?? 0,
+        unmatchedCount: Array.isArray(whatsappSync?.unmatchedChats)
+          ? (whatsappSync.unmatchedChats as unknown[]).length
+          : 0,
+      },
+      interactions: {
+        total: totalInteractions,
+        imessage: imsgCount,
+        gmail: gmailCount,
+      },
+      contacts: {
+        csvImported: csvContacts,
+        csvNoInteractions: csvContactsNoInteractions,
+      },
+      cleanup: {
+        oldSummaryInteractions,
+      },
     },
-    imessage: {
-      status: imessageStatus,
-      error: imessageError,
-      handlesTracked: imessageSyncCount,
+    {
+      headers: liveCheck
+        ? noStoreHeaders
+        : privateCacheHeaders(60, 5 * 60),
     },
-    whatsapp: {
-      status: whatsappSync
-        ? whatsappSync.connected
-          ? "connected"
-          : "disconnected"
-        : "not_configured",
-      lastSyncAt: whatsappSync?.updatedAt ?? null,
-      messagesSynced: whatsappSync?.messagesSynced ?? 0,
-      unmatchedCount: Array.isArray(whatsappSync?.unmatchedChats)
-        ? (whatsappSync.unmatchedChats as unknown[]).length
-        : 0,
-    },
-    interactions: {
-      total: totalInteractions,
-      imessage: imsgCount,
-      gmail: gmailCount,
-    },
-    contacts: {
-      csvImported: csvContacts,
-      csvNoInteractions: csvContactsNoInteractions,
-    },
-    cleanup: {
-      oldSummaryInteractions,
-    },
-  });
+  );
 }

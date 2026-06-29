@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { estimateCost, featureLabel, priceFor } from "@/lib/pricing";
 
 /**
@@ -178,7 +179,9 @@ export async function GET(request: Request) {
     byModel,
   };
 
-  return NextResponse.json(response);
+  return NextResponse.json(response, {
+    headers: privateCacheHeaders(5 * 60, 30 * 60),
+  });
 }
 
 function clampDays(d: number): number {

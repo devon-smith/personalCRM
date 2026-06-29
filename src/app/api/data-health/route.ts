@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
 import { getUserProfile } from "@/lib/user-profile";
 
@@ -320,12 +321,15 @@ export async function GET() {
   const knownEmails = new Set(allContactEmails.map((c) => c.email!.toLowerCase()));
   const unmatchedSenders = rawSenders.filter((s) => !knownEmails.has(s.email.toLowerCase()));
 
-  return NextResponse.json({
-    sources,
-    googleAccounts: accountInfos,
-    coverage,
-    zeroInteractionContacts: contactsWithZeroInteractions,
-    unmatchedSenders: unmatchedSenders.slice(0, 10),
-    hasGoogleOAuth,
-  } satisfies DataHealthResponse);
+  return NextResponse.json(
+    {
+      sources,
+      googleAccounts: accountInfos,
+      coverage,
+      zeroInteractionContacts: contactsWithZeroInteractions,
+      unmatchedSenders: unmatchedSenders.slice(0, 10),
+      hasGoogleOAuth,
+    } satisfies DataHealthResponse,
+    { headers: privateCacheHeaders(60, 5 * 60) },
+  );
 }

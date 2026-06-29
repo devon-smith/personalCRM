@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getUpcomingBirthdays } from "@/lib/birthdays";
 import { syncBirthdaysFromCalendar } from "@/lib/birthday-sync";
+import { privateCacheHeaders } from "@/lib/http/cache";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -13,7 +14,10 @@ export async function GET(req: NextRequest) {
 
   const birthdays = await getUpcomingBirthdays(session.user.id, days);
 
-  return NextResponse.json({ birthdays });
+  return NextResponse.json(
+    { birthdays },
+    { headers: privateCacheHeaders(5 * 60, 30 * 60) },
+  );
 }
 
 /** POST — Sync birthdays from Google Calendar into contacts */
