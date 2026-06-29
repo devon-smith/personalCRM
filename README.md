@@ -150,6 +150,20 @@ Leave that unset once the worker is deployed, and use the explicit
 Sources refresh actions for local/manual syncs. This prevents one
 Gmail/Calendar poller per open browser tab.
 
+Recommended one-user production shape:
+
+1. Create a managed Postgres database. Use the pooled URL for Vercel
+   `DATABASE_URL` and the direct URL for `WORKER_DATABASE_URL`.
+2. Run `npx prisma migrate deploy` against the production database.
+3. Run `npm run worker:migrate` once against the same database to
+   initialize the `graphile_worker` schema.
+4. Deploy the Next.js app to Vercel with `npm run build`.
+5. Deploy one long-running worker service with `npm run worker`.
+6. Confirm Sources shows recent worker-run Gmail and Calendar syncs.
+7. Keep `NEXT_PUBLIC_ENABLE_BROWSER_SYNC` unset unless the worker is
+   temporarily offline and you intentionally want an open browser tab to
+   act as a fallback sync trigger.
+
 Minimum production env checklist:
 
 - `NEXTAUTH_URL` set to the HTTPS app URL.
@@ -162,3 +176,9 @@ Minimum production env checklist:
 - `CAPACITOR_SERVER_URL` set to the same HTTPS app URL before building
   the iOS wrapper.
 - Google OAuth redirect URLs updated to the production domain.
+
+Do not add Vercel Cron for Gmail or Calendar unless the worker is
+intentionally removed. The worker already owns Gmail every 3 minutes,
+Calendar every 30 minutes, push-watch renewal, signal scans, retention,
+and AI/background preparation. Duplicating those schedules from Vercel
+would add provider calls without improving freshness.
