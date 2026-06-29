@@ -15,23 +15,22 @@ interface GoogleContactsImportContact {
   circleId?: string;
 }
 
-/** GET — Preview Google Contacts (don't import yet) */
+/** GET — Retired preview endpoint.
+ *
+ * The Sources UI now imports Google Contacts with one POST. Keeping a
+ * provider-backed preview GET around makes accidental/direct requests
+ * expensive, so this route is intentionally POST-only.
+ */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const contacts = await fetchGoogleContacts(session.user.id, 2000);
-    return NextResponse.json({ contacts, total: contacts.length });
-  } catch (error) {
-    console.error("Google Contacts fetch error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch Google Contacts" },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json(
+    { error: "Google Contacts preview is retired. Use POST to import contacts." },
+    { status: 405, headers: { Allow: "POST" } },
+  );
 }
 
 /** POST — Import Google Contacts via identity resolution. If the

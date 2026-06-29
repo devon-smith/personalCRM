@@ -122,6 +122,7 @@
 - Removed the unused follow-up draft modal, `/api/ai/follow-up` route, and route-only `generateFollowUp` Anthropic helper. The active reply workflow now stays on the richer draft workspace and avoids an orphan direct Sonnet endpoint.
 - Interaction smart-paste parsing now uses Haiku instead of Sonnet, rejects oversized paste bodies before provider calls, and normalizes model output through bounded type/subject fallbacks.
 - Google Contacts import now runs as one server-side POST from Sources. The browser no longer downloads the full Google Contacts preview and uploads the same contact list back to the API for routine imports.
+- The retired Google Contacts preview GET now fails closed. Direct requests to `/api/gmail/contacts` cannot fetch a 2,000-contact People API preview; contact import remains an explicit POST action.
 - Removed the unused `/api/gmail/discover` HTTP route, which could scan 90 days / 500 Gmail messages if called directly. The underlying library remains available for deliberate maintenance/backfill code paths.
 
 ## Next Highest-Impact Efficiency Work

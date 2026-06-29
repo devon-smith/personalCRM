@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { runGmailSyncForUser } from "@/lib/sync/google-sync-runs";
 import { parseSyncTrigger } from "@/lib/sync/run-telemetry";
+import { privateCacheHeaders } from "@/lib/http/cache";
 
 /** GET — Check sync status */
 export async function GET() {
@@ -13,23 +14,35 @@ export async function GET() {
 
   const syncState = await prisma.gmailSyncState.findUnique({
     where: { userId: session.user.id },
+    select: {
+      historyId: true,
+      syncEnabled: true,
+      lastSyncAt: true,
+      contactsImported: true,
+    },
   });
 
   if (!syncState) {
-    return NextResponse.json({
-      synced: false,
-      syncEnabled: false,
-      lastSyncAt: null,
-      contactsImported: false,
-    });
+    return NextResponse.json(
+      {
+        synced: false,
+        syncEnabled: false,
+        lastSyncAt: null,
+        contactsImported: false,
+      },
+      { headers: privateCacheHeaders(15, 60) },
+    );
   }
 
-  return NextResponse.json({
-    synced: !!syncState.historyId,
-    syncEnabled: syncState.syncEnabled,
-    lastSyncAt: syncState.lastSyncAt,
-    contactsImported: syncState.contactsImported,
-  });
+  return NextResponse.json(
+    {
+      synced: !!syncState.historyId,
+      syncEnabled: syncState.syncEnabled,
+      lastSyncAt: syncState.lastSyncAt,
+      contactsImported: syncState.contactsImported,
+    },
+    { headers: privateCacheHeaders(15, 60) },
+  );
 }
 
 /** POST — Trigger a sync */
