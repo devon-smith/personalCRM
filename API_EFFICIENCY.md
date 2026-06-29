@@ -38,6 +38,7 @@
 - Reply queue draft review now lazily loads selected-draft provenance from the draft workspace context: exact inbound message source, loaded thread depth, matching voice references, and known missing context.
 - Legacy Source health no longer polls its wide DB-only health report every minute. It now uses a five-minute client stale window, manual refresh, and a short private cache header.
 - Dashboard home no longer renders the dev/admin `SyncAlerts` banner, so normal home visits avoid the extra `/api/health` request and duplicated Google reconnect messaging.
+- The shared Ask box no longer fetches `/api/saved-queries` by default just to count history links. Dashboard and Ask already navigate/render history, so that count request is now opt-in.
 
 ## Next Highest-Impact Efficiency Work
 

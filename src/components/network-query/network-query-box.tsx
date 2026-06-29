@@ -94,6 +94,7 @@ export function NetworkQueryBox({
   onCompleteFollowUp,
   compact,
   submitTarget = "inline",
+  showHistoryLink = false,
 }: {
   /** When set (and non-empty), fill the input with this text and
    *  immediately submit. Used by /ask history's Re-run button. */
@@ -131,6 +132,10 @@ export function NetworkQueryBox({
   /** Inline streams/results on /ask. Dashboard uses ask-page so Home
    *  acts as a launcher and detailed answers stay on /ask. */
   submitTarget?: "inline" | "ask-page";
+  /** Optional lightweight link to /ask history. Current app surfaces
+   *  either render the full history panel or link to /ask elsewhere,
+   *  so keep this off unless a compact embed needs it. */
+  showHistoryLink?: boolean;
 } = {}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -161,8 +166,9 @@ export function NetworkQueryBox({
   const [isStarred, setIsStarred] = useState(false);
   const qc = useQueryClient();
 
-  // M0.9: surface a "View saved questions (N)" link below the input
-  // — /queries already exists but Jennifer wasn't finding it.
+  // Optional "View saved questions (N)" link. Disabled by default so
+  // dashboard and /ask do not spend an extra saved-queries request
+  // when their surrounding page already provides navigation/history.
   const { data: savedQueriesData } = useQuery<{
     queries: { id: string }[];
   }>({
@@ -173,6 +179,7 @@ export function NetworkQueryBox({
       return res.json();
     },
     staleTime: 60_000,
+    enabled: showHistoryLink,
   });
   const savedCount = savedQueriesData?.queries.length ?? 0;
 
@@ -434,10 +441,9 @@ export function NetworkQueryBox({
         </div>
       </form>
 
-      {/* M0.x.7: every query now auto-saves with its answer. The
-          link points at /ask history, where Jennifer can re-read,
-          star, filter, and re-run any past query. */}
-      {savedCount > 0 && (
+      {/* Optional history link for compact embeds that do not already
+          show /ask navigation or the full history panel. */}
+      {showHistoryLink && savedCount > 0 && (
         <div className="flex justify-end -mt-1">
           <Link
             href="/ask"
