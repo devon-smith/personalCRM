@@ -73,6 +73,7 @@
 - Converted unused legacy HTTP backfill routes into fail-closed stubs so direct requests cannot trigger large source imports or relationship coverage scans. Maintenance scripts remain available for intentional backfills.
 - Converted unused legacy inbox debug/migration routes into fail-closed stubs so direct requests cannot run raw inbox diagnostics or all-interaction chat-id backfills.
 - Converted unused legacy interaction cleanup/dedup routes into fail-closed stubs so direct requests cannot scan or delete historical interaction rows.
+- Converted unused legacy `/api/threads/backfill` into a fail-closed stub. Current Gmail/iMessage sync paths create and link threads directly.
 
 ## Next Highest-Impact Efficiency Work
 
