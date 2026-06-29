@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
+import { runManualGmailSync } from "@/lib/gmail/manual-sync-client";
 import { cn } from "@/lib/utils";
 
 interface MessagePreview {
@@ -59,35 +60,6 @@ interface InboxItemsData {
   view?: "needs-reply" | "all";
   needsReplyCount?: number;
   allInboundCount?: number;
-}
-
-interface ManualGmailSyncResult {
-  processed: number;
-  scannedActions: boolean;
-  actionsSaved: number;
-}
-
-interface GmailChangedThreadRef {
-  accountId: string;
-  threadId: string;
-}
-
-function parseChangedThreads(body: unknown): GmailChangedThreadRef[] {
-  if (!body || typeof body !== "object" || !("changedThreads" in body)) {
-    return [];
-  }
-  const value = body.changedThreads;
-  if (!Array.isArray(value)) return [];
-
-  return value.filter(
-    (item): item is GmailChangedThreadRef =>
-      typeof item === "object" &&
-      item !== null &&
-      "accountId" in item &&
-      typeof item.accountId === "string" &&
-      "threadId" in item &&
-      typeof item.threadId === "string",
-  );
 }
 
 interface DraftContact {
@@ -194,18 +166,6 @@ interface ContactDetail {
     personalContext: unknown;
     recurringThemes: string[];
   } | null;
-}
-
-function apiErrorMessage(body: unknown, fallback: string): string {
-  if (
-    body &&
-    typeof body === "object" &&
-    "error" in body &&
-    typeof body.error === "string"
-  ) {
-    return body.error;
-  }
-  return fallback;
 }
 
 interface DataHealthResponse {
@@ -421,46 +381,16 @@ export function ReplyQueueConsole() {
   };
 
   const syncMutation = useMutation({
-    mutationFn: async (): Promise<ManualGmailSyncResult> => {
-      const syncRes = await fetch("/api/gmail/sync", { method: "POST" });
-      const syncBody = await syncRes.json().catch(() => ({}));
-      if (!syncRes.ok) {
-        throw new Error(apiErrorMessage(syncBody, "Gmail sync failed"));
-      }
-
-      const processed = Number((syncBody as { processed?: number }).processed ?? 0);
-      const changedThreads = parseChangedThreads(syncBody);
-      if (processed <= 0 && changedThreads.length === 0) {
-        return { processed: 0, scannedActions: false, actionsSaved: 0 };
-      }
-
-      const extractRes = await fetch("/api/gmail/extract-actions", {
-        method: "POST",
-        ...(changedThreads.length > 0
-          ? {
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ changedThreads }),
-            }
-          : {}),
-      });
-      const extractBody = await extractRes.json().catch(() => ({}));
-      if (!extractRes.ok) {
-        throw new Error(apiErrorMessage(extractBody, "Action scan failed"));
-      }
-
-      return {
-        processed,
-        scannedActions: true,
-        actionsSaved: Number((extractBody as { actionsSaved?: number }).actionsSaved ?? 0),
-      };
-    },
+    mutationFn: runManualGmailSync,
     onSuccess: (result) => {
-      invalidateWorkflow({ contentChanged: result.scannedActions });
+      invalidateWorkflow({ contentChanged: result.contentChanged });
       toast(
-        result.scannedActions
-          ? result.actionsSaved > 0
+        result.contentChanged
+          ? result.scannedActions && result.actionsSaved > 0
             ? `Synced ${result.processed} emails and found ${result.actionsSaved} action items`
-            : `Synced ${result.processed} emails and refreshed the queue`
+            : result.scannedActions
+              ? `Synced ${result.processed} emails and refreshed the queue`
+              : `Synced ${result.processed} emails`
           : "Gmail is already up to date",
       );
     },

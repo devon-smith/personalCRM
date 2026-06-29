@@ -157,6 +157,7 @@
 - Reply queue inbox reads now filter at the DB layer to maintained channels only (`email`, `gmail`, `linkedin`). Historical text/WhatsApp/iMessage InboxItem rows can remain for audit data, but they no longer affect reply counts, queue queries, or visible reply surfaces.
 - Contact detail edits that do not affect list membership or sorting, such as notes, "how we met", LinkedIn URL, phone, role, and location fields, now patch visible contact-list caches without refetching `/api/contacts`. Name/email/company/tier/tag edits still refresh filtered lists.
 - Contact detail alias and secondary-phone edits now patch focused contact caches plus visible contact-list rows without refetching `/api/contacts`. Secondary-email edits still refresh contact lists because email search membership can change.
+- Manual Gmail sync in Inbox and Reply Queue now uses one shared client helper. It only calls action extraction when Gmail returns changed thread refs, still refreshes visible inbox/queue caches when message content changed, and refreshes the lightweight Google source-status cache after explicit sync attempts.
 
 ## Next Highest-Impact Efficiency Work
 

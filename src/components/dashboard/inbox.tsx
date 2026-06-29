@@ -21,52 +21,12 @@ import { formatDistanceToNow } from "@/lib/date-utils";
 import { EvidenceChevron } from "@/components/shared/evidence-chevron";
 import { useSessionExpanded } from "@/components/ds";
 import { useDraftComposer } from "@/lib/draft-composer-context";
+import { runManualGmailSync } from "@/lib/gmail/manual-sync-client";
 import { trimToShortPhrase } from "@/lib/inbox/response-classifier";
 
 // ─── Swipe gesture hook ─────────────────────────────────────
 
 const SWIPE_THRESHOLD = 80;
-
-interface ManualGmailSyncResult {
-  processed: number;
-  scannedActions: boolean;
-  actionsSaved: number;
-}
-
-interface GmailChangedThreadRef {
-  accountId: string;
-  threadId: string;
-}
-
-function apiErrorMessage(body: unknown, fallback: string): string {
-  if (
-    body &&
-    typeof body === "object" &&
-    "error" in body &&
-    typeof body.error === "string"
-  ) {
-    return body.error;
-  }
-  return fallback;
-}
-
-function parseChangedThreads(body: unknown): GmailChangedThreadRef[] {
-  if (!body || typeof body !== "object" || !("changedThreads" in body)) {
-    return [];
-  }
-  const value = body.changedThreads;
-  if (!Array.isArray(value)) return [];
-
-  return value.filter(
-    (item): item is GmailChangedThreadRef =>
-      typeof item === "object" &&
-      item !== null &&
-      "accountId" in item &&
-      typeof item.accountId === "string" &&
-      "threadId" in item &&
-      typeof item.threadId === "string",
-  );
-}
 
 function useSwipe(onSwipeRight: () => void, onSwipeLeft?: () => void) {
   const startX = useRef(0);
@@ -393,47 +353,18 @@ export function Inbox() {
   // ─── Mutations ──────────────────────────────────────────────
 
   const syncMutation = useMutation({
-    mutationFn: async (): Promise<ManualGmailSyncResult> => {
-      const syncRes = await fetch("/api/gmail/sync", { method: "POST" });
-      const syncBody = await syncRes.json().catch(() => ({}));
-      if (!syncRes.ok) {
-        throw new Error(apiErrorMessage(syncBody, "Gmail sync failed"));
-      }
-
-      const processed = Number((syncBody as { processed?: number }).processed ?? 0);
-      const changedThreads = parseChangedThreads(syncBody);
-      if (processed <= 0 && changedThreads.length === 0) {
-        return { processed: 0, scannedActions: false, actionsSaved: 0 };
-      }
-
-      const extractRes = await fetch("/api/gmail/extract-actions", {
-        method: "POST",
-        ...(changedThreads.length > 0
-          ? {
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ changedThreads }),
-            }
-          : {}),
-      });
-      const extractBody = await extractRes.json().catch(() => ({}));
-      if (!extractRes.ok) {
-        throw new Error(apiErrorMessage(extractBody, "Action scan failed"));
-      }
-
-      return {
-        processed,
-        scannedActions: true,
-        actionsSaved: Number((extractBody as { actionsSaved?: number }).actionsSaved ?? 0),
-      };
-    },
+    mutationFn: runManualGmailSync,
     onSuccess: (result) => {
-      if (result.scannedActions) {
+      queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
+      if (result.contentChanged) {
         queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
         toast(
-          result.actionsSaved > 0
+          result.scannedActions && result.actionsSaved > 0
             ? `Synced ${result.processed} emails and found ${result.actionsSaved} action items`
-            : `Synced ${result.processed} emails and scanned for new items`,
+            : result.scannedActions
+              ? `Synced ${result.processed} emails and scanned for new items`
+              : `Synced ${result.processed} emails`,
         );
       } else {
         toast("Gmail is already up to date");
