@@ -8,17 +8,20 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 const FULL_SYNC_STORAGE_KEY = "personal-crm:last-full-auto-sync-at";
 
 /**
- * Browser-side sync is on by default. Once the Graphile Worker
- * (worker/) has been running reliably for a few days you can flip
- * NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true in .env.local and redeploy to
- * make useAutoSync a no-op — the worker's gmail-sync / calendar-sync
- * tasks cover the same ground without depending on a browser tab
- * being open.
+ * Local dev keeps browser fallback sync on for convenience. Production
+ * defaults to worker-mode because the Graphile Worker owns Gmail and
+ * Calendar freshness without one poller per open tab.
  *
- * Public env var because it has to be read client-side.
+ * Public env vars because this hook runs client-side:
+ * - NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true opts production back into the
+ *   fallback while the worker is being brought online.
+ * - NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true force-disables the hook in
+ *   any environment.
  */
 const BROWSER_SYNC_DISABLED =
-  process.env.NEXT_PUBLIC_DISABLE_BROWSER_SYNC === "true";
+  process.env.NEXT_PUBLIC_DISABLE_BROWSER_SYNC === "true" ||
+  (process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PUBLIC_ENABLE_BROWSER_SYNC !== "true");
 
 /**
  * Automatically syncs data sources.
@@ -28,8 +31,9 @@ const BROWSER_SYNC_DISABLED =
  *
  * All syncs are idempotent and deduplicate. Backs off after consecutive failures.
  *
- * No-op when NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true — server-side worker
- * handles everything in that mode.
+ * No-op in production by default, or when
+ * NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true — server-side worker handles
+ * everything in that mode.
  */
 export function useAutoSync() {
   const queryClient = useQueryClient();

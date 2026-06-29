@@ -23,8 +23,11 @@ npm run worker:migrate
 npm run worker
 ```
 
-The worker connects via `DATABASE_URL` from `.env`. Concurrency is 4,
-polls every 2s, and handles SIGINT/SIGTERM cleanly.
+The worker connects via `WORKER_DATABASE_URL` when set, otherwise
+`DATABASE_URL`. In production use the direct Postgres connection for
+`WORKER_DATABASE_URL`; graphile-worker uses named prepared statements
+that do not work reliably through transaction pooling. Concurrency is
+4, polls every 2s, and handles SIGINT/SIGTERM cleanly.
 
 ## Where to run it
 
@@ -51,14 +54,13 @@ await enqueue("embedding-refresh", { contactId: c.id });
 The cron entries in `worker/index.ts` cover the periodic case;
 `enqueue` is for ad-hoc triggers from webhooks or API routes.
 
-## Migration from useAutoSync
+## Browser sync fallback
 
-The browser-side `useAutoSync` hook still drives Gmail/Calendar/Contacts
-sync today. Migration plan (per Milestone 4.1):
+The worker now owns production Gmail and Calendar freshness through
+`gmail-sync`, `calendar-sync`, push webhook enqueues, and cron
+fallbacks. The browser-side `useAutoSync` hook remains useful in local
+dev and can be explicitly re-enabled in production with
+`NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true`, but production defaults to
+worker-mode so open tabs do not create extra provider polling.
 
-1. ✅ Worker process scaffolded with a real periodic task
-   (`embedding-refresh`) and a stub for watch renewal.
-2. ⏳ Move `gmail-sync` / `calendar-sync` / `contacts-sync` into
-   `worker/tasks/` and trigger them on Pub/Sub webhook + cron fallback.
-3. ⏳ Replace `useAutoSync` calls with queue enqueues from API routes.
-4. ⏳ Add `/admin/jobs` page reading `graphile_worker.jobs` for visibility.
+Google Contacts import is still user-triggered from the Sources UI.

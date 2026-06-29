@@ -136,8 +136,28 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## Deploy
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Use Vercel for the Next.js web app and a separate long-running service
+for `npm run worker` (Railway, Fly.io, Render, or a small VPS). Vercel
+functions are request-scoped; the Graphile Worker is the process that
+owns Gmail sync, Calendar sync, draft prepopulation, memory synthesis,
+and scheduled jobs.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Production builds default to worker-mode sync: the browser-side
+`useAutoSync` fallback does not run unless
+`NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true` is set. Leave that unset once
+the worker is deployed. This prevents one Gmail/Calendar poller per
+open browser tab.
+
+Minimum production env checklist:
+
+- `NEXTAUTH_URL` set to the HTTPS app URL.
+- `AUTH_SECRET` / `NEXTAUTH_SECRET` set to stable secrets.
+- `AUTH_ALLOWED_EMAILS` limited to the intended user(s).
+- `DATABASE_URL` set to the pooled Postgres connection for Vercel.
+- `WORKER_DATABASE_URL` set to the direct Postgres connection for the
+  worker host.
+- `CAPACITOR_SERVER_URL` set to the same HTTPS app URL before building
+  the iOS wrapper.
+- Google OAuth redirect URLs updated to the production domain.
