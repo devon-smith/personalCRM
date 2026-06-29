@@ -199,8 +199,13 @@ function removeItemFromInboxData(
   itemId: string,
 ): InboxItemsData | undefined {
   if (!data) return data;
-  const itemWasOpen = data.items.some((item) => item.id === itemId);
-  const groupWasOpen = data.groupChats.some((item) => item.id === itemId);
+  const item = data.items.find((entry) => entry.id === itemId);
+  const groupItem = data.groupChats.find((entry) => entry.id === itemId);
+  const removed = item ?? groupItem;
+  const itemWasOpen = Boolean(item);
+  const groupWasOpen = Boolean(groupItem);
+  const removedNeedsReply = removed ? removed.needsResponse !== false : false;
+  const removedWasFilteredOut = removed ? removed.needsResponse === false : false;
   return {
     ...data,
     items: data.items.filter((item) => item.id !== itemId),
@@ -209,6 +214,55 @@ function removeItemFromInboxData(
     totalGroupChats: groupWasOpen
       ? Math.max(data.totalGroupChats - 1, 0)
       : data.totalGroupChats,
+    needsReplyCount:
+      removedNeedsReply && data.needsReplyCount !== undefined
+        ? Math.max(data.needsReplyCount - 1, 0)
+        : data.needsReplyCount,
+    allInboundCount:
+      removed && data.allInboundCount !== undefined
+        ? Math.max(data.allInboundCount - 1, 0)
+        : data.allInboundCount,
+    filteredOut:
+      removedWasFilteredOut && data.filteredOut !== undefined
+        ? Math.max(data.filteredOut - 1, 0)
+        : data.filteredOut,
+  };
+}
+
+function markItemNoReplyInInboxData(
+  data: InboxItemsData | undefined,
+  itemId: string,
+): InboxItemsData | undefined {
+  if (!data) return data;
+  const item = data.items.find((entry) => entry.id === itemId);
+  const groupItem = data.groupChats.find((entry) => entry.id === itemId);
+  const current = item ?? groupItem;
+  if (!current) return data;
+
+  const wasNeedsReply = current.needsResponse !== false;
+  const shouldHide = data.view !== "all";
+  if (shouldHide) {
+    const removed = removeItemFromInboxData(data, itemId);
+    return removed
+      ? {
+          ...removed,
+          allInboundCount: data.allInboundCount,
+          filteredOut: (data.filteredOut ?? 0) + (wasNeedsReply ? 1 : 0),
+        }
+      : removed;
+  }
+
+  const updateItem = (entry: InboxItemData) =>
+    entry.id === itemId ? { ...entry, needsResponse: false } : entry;
+  return {
+    ...data,
+    items: data.items.map(updateItem),
+    groupChats: data.groupChats.map(updateItem),
+    needsReplyCount:
+      wasNeedsReply && data.needsReplyCount !== undefined
+        ? Math.max(data.needsReplyCount - 1, 0)
+        : data.needsReplyCount,
+    filteredOut: (data.filteredOut ?? 0) + (wasNeedsReply ? 1 : 0),
   };
 }
 
@@ -416,8 +470,7 @@ export function Inbox() {
       }
       toast.error("Failed to mark as replied");
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
@@ -444,6 +497,9 @@ export function Inbox() {
             totalOpen: 0,
             groupChats: [],
             totalGroupChats: 0,
+            filteredOut: 0,
+            needsReplyCount: 0,
+            allInboundCount: 0,
           };
         },
       );
@@ -455,8 +511,7 @@ export function Inbox() {
       }
       toast.error("Failed to clear inbox");
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
@@ -479,41 +534,25 @@ export function Inbox() {
     },
     onMutate: async ({ itemId, needsResponse }) => {
       await queryClient.cancelQueries({ queryKey: ["inbox-items"] });
-      const prev = queryClient.getQueryData<InboxItemsData>([
-        "inbox-items",
-        inboxView,
-      ]);
-      if (prev) {
-        const shouldHide = inboxView === "needs-reply" && !needsResponse;
-        queryClient.setQueryData<InboxItemsData>(
-          ["inbox-items", inboxView],
-          {
-            ...prev,
-            items: shouldHide
-              ? prev.items.filter((i) => i.id !== itemId)
-              : prev.items.map((i) =>
-                  i.id === itemId ? { ...i, needsResponse } : i,
-                ),
-            groupChats: shouldHide
-              ? (prev.groupChats ?? []).filter((i) => i.id !== itemId)
-              : (prev.groupChats ?? []).map((i) =>
-                  i.id === itemId ? { ...i, needsResponse } : i,
-                ),
-            filteredOut:
-              (prev.filteredOut ?? 0) + (shouldHide ? 1 : 0),
-          },
-        );
-      }
-      return { prev };
+      const snapshots = queryClient.getQueriesData<InboxItemsData>({
+        queryKey: ["inbox-items"],
+      });
+      queryClient.setQueriesData<InboxItemsData>(
+        { queryKey: ["inbox-items"] },
+        (prev) => needsResponse
+          ? prev
+          : markItemNoReplyInInboxData(prev, itemId),
+      );
+      return { snapshots };
     },
     onError: (_err, _vars, context) => {
-      if (context?.prev) {
-        queryClient.setQueryData(["inbox-items", inboxView], context.prev);
+      if (context?.snapshots) {
+        restoreInboxSnapshots(queryClient, context.snapshots);
       }
       toast.error("Couldn't save your override");
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 

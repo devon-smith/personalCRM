@@ -148,6 +148,7 @@
 - Reply Queue resolve and "no reply needed" actions now remove or update the acted-on inbox item in local reply/inbox caches with rollback on failure. Successful actions still refresh dashboard aggregates, but no longer refetch the full queue just to drop one row.
 - Reply Queue draft edit and save-to-Gmail actions now patch the cached draft row locally. Editing copy or saving a Gmail draft no longer refetches the full queue, inbox list, dashboard, and draft audit just to update draft metadata.
 - Voice reference deletes and instruction saves now update the cached Voice bootstrap payload locally. Uploads still refetch because parsed reference guidance is only available after server-side ingestion.
+- Dashboard Inbox resolve, bulk clear, and "doesn't need a reply" actions now keep local inbox counts/items coherent and only refresh dashboard aggregates. The inbox list no longer refetches immediately after already-applying the optimistic update.
 
 ## Next Highest-Impact Efficiency Work
 
