@@ -522,8 +522,18 @@ export function ContactDetailPanel({
               <div className="space-y-3">
                 <VoiceRecorder
                   contactId={contactId}
-                  onTranscribed={() => {
-                    queryClient.invalidateQueries({ queryKey: ["journal", contactId] });
+                  onTranscribed={(entry) => {
+                    queryClient.setQueryData<{ entries: JournalEntry[] }>(
+                      ["journal", contactId],
+                      (current) => ({
+                        entries: [
+                          entry,
+                          ...(current?.entries.filter(
+                            (existing) => existing.id !== entry.id,
+                          ) ?? []),
+                        ],
+                      }),
+                    );
                   }}
                 />
                 <div

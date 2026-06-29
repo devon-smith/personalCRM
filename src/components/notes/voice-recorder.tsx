@@ -6,11 +6,12 @@ import { toast } from "sonner";
 
 interface VoiceRecorderProps {
   contactId: string;
-  /** Called after a successful transcription so the parent can refetch
-   *  the contact's journal list. */
+  /** Called after a successful transcription so the parent can update
+   *  the contact's journal list from the returned entry. */
   onTranscribed?: (entry: {
     id: string;
     content: string;
+    mood: string;
     durationSec: number | null;
     createdAt: string;
   }) => void;
