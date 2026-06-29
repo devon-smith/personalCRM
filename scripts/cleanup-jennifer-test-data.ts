@@ -10,6 +10,8 @@
  * What this cleans:
  * - iMessage/SMS interactions and iMessage thread/sync state.
  * - Apple Contacts rows that have no remaining non-message history.
+ * - Obvious Devon/dev/test contacts, email rows, inbox items, drafts,
+ *   and associated derived rows.
  * - Derived assistant intelligence likely polluted by message imports.
  * - Contact.lastInteraction, recomputed from the remaining interactions.
  *
@@ -19,16 +21,68 @@
  * - Apple Contacts rows that have legitimate Gmail/Calendar history,
  *   for manual review/merge instead of deletion.
  */
-import "dotenv/config";
-import { ContactSource, PrismaClient } from "../src/generated/prisma/client";
+import dotenv from "dotenv";
+import { ContactSource, Prisma, PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+
+dotenv.config({ path: ".env.local", override: true, quiet: true });
+dotenv.config({ path: ".env", quiet: true });
 
 const CONFIRM_VALUE = "jennifer-cleanup";
 const DEFAULT_USER_EMAIL = "jaaker@stanford.edu";
+const INSENSITIVE = "insensitive" as const;
+
+const CONTACT_DEV_TEST_FILTERS: Prisma.ContactWhereInput[] = [
+  { name: { contains: "devon", mode: INSENSITIVE } },
+  { email: { contains: "devon", mode: INSENSITIVE } },
+  { notes: { contains: "devon", mode: INSENSITIVE } },
+  { howWeMet: { contains: "devon", mode: INSENSITIVE } },
+  { name: { equals: "test", mode: INSENSITIVE } },
+  { name: { equals: "testing", mode: INSENSITIVE } },
+  { name: { startsWith: "apptest", mode: INSENSITIVE } },
+  { name: { startsWith: "testdoc", mode: INSENSITIVE } },
+  { email: { startsWith: "apptest", mode: INSENSITIVE } },
+  { email: { startsWith: "scaltest", mode: INSENSITIVE } },
+  { email: { startsWith: "test@", mode: INSENSITIVE } },
+  { email: { startsWith: "testing@", mode: INSENSITIVE } },
+  { email: { contains: "devontjsmith", mode: INSENSITIVE } },
+];
+
+const EMAIL_DEV_TEST_FILTERS: Prisma.EmailMessageWhereInput[] = [
+  { fromEmail: { contains: "devon", mode: INSENSITIVE } },
+  { toEmail: { contains: "devon", mode: INSENSITIVE } },
+  { subject: { contains: "devon", mode: INSENSITIVE } },
+  { fromEmail: { startsWith: "apptest", mode: INSENSITIVE } },
+  { toEmail: { startsWith: "apptest", mode: INSENSITIVE } },
+  { fromEmail: { startsWith: "scaltest", mode: INSENSITIVE } },
+  { toEmail: { startsWith: "scaltest", mode: INSENSITIVE } },
+  { fromEmail: { startsWith: "test@", mode: INSENSITIVE } },
+  { toEmail: { startsWith: "test@", mode: INSENSITIVE } },
+  { subject: { contains: "[TEST", mode: INSENSITIVE } },
+];
+
+const INBOX_DEV_TEST_FILTERS: Prisma.InboxItemWhereInput[] = [
+  { contactName: { contains: "devon", mode: INSENSITIVE } },
+  { contactName: { equals: "test", mode: INSENSITIVE } },
+  { contactName: { equals: "testing", mode: INSENSITIVE } },
+  { contactName: { startsWith: "apptest", mode: INSENSITIVE } },
+];
+
+const DRAFT_DEV_TEST_FILTERS: Prisma.DraftWhereInput[] = [
+  { content: { contains: "devon", mode: INSENSITIVE } },
+  { subjectLine: { contains: "devon", mode: INSENSITIVE } },
+  { subjectLine: { contains: "[TEST", mode: INSENSITIVE } },
+];
 
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
+  adapter: new PrismaPg({ connectionString: requiredEnv("DATABASE_URL") }),
 });
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
 
 interface Args {
   apply: boolean;
@@ -82,9 +136,204 @@ function appleContactDeleteWhere(userId: string) {
   };
 }
 
+function devContactWhere(userId: string): Prisma.ContactWhereInput {
+  return { userId, OR: CONTACT_DEV_TEST_FILTERS };
+}
+
+function devEmailWhere(userId: string): Prisma.EmailMessageWhereInput {
+  return { userId, OR: EMAIL_DEV_TEST_FILTERS };
+}
+
+function devInboxWhere(userId: string): Prisma.InboxItemWhereInput {
+  return { userId, OR: INBOX_DEV_TEST_FILTERS };
+}
+
+function devDraftWhere(userId: string): Prisma.DraftWhereInput {
+  return { userId, OR: DRAFT_DEV_TEST_FILTERS };
+}
+
+function devInteractionWhere(
+  userId: string,
+  args: {
+    gmailIds: string[];
+    contactIds: string[];
+  },
+): Prisma.InteractionWhereInput {
+  const filters: Prisma.InteractionWhereInput[] = [
+    { subject: { contains: "devon", mode: INSENSITIVE } },
+    { summary: { contains: "devon", mode: INSENSITIVE } },
+    { subject: { contains: "[TEST", mode: INSENSITIVE } },
+    { summary: { contains: "[TEST", mode: INSENSITIVE } },
+  ];
+
+  if (args.gmailIds.length > 0) {
+    filters.push({ sourceId: { in: args.gmailIds } });
+  }
+  if (args.contactIds.length > 0) {
+    filters.push({ contactId: { in: args.contactIds } });
+  }
+
+  return { userId, OR: filters };
+}
+
+function devActionItemWhere(
+  userId: string,
+  args: {
+    gmailIds: string[];
+    gmailThreadIds: string[];
+  },
+): Prisma.ActionItemWhereInput {
+  const filters: Prisma.ActionItemWhereInput[] = [
+    { title: { contains: "devon", mode: INSENSITIVE } },
+    { context: { contains: "devon", mode: INSENSITIVE } },
+    { title: { contains: "[TEST", mode: INSENSITIVE } },
+    { context: { contains: "[TEST", mode: INSENSITIVE } },
+  ];
+
+  if (args.gmailIds.length > 0) {
+    filters.push({
+      sourceId: { in: args.gmailIds.map((gmailId) => `email:${gmailId}`) },
+    });
+  }
+  if (args.gmailThreadIds.length > 0) {
+    filters.push({ threadId: { in: args.gmailThreadIds } });
+  }
+
+  return { userId, OR: filters };
+}
+
+async function collectDevArtifacts(userId: string) {
+  const [contacts, emails, inboxItems, drafts] = await Promise.all([
+    prisma.contact.findMany({
+      where: devContactWhere(userId),
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        source: true,
+        company: true,
+        lastInteraction: true,
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
+    prisma.emailMessage.findMany({
+      where: devEmailWhere(userId),
+      select: {
+        id: true,
+        gmailId: true,
+        threadId: true,
+        fromEmail: true,
+        toEmail: true,
+        subject: true,
+        direction: true,
+        occurredAt: true,
+      },
+      orderBy: { occurredAt: "desc" },
+    }),
+    prisma.inboxItem.findMany({
+      where: devInboxWhere(userId),
+      select: {
+        id: true,
+        channel: true,
+        sourceSystem: true,
+        status: true,
+        contactName: true,
+        triggerAt: true,
+      },
+      orderBy: { triggerAt: "desc" },
+    }),
+    prisma.draft.findMany({
+      where: devDraftWhere(userId),
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        subjectLine: true,
+        createdAt: true,
+        contact: { select: { name: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  const contactIds = contacts.map((contact) => contact.id);
+  const emailIds = emails.map((email) => email.id);
+  const gmailIds = emails.map((email) => email.gmailId);
+  const gmailThreadIds = [
+    ...new Set(emails.map((email) => email.threadId).filter((id): id is string => !!id)),
+  ];
+  const interactionWhere = devInteractionWhere(userId, { gmailIds, contactIds });
+
+  const [interactions, lifeEventSignals, personFacts, actionItems] = await Promise.all([
+    prisma.interaction.findMany({
+      where: interactionWhere,
+      select: {
+        id: true,
+        sourceId: true,
+        subject: true,
+        channel: true,
+        occurredAt: true,
+        contact: { select: { name: true, email: true } },
+      },
+      orderBy: { occurredAt: "desc" },
+    }),
+    prisma.lifeEventSignal.findMany({
+      where: { userId, sourceType: "email", sourceRecordId: { in: emailIds } },
+      select: { id: true, sourceRecordId: true, summary: true },
+    }),
+    prisma.personFact.findMany({
+      where:
+        contactIds.length > 0
+          ? { userId, contactId: { in: contactIds } }
+          : { userId, id: { in: [] } },
+      select: { id: true, contactId: true, type: true, value: true, sourceSystem: true },
+    }),
+    prisma.actionItem.findMany({
+      where: devActionItemWhere(userId, { gmailIds, gmailThreadIds }),
+      select: { id: true, title: true, status: true, threadId: true, sourceId: true },
+    }),
+  ]);
+
+  const feedItems = lifeEventSignals.length
+    ? await prisma.feedItem.findMany({
+        where: {
+          userId,
+          sourceRecordId: { in: lifeEventSignals.map((signal) => signal.id) },
+        },
+        select: { id: true, headline: true, sourceRecordId: true },
+      })
+    : [];
+
+  return {
+    contacts,
+    emails,
+    inboxItems,
+    drafts,
+    interactions,
+    lifeEventSignals,
+    feedItems,
+    personFacts,
+    actionItems,
+    ids: {
+      contactIds,
+      emailIds,
+      gmailIds,
+      gmailThreadIds,
+      inboxItemIds: inboxItems.map((item) => item.id),
+      draftIds: drafts.map((draft) => draft.id),
+      interactionIds: interactions.map((interaction) => interaction.id),
+      lifeEventSignalIds: lifeEventSignals.map((signal) => signal.id),
+      feedItemIds: feedItems.map((item) => item.id),
+      personFactIds: personFacts.map((fact) => fact.id),
+      actionItemIds: actionItems.map((item) => item.id),
+    },
+  };
+}
+
 async function collectPlan(userId: string) {
   const messageWhere = messageInteractionWhere(userId);
   const appleDeleteWhere = appleContactDeleteWhere(userId);
+  const devArtifacts = await collectDevArtifacts(userId);
 
   const [
     messageInteractions,
@@ -193,6 +442,25 @@ async function collectPlan(userId: string) {
         meetingPrepWebRows,
         meetingPersonSummaryRows,
       },
+      devTestResidue: {
+        contacts: devArtifacts.contacts.length,
+        emailMessages: devArtifacts.emails.length,
+        interactions: devArtifacts.interactions.length,
+        inboxItems: devArtifacts.inboxItems.length,
+        drafts: devArtifacts.drafts.length,
+        lifeEventSignals: devArtifacts.lifeEventSignals.length,
+        feedItems: devArtifacts.feedItems.length,
+        personFacts: devArtifacts.personFacts.length,
+        actionItems: devArtifacts.actionItems.length,
+      },
+    },
+    devTestSamples: {
+      contacts: devArtifacts.contacts.slice(0, 20),
+      emailMessages: devArtifacts.emails.slice(0, 20),
+      interactions: devArtifacts.interactions.slice(0, 20),
+      inboxItems: devArtifacts.inboxItems.slice(0, 20),
+      drafts: devArtifacts.drafts.slice(0, 20),
+      actionItems: devArtifacts.actionItems.slice(0, 20),
     },
     keepForManualReview: {
       appleContactsTotal,
@@ -208,6 +476,7 @@ async function collectPlan(userId: string) {
 async function applyCleanup(userId: string) {
   const messageWhere = messageInteractionWhere(userId);
   const appleDeleteWhere = appleContactDeleteWhere(userId);
+  const devArtifacts = await collectDevArtifacts(userId);
 
   const appleContactIds = await prisma.contact.findMany({
     where: appleDeleteWhere,
@@ -246,6 +515,30 @@ async function applyCleanup(userId: string) {
         meetingPersonSummaryRows: await tx.meetingPersonSummaryCache.deleteMany({
           where: { contact: { is: { userId } } },
         }),
+        devFeedItems: await tx.feedItem.deleteMany({
+          where: { id: { in: devArtifacts.ids.feedItemIds } },
+        }),
+        devLifeEventSignals: await tx.lifeEventSignal.deleteMany({
+          where: { id: { in: devArtifacts.ids.lifeEventSignalIds } },
+        }),
+        devActionItems: await tx.actionItem.deleteMany({
+          where: { id: { in: devArtifacts.ids.actionItemIds } },
+        }),
+        devDrafts: await tx.draft.deleteMany({
+          where: { id: { in: devArtifacts.ids.draftIds } },
+        }),
+        devInboxItems: await tx.inboxItem.deleteMany({
+          where: { id: { in: devArtifacts.ids.inboxItemIds } },
+        }),
+        devPersonFacts: await tx.personFact.deleteMany({
+          where: { id: { in: devArtifacts.ids.personFactIds } },
+        }),
+        devEmailMessages: await tx.emailMessage.deleteMany({
+          where: { id: { in: devArtifacts.ids.emailIds } },
+        }),
+        devInteractions: await tx.interaction.deleteMany({
+          where: { id: { in: devArtifacts.ids.interactionIds } },
+        }),
         imessageSyncStates: await tx.iMessageSyncState.deleteMany({
           where: { userId },
         }),
@@ -257,6 +550,9 @@ async function applyCleanup(userId: string) {
         }),
         appleContacts: await tx.contact.deleteMany({
           where: { id: { in: appleContactIds.map((contact) => contact.id) } },
+        }),
+        devContacts: await tx.contact.deleteMany({
+          where: { id: { in: devArtifacts.ids.contactIds } },
         }),
       };
 
