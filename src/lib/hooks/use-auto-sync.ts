@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, type MutableRefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const SYNC_INTERVAL = 5 * 60 * 1000; // Browser fallback; worker runs every 3 minutes.
@@ -6,6 +6,8 @@ const FRESH_GMAIL_SYNC_MS = 4.5 * 60 * 1000;
 const FULL_SYNC_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const MAX_CONSECUTIVE_FAILURES = 3;
 const FULL_SYNC_STORAGE_KEY = "personal-crm:last-full-auto-sync-at";
+const BROWSER_SYNC_LOCK_KEY = "personal-crm:browser-sync-lock";
+const BROWSER_SYNC_LOCK_TTL_MS = 2 * 60 * 1000;
 
 /**
  * Local dev keeps browser fallback sync on for convenience. Production
@@ -40,11 +42,15 @@ export function useAutoSync() {
   const syncingRef = useRef(false);
   const failureCountRef = useRef(0);
   const didInitialFullSync = useRef(false);
+  const lockOwnerRef = useRef<string | null>(null);
 
   const runGmailSync = useCallback(async () => {
+    if (!isVisibleDocument()) return;
     if (syncingRef.current) return;
     if (failureCountRef.current >= MAX_CONSECUTIVE_FAILURES) return;
 
+    const lockOwner = getLockOwner(lockOwnerRef);
+    if (!acquireBrowserSyncLock(lockOwner)) return;
     syncingRef.current = true;
 
     try {
@@ -65,17 +71,18 @@ export function useAutoSync() {
 
       failureCountRef.current = 0;
 
-      const data = await res.json();
+      const data = (await res.json()) as { processed?: number };
+      const processed = Number(data.processed ?? 0);
 
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
       queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
 
-      if (data.processed > 0) {
+      if (processed > 0) {
         queryClient.invalidateQueries({ queryKey: ["contacts"] });
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+        queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       }
 
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       // Classification is now driven by the inbox-classify worker
       // task (enqueued from onInboundInteraction in src/lib/inbox.ts),
       // not a client-side POST. The query above will repick up new
@@ -85,13 +92,17 @@ export function useAutoSync() {
       failureCountRef.current += 1;
     } finally {
       syncingRef.current = false;
+      releaseBrowserSyncLock(lockOwner);
     }
   }, [queryClient]);
 
   const runFullSync = useCallback(async () => {
+    if (!isVisibleDocument()) return;
     if (didInitialFullSync.current) return;
-    didInitialFullSync.current = true;
     if (!shouldRunFullSync()) return;
+    const lockOwner = getLockOwner(lockOwnerRef);
+    if (!acquireBrowserSyncLock(lockOwner)) return;
+    didInitialFullSync.current = true;
 
     // Fire all syncs in parallel — all are idempotent and deduplicate
     const syncs = [
@@ -113,15 +124,18 @@ export function useAutoSync() {
       fetch("/api/calendar?trigger=browser_fallback", { method: "POST" }).catch(() => {}),
     ];
 
-    await Promise.allSettled(syncs);
-    markFullSyncRan();
+    try {
+      await Promise.allSettled(syncs);
+      markFullSyncRan();
+    } finally {
+      releaseBrowserSyncLock(lockOwner);
+    }
 
     queryClient.invalidateQueries({ queryKey: ["contacts"] });
     queryClient.invalidateQueries({ queryKey: ["data-health"] });
     queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
-    queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
   }, [queryClient]);
 
   useEffect(() => {
@@ -141,6 +155,7 @@ export function useAutoSync() {
       if (document.visibilityState === "visible") {
         failureCountRef.current = 0;
         runGmailSync();
+        runFullSync();
       }
     }
     document.addEventListener("visibilitychange", handleVisibility);
@@ -193,6 +208,65 @@ function markFullSyncRan(): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(FULL_SYNC_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // Storage can be unavailable in some private/mobile contexts.
+  }
+}
+
+function isVisibleDocument(): boolean {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible";
+}
+
+function getLockOwner(ownerRef: MutableRefObject<string | null>): string {
+  ownerRef.current ??=
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return ownerRef.current;
+}
+
+function acquireBrowserSyncLock(owner: string): boolean {
+  if (typeof window === "undefined") return true;
+
+  try {
+    const now = Date.now();
+    const raw = window.localStorage.getItem(BROWSER_SYNC_LOCK_KEY);
+    if (raw) {
+      const lock = JSON.parse(raw) as { owner?: string; expiresAt?: number };
+      if (
+        lock.owner &&
+        lock.owner !== owner &&
+        typeof lock.expiresAt === "number" &&
+        lock.expiresAt > now
+      ) {
+        return false;
+      }
+    }
+
+    window.localStorage.setItem(
+      BROWSER_SYNC_LOCK_KEY,
+      JSON.stringify({ owner, expiresAt: now + BROWSER_SYNC_LOCK_TTL_MS }),
+    );
+
+    const confirmed = JSON.parse(
+      window.localStorage.getItem(BROWSER_SYNC_LOCK_KEY) ?? "{}",
+    ) as { owner?: string };
+    return confirmed.owner === owner;
+  } catch {
+    return true;
+  }
+}
+
+function releaseBrowserSyncLock(owner: string): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const raw = window.localStorage.getItem(BROWSER_SYNC_LOCK_KEY);
+    if (!raw) return;
+    const lock = JSON.parse(raw) as { owner?: string };
+    if (lock.owner === owner) {
+      window.localStorage.removeItem(BROWSER_SYNC_LOCK_KEY);
+    }
   } catch {
     // Storage can be unavailable in some private/mobile contexts.
   }

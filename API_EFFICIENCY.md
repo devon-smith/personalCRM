@@ -81,6 +81,7 @@
 - Retired the WhatsApp runtime surface: removed the `NEXT_PUBLIC_ENABLE_WHATSAPP` flag, removed the Sources WhatsApp setup card, made `/api/whatsapp/*` fail closed, and removed the WhatsApp voice-corpus embedding pass.
 - Retired the iMessage runtime surface: removed the `NEXT_PUBLIC_ENABLE_IMESSAGE` flag, removed Sources/People/Settings iMessage sync UI, made `/api/imessage*` fail closed, and removed iMessage status/source checks from health and data-health payloads.
 - Removed the unused Mac `chat.db` reader, iMessage sync package, and iMessage backfill branch after verifying no active app, worker, script, or test reference remained. Gmail remains the only maintained message-ingestion backfill path.
+- Browser fallback sync now uses a short cross-tab localStorage lock, skips work while the tab is hidden, and only invalidates inbox/dashboard caches when a fallback Gmail run actually processes new mail.
 
 ## Next Highest-Impact Efficiency Work
 
