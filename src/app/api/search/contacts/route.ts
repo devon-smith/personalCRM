@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { searchContacts } from "@/lib/search/contacts";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(30, 300);
 
 /**
  * GET /api/search/contacts?q=...&limit=...&semantic=0
@@ -24,12 +27,12 @@ export async function GET(req: NextRequest) {
   const includeSemantic = semanticParam !== "0" && semanticParam !== "false";
 
   if (!q.trim()) {
-    return NextResponse.json({ hits: [] });
+    return NextResponse.json({ hits: [] }, { headers: READ_CACHE_HEADERS });
   }
 
   try {
     const hits = await searchContacts(session.user.id, q, limit, { includeSemantic });
-    return NextResponse.json({ hits });
+    return NextResponse.json({ hits }, { headers: READ_CACHE_HEADERS });
   } catch (err) {
     console.error("[/api/search/contacts] error:", err);
     return NextResponse.json(
