@@ -16,6 +16,13 @@ import {
 import { toast } from "sonner";
 import { Surface, SectionLabel } from "@/components/ds";
 import { NetworkQueryBox } from "@/components/network-query/network-query-box";
+import {
+  removeSavedQueryDetailCache,
+  removeSavedQueryFromListCaches,
+  restoreSavedQueryCaches,
+  setSavedQueryStar,
+  snapshotSavedQueryCaches,
+} from "@/lib/saved-query-cache";
 
 /**
  * /ask/[id] — deep-link to one historical query + its answer (M0.x.7).
@@ -102,12 +109,24 @@ export default function AskByIdPage({
         body: JSON.stringify({ isStarred: nextStarred }),
       });
       if (!res.ok) throw new Error("Star failed");
+      const body = (await res.json().catch(() => ({}))) as { updated?: number };
+      if (body.updated !== undefined && body.updated < 1) {
+        throw new Error("Star failed");
+      }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["saved-query", id] });
-      qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
+    onMutate: async (nextStarred) => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["saved-query", id] }),
+        qc.cancelQueries({ queryKey: ["saved-queries-history"] }),
+      ]);
+      const snapshot = snapshotSavedQueryCaches(qc, id);
+      setSavedQueryStar(qc, id, nextStarred);
+      return { snapshot };
     },
-    onError: () => toast.error("Couldn't update star"),
+    onError: (_err, _vars, context) => {
+      restoreSavedQueryCaches(qc, id, context?.snapshot);
+      toast.error("Couldn't update star");
+    },
   });
 
   const deleteMutation = useMutation({
@@ -117,12 +136,24 @@ export default function AskByIdPage({
       });
       if (!res.ok) throw new Error("Delete failed");
     },
+    onMutate: async () => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["saved-queries-history"] }),
+        qc.cancelQueries({ queryKey: ["saved-queries"] }),
+      ]);
+      const snapshot = snapshotSavedQueryCaches(qc, id);
+      removeSavedQueryFromListCaches(qc, id);
+      return { snapshot };
+    },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
+      removeSavedQueryDetailCache(qc, id);
       toast.success("Removed from history");
       router.push("/ask");
     },
-    onError: () => toast.error("Couldn't remove"),
+    onError: (_err, _vars, context) => {
+      restoreSavedQueryCaches(qc, id, context?.snapshot);
+      toast.error("Couldn't remove");
+    },
   });
 
   if (isLoading) {

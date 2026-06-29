@@ -23,6 +23,13 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  removeSavedQueryDetailCache,
+  removeSavedQueryFromListCaches,
+  restoreSavedQueryCaches,
+  setSavedQueryStar,
+  snapshotSavedQueryCaches,
+} from "@/lib/saved-query-cache";
 
 export interface SavedQueryRow {
   id: string;
@@ -93,31 +100,23 @@ export function HistoryPanel({
         },
       );
       if (!res.ok) throw new Error("Star failed");
+      const body = (await res.json().catch(() => ({}))) as { updated?: number };
+      if (body.updated !== undefined && body.updated < 1) {
+        throw new Error("Star failed");
+      }
     },
     onMutate: async ({ id, nextStarred }) => {
-      await qc.cancelQueries({ queryKey: ["saved-queries-history"] });
-      const prev = qc.getQueryData<{ queries: SavedQueryRow[] }>([
-        "saved-queries-history",
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["saved-queries-history"] }),
+        qc.cancelQueries({ queryKey: ["saved-query", id] }),
       ]);
-      if (prev) {
-        qc.setQueryData<{ queries: SavedQueryRow[] }>(
-          ["saved-queries-history"],
-          {
-            queries: prev.queries.map((q) =>
-              q.id === id ? { ...q, isStarred: nextStarred } : q,
-            ),
-          },
-        );
-      }
-      return { prev };
+      const snapshot = snapshotSavedQueryCaches(qc, id);
+      setSavedQueryStar(qc, id, nextStarred);
+      return { snapshot };
     },
-    onError: (_err, _vars, context) => {
-      if (context?.prev) qc.setQueryData(["saved-queries-history"], context.prev);
+    onError: (_err, { id }, context) => {
+      restoreSavedQueryCaches(qc, id, context?.snapshot);
       toast.error("Couldn't update star");
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
-      qc.invalidateQueries({ queryKey: ["saved-queries"] });
     },
   });
 
@@ -129,12 +128,24 @@ export function HistoryPanel({
       );
       if (!res.ok) throw new Error("Delete failed");
     },
+    onMutate: async (id) => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["saved-queries-history"] }),
+        qc.cancelQueries({ queryKey: ["saved-queries"] }),
+        qc.cancelQueries({ queryKey: ["saved-query", id] }),
+      ]);
+      const snapshot = snapshotSavedQueryCaches(qc, id);
+      removeSavedQueryFromListCaches(qc, id);
+      removeSavedQueryDetailCache(qc, id);
+      return { snapshot };
+    },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["saved-queries-history"] });
-      qc.invalidateQueries({ queryKey: ["saved-queries"] });
       toast.success("Removed");
     },
-    onError: () => toast.error("Couldn't remove"),
+    onError: (_err, id, context) => {
+      restoreSavedQueryCaches(qc, id, context?.snapshot);
+      toast.error("Couldn't remove");
+    },
   });
 
   // Date.now() in a useMemo body is impure-during-render per the

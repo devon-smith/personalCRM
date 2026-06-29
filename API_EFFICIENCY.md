@@ -143,6 +143,7 @@
 - Contact alias/email/phone edits now merge the alias-route response into the open contact detail and summary caches, avoiding stale refetches against short-cached contact reads.
 - Contact deletes now remove the focused contact detail and summary query caches instead of invalidating them, so deleted contacts cannot be repopulated from short-cached detail responses.
 - Settings Usage now keeps each 7/30/90-day telemetry window fresh for the same five minutes as `/api/usage` response caching, avoiding repeat aggregate DB reads when revisiting the page or toggling windows.
+- Ask history star/delete actions now update saved-query list, detail, and count caches directly. Starring no longer refetches an unchanged count, and deleting no longer refetches the list just to remove one row.
 
 ## Next Highest-Impact Efficiency Work
 
