@@ -30,6 +30,7 @@
 - Settings usage now computes explicit sync budget alerts from existing telemetry: total Google calls per day, browser-fallback call volume, elevated sync error rate, and long-running sync runs.
 - Non-generation provider calls now write to `ProviderCallLog`: Voyage embedding batches for search/draft voice retrieval/voice corpus/contact embedding refresh, plus Gmail draft list/save/send user actions. Settings usage aggregates those rows separately from LLM generations and sync runs.
 - Sync budget alert thresholds are now deployment-configurable through `SYNC_BUDGET_PROVIDER_CALLS_PER_DAY`, `SYNC_BUDGET_BROWSER_FALLBACK_CALLS_PER_DAY`, and `SYNC_BUDGET_ERROR_RATE_PERCENT`.
+- Calendar empty states now use DB-only sync status returned with `/api/calendar`, so the Calendar and home meeting surfaces distinguish disconnected/missing-scope, never-synced, failed-sync, and genuinely-empty states without extra Google calls.
 
 ## Next Highest-Impact Efficiency Work
 
@@ -39,6 +40,5 @@
 ## Product Polish Before App Finalization
 
 - Add draft audit copy in the reply modal: exact inbound message used, thread messages loaded, voice references used, and known missing context.
-- Add meeting brief loading states that distinguish "calendar has no events" from "calendar has not synced."
 - Add a user-facing "Refresh now" control for Gmail/Calendar that explains it may take a moment, rather than relying on background polling.
 - Move legacy/development sources out of the main UI unless enabled by config: iMessage, WhatsApp, and feed/activity remnants.

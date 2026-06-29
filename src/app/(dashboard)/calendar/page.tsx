@@ -18,11 +18,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { UpcomingEvent } from "@/lib/calendar";
+import type { CalendarSyncStatus } from "@/lib/calendar/status";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
 
 interface CalendarResponse {
   events: UpcomingEvent[];
+  syncStatus?: CalendarSyncStatus;
   error?: string;
 }
 
@@ -68,6 +70,98 @@ function formatRelativeDay(iso: string | null): string | null {
   if (days === 0) return "today";
   if (days === 1) return "yesterday";
   return `${days}d ago`;
+}
+
+function formatSyncAge(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 2) return "just now";
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function calendarEmptyCopy(data: CalendarResponse | undefined): {
+  icon: typeof CalendarDays;
+  title: string;
+  body: string;
+} {
+  const status = data?.syncStatus;
+  const error = data?.error;
+
+  if (error) {
+    return {
+      icon: AlertCircle,
+      title: "Calendar needs attention",
+      body: calendarErrorCopy(error),
+    };
+  }
+
+  if (!status) {
+    return {
+      icon: CalendarDays,
+      title: "No upcoming events",
+      body: "Google Calendar returned no upcoming events for the next week.",
+    };
+  }
+
+  if (status.connection === "not_connected") {
+    return {
+      icon: AlertCircle,
+      title: "Calendar is not connected",
+      body: "Connect Google Calendar from Sources so upcoming meetings and prep context can appear here.",
+    };
+  }
+
+  if (status.connection === "missing_scope") {
+    return {
+      icon: AlertCircle,
+      title: "Calendar access is missing",
+      body: "Reconnect Google from Sources and grant Calendar access so meetings can load.",
+    };
+  }
+
+  if (status.lastSyncRunStatus === "error") {
+    return {
+      icon: AlertCircle,
+      title: "Calendar sync needs attention",
+      body:
+        status.lastSyncRunError ??
+        "The last Calendar sync failed. Try Sync calendar, then check Sources if it still fails.",
+    };
+  }
+
+  if (!status.lastMeetingSyncedAt && status.syncedMeetingCount === 0) {
+    return {
+      icon: CalendarDays,
+      title: "Calendar is connected, but meeting history has not synced",
+      body:
+        "Upcoming events are fetched live from Google. Run Sync calendar to backfill past meetings for richer prep context.",
+    };
+  }
+
+  const lastSynced = formatSyncAge(status.lastMeetingSyncedAt);
+  return {
+    icon: CalendarDays,
+    title: "No upcoming events",
+    body: lastSynced
+      ? `Google Calendar returned no upcoming events for the next week. Meeting history last synced ${lastSynced}.`
+      : "Google Calendar returned no upcoming events for the next week.",
+  };
+}
+
+function calendarErrorCopy(error: string): string {
+  if (error.includes("scope")) {
+    return "Reconnect Google from Sources and grant Calendar access so meetings can load.";
+  }
+  if (error.includes("not connected")) {
+    return "Connect Google Calendar from Sources to see upcoming meetings and prep context.";
+  }
+  return error;
 }
 
 function groupEventsByDay(events: UpcomingEvent[]): Array<{ dayKey: string; label: string; events: UpcomingEvent[] }> {
@@ -172,14 +266,8 @@ export default function CalendarPage() {
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading Google Calendar events...
             </div>
-          ) : data?.error ? (
-            <EmptyState icon={AlertCircle} title="Calendar needs attention" body={data.error} />
           ) : upcomingEvents.length === 0 ? (
-            <EmptyState
-              icon={CalendarDays}
-              title="No upcoming events"
-              body="When Google Calendar has upcoming events, prep links and attendee context will show here."
-            />
+            <EmptyState {...calendarEmptyCopy(data)} />
           ) : (
             groupedEvents.map((group) => (
               <section key={group.dayKey} className="space-y-2">

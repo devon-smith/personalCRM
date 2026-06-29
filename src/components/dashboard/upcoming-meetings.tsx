@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { UpcomingEvent } from "@/lib/calendar";
+import type { CalendarSyncStatus } from "@/lib/calendar/status";
 import { CollapsibleSection } from "@/components/ds";
 
 function formatEventTime(iso: string): string {
@@ -40,7 +41,11 @@ function formatDuration(start: string, end: string | null): string {
 }
 
 export function UpcomingMeetings() {
-  const { data, isLoading } = useQuery<{ events: UpcomingEvent[]; error?: string }>({
+  const { data, isLoading } = useQuery<{
+    events: UpcomingEvent[];
+    syncStatus?: CalendarSyncStatus;
+    error?: string;
+  }>({
     queryKey: ["upcoming-meetings"],
     queryFn: async () => {
       const res = await fetch("/api/calendar");
@@ -62,7 +67,7 @@ export function UpcomingMeetings() {
   }
 
   const events = data?.events ?? [];
-  const apiError = data?.error;
+  const emptyCopy = getEmptyCopy(data);
 
   if (events.length === 0) {
     return (
@@ -75,19 +80,20 @@ export function UpcomingMeetings() {
           >
             <Calendar className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
           </div>
-          {apiError ? (
+          {emptyCopy.warning ? (
             <>
-              <p className="ds-body-sm font-medium" style={{ color: "var(--status-warning)" }}>Calendar not connected</p>
-              <p className="mt-1 ds-caption max-w-[220px]">
-                {apiError.includes("scope")
-                  ? "Re-sign in with Google to grant Calendar access."
-                  : apiError.includes("not connected")
-                    ? "Sign in with Google to see your upcoming meetings."
-                    : apiError}
+              <p className="ds-body-sm font-medium" style={{ color: "var(--status-warning)" }}>
+                {emptyCopy.title}
               </p>
+              <p className="mt-1 ds-caption max-w-[240px]">{emptyCopy.body}</p>
             </>
           ) : (
-            <p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>No meetings this week</p>
+            <>
+              <p className="ds-body-sm" style={{ color: "var(--text-tertiary)" }}>
+                {emptyCopy.title}
+              </p>
+              <p className="mt-1 ds-caption max-w-[240px]">{emptyCopy.body}</p>
+            </>
           )}
         </div>
       </div>
@@ -107,6 +113,69 @@ export function UpcomingMeetings() {
       />
     </div>
   );
+}
+
+function getEmptyCopy(data: {
+  error?: string;
+  syncStatus?: CalendarSyncStatus;
+} | undefined): {
+  title: string;
+  body: string;
+  warning: boolean;
+} {
+  if (data?.error) {
+    return {
+      title: "Calendar needs attention",
+      body: calendarErrorCopy(data.error),
+      warning: true,
+    };
+  }
+
+  const status = data?.syncStatus;
+  if (status?.connection === "not_connected") {
+    return {
+      title: "Calendar not connected",
+      body: "Connect Google Calendar from Sources to show meetings here.",
+      warning: true,
+    };
+  }
+  if (status?.connection === "missing_scope") {
+    return {
+      title: "Calendar access missing",
+      body: "Reconnect Google from Sources and grant Calendar access.",
+      warning: true,
+    };
+  }
+  if (status?.lastSyncRunStatus === "error") {
+    return {
+      title: "Calendar sync failed",
+      body: status.lastSyncRunError ?? "Open Sources and run Calendar sync again.",
+      warning: true,
+    };
+  }
+  if (status && status.syncedMeetingCount === 0 && !status.lastMeetingSyncedAt) {
+    return {
+      title: "Calendar connected",
+      body: "No upcoming meetings loaded. Sync calendar to backfill meeting history for prep context.",
+      warning: false,
+    };
+  }
+
+  return {
+    title: "No meetings this week",
+    body: "Google Calendar returned no upcoming meetings for the next week.",
+    warning: false,
+  };
+}
+
+function calendarErrorCopy(error: string): string {
+  if (error.includes("scope")) {
+    return "Reconnect Google and grant Calendar access.";
+  }
+  if (error.includes("not connected")) {
+    return "Sign in with Google to show upcoming meetings.";
+  }
+  return error;
 }
 
 function MeetingRow({ event }: { event: UpcomingEvent }) {

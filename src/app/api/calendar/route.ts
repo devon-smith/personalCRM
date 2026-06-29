@@ -1,46 +1,26 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import {
   getUpcomingEvents,
   type CalendarSyncResult,
 } from "@/lib/calendar";
+import {
+  getCalendarSyncStatus,
+  type CalendarSyncStatus,
+} from "@/lib/calendar/status";
 import { runCalendarSyncForUser } from "@/lib/sync/google-sync-runs";
 import { parseSyncTrigger } from "@/lib/sync/run-telemetry";
 
 export type { CalendarSyncResult };
+export type { CalendarSyncStatus };
 
-/**
- * Check if the user has the calendar.readonly scope granted.
- * Returns null if OK, or a JSON response to send back if not.
- */
-async function checkCalendarScope(userId: string): Promise<NextResponse | null> {
-  const accounts = await prisma.account.findMany({
-    where: { userId, provider: "google" },
-    select: { scope: true, access_token: true },
-  });
-
-  if (accounts.length === 0 || !accounts.some((a) => a.access_token)) {
-    return NextResponse.json(
-      { error: "Google account not connected. Please sign in with Google first.", events: [] },
-      { status: 200 },
-    );
+function calendarConnectionError(status: CalendarSyncStatus): string | null {
+  if (status.connection === "not_connected") {
+    return "Google account not connected. Please sign in with Google first.";
   }
-
-  // Check if ANY account has calendar scope granted.
-  // If scope is NULL (older OAuth sessions), assume calendar was granted
-  // since we always request it — the API call will fail with 403 if not.
-  const hasCalendarScope = accounts.some(
-    (a) => a.access_token && (!a.scope || a.scope.includes("calendar.readonly")),
-  );
-
-  if (!hasCalendarScope) {
-    return NextResponse.json(
-      { error: "Calendar scope not granted. Please re-authenticate to grant Calendar access.", events: [] },
-      { status: 200 },
-    );
+  if (status.connection === "missing_scope") {
+    return "Calendar scope not granted. Please re-authenticate to grant Calendar access.";
   }
-
   return null;
 }
 
@@ -51,18 +31,25 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const scopeCheck = await checkCalendarScope(session.user.id);
-  if (scopeCheck) return scopeCheck;
+  const syncStatus = await getCalendarSyncStatus(session.user.id);
+  const connectionError = calendarConnectionError(syncStatus);
+  if (connectionError) {
+    return NextResponse.json(
+      { events: [], syncStatus, error: connectionError },
+      { status: 200 },
+    );
+  }
 
   try {
     const events = await getUpcomingEvents(session.user.id, 7);
-    return NextResponse.json({ events });
+    return NextResponse.json({ events, syncStatus });
   } catch (error) {
     console.error("Calendar fetch error:", error);
     // Return empty events with error message instead of 500
     return NextResponse.json(
       {
         events: [],
+        syncStatus,
         error:
           error instanceof Error
             ? error.message
@@ -81,8 +68,14 @@ export async function POST(request: Request) {
   }
   const trigger = parseSyncTrigger(new URL(request.url).searchParams.get("trigger") ?? "manual");
 
-  const scopeCheck = await checkCalendarScope(session.user.id);
-  if (scopeCheck) return scopeCheck;
+  const syncStatus = await getCalendarSyncStatus(session.user.id);
+  const connectionError = calendarConnectionError(syncStatus);
+  if (connectionError) {
+    return NextResponse.json(
+      { events: [], syncStatus, error: connectionError },
+      { status: 200 },
+    );
+  }
 
   try {
     const result = await runCalendarSyncForUser(session.user.id, trigger, 90);
