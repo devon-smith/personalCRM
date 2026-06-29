@@ -10,14 +10,19 @@ import { getUserProfile } from "@/lib/user-profile";
  *
  * Returns the health status of all data sources and sync states.
  * Used by the dashboard to show alerts when re-auth is needed.
+ *
+ * By default this stays DB-only. Pass ?live=1 when debugging if you
+ * want to spend a Gmail profile request to verify that a token works.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const userId = session.user.id;
+  const liveCheck =
+    new URL(request.url).searchParams.get("live") === "1";
 
   // Check Google accounts
   const googleAccounts = await prisma.account.findMany({
@@ -28,6 +33,8 @@ export async function GET() {
       access_token: true,
       refresh_token: true,
       expires_at: true,
+      needsReconnect: true,
+      lastRefreshError: true,
     },
   });
 
@@ -37,6 +44,19 @@ export async function GET() {
   if (googleAccounts.length === 0) {
     gmailStatus = "disconnected";
     gmailError = "No Google account connected.";
+  } else if (!liveCheck) {
+    const usableAccounts = googleAccounts.filter(
+      (account) => account.access_token && !account.needsReconnect,
+    );
+    if (usableAccounts.length > 0) {
+      gmailStatus = "connected";
+    } else {
+      gmailStatus = "expired";
+      gmailError =
+        googleAccounts.find((account) => account.lastRefreshError)
+          ?.lastRefreshError ??
+        "Google token expired. Re-connect your account to resume email sync.";
+    }
   } else {
     // Try to get valid tokens
     const tokens = await getAllGoogleAccessTokens(userId);
