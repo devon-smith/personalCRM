@@ -78,6 +78,47 @@ interface Draft {
   contact: DraftContact;
 }
 
+interface ReplyContextSnapshot {
+  latestInbound: {
+    fromEmail: string;
+    fromName: string | null;
+    subject: string | null;
+    body: string;
+    bodyIsFull: boolean;
+    occurredAt: string;
+  };
+  threadHistory: Array<{
+    direction: string;
+    fromEmail: string;
+    fromName: string | null;
+    subject: string | null;
+    snippet: string | null;
+    occurredAt: string;
+  }>;
+}
+
+interface MemorySnapshot {
+  personalContext: unknown;
+  recurringThemes: string[];
+  openThreads: unknown[];
+}
+
+interface ReferenceSnapshot {
+  id: string;
+  filename: string;
+  sourceType: string;
+  toneNotes: string;
+}
+
+interface DraftWorkspaceAudit {
+  context: {
+    relationshipType: string;
+    replyContext: ReplyContextSnapshot | null;
+    memory: MemorySnapshot | null;
+    references: ReferenceSnapshot[];
+  };
+}
+
 interface ContactDetail {
   id: string;
   name: string;
@@ -206,6 +247,7 @@ export function ReplyQueueConsole() {
   const selectedDraft = selected
     ? drafts.find((draft) => draft.inboxItemId === selected.id)
     : undefined;
+  const selectedDraftId = selectedDraft?.id ?? null;
   const googleBlocked =
     (dataHealth?.googleAccounts.filter((account) => account.needsReconnect).length ?? 0) > 0;
 
@@ -218,6 +260,19 @@ export function ReplyQueueConsole() {
       if (!res.ok) return null;
       return res.json();
     },
+  });
+
+  const { data: draftAudit, isLoading: draftAuditLoading } = useQuery<DraftWorkspaceAudit | null>({
+    queryKey: ["draft-workspace-audit", selectedDraftId],
+    enabled: !!selectedDraftId,
+    queryFn: async () => {
+      if (!selectedDraftId) return null;
+      const res = await fetch(`/api/drafts/${selectedDraftId}/workspace`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const counts = useMemo(() => {
@@ -248,6 +303,7 @@ export function ReplyQueueConsole() {
     queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
     queryClient.invalidateQueries({ queryKey: ["drafts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["draft-workspace-audit"] });
   };
 
   const syncMutation = useMutation({
@@ -501,25 +557,13 @@ export function ReplyQueueConsole() {
                     </div>
                   </section>
 
-                  <details className="rounded-[10px] border border-[#DCE3D8] bg-[#EDF0EC] px-4 py-3">
-                    <summary className="flex cursor-pointer list-none items-center gap-2 text-[11.5px] leading-5 text-[#4F5A3E]">
-                      <Sparkles className="h-4 w-4 shrink-0" />
-                      <span>
-                        <strong className="font-semibold">Draft context</strong>{" "}
-                        {selectedDraft
-                          ? "uses inbound email, recent contact facts, and voice profile"
-                          : "will use inbound email, contact context, and voice profile"}
-                      </span>
-                      <span className="ml-auto rounded-[6px] border border-[#CBD4C2] px-2 py-0.5 text-[11px] font-semibold">
-                        Evidence
-                      </span>
-                    </summary>
-                    <div className="mt-3 grid gap-2 text-[12px] text-[#4F5A3E] sm:grid-cols-3">
-                      <EvidenceTile label="Inbox" value={`${selected.messageCount} message${selected.messageCount === 1 ? "" : "s"}`} />
-                      <EvidenceTile label="Facts" value={`${contact?.personFacts?.length ?? 0} available`} />
-                      <EvidenceTile label="History" value={`${contact?.interactions?.length ?? 0} interactions`} />
-                    </div>
-                  </details>
+                  <DraftAuditDisclosure
+                    selected={selected}
+                    selectedDraft={selectedDraft}
+                    contact={contact}
+                    audit={draftAudit ?? null}
+                    isLoading={draftAuditLoading}
+                  />
 
                   <section>
                     <SectionKicker
@@ -821,6 +865,184 @@ function EvidenceTile({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DraftAuditDisclosure({
+  selected,
+  selectedDraft,
+  contact,
+  audit,
+  isLoading,
+}: {
+  selected: InboxItemData;
+  selectedDraft: Draft | undefined;
+  contact: ContactDetail | null | undefined;
+  audit: DraftWorkspaceAudit | null;
+  isLoading: boolean;
+}) {
+  const replyContext = audit?.context.replyContext ?? null;
+  const latestInbound = replyContext?.latestInbound ?? null;
+  const references = audit?.context.references ?? [];
+  const recentThread = replyContext?.threadHistory.slice(-4) ?? [];
+  const bodyText = latestInbound?.body.trim() ? latestInbound.body : previewText(selected);
+  const bodySource = latestInbound
+    ? latestInbound.bodyIsFull
+      ? "Full Gmail body"
+      : "Snippet fallback"
+    : selectedDraft
+      ? "Workspace unavailable"
+      : "Queue preview";
+  const missingContext = buildMissingContextItems({
+    selected,
+    selectedDraft,
+    contact,
+    audit,
+  });
+
+  return (
+    <details className="rounded-[10px] border border-[#DCE3D8] bg-[#EDF0EC] px-4 py-3">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-[11.5px] leading-5 text-[#4F5A3E]">
+        <Sparkles className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <strong className="font-semibold">Draft context</strong>{" "}
+          {selectedDraft
+            ? "shows the message, thread depth, voice sources, and gaps"
+            : "will load exact provenance after a draft is generated"}
+        </span>
+        <span className="ml-auto rounded-[6px] border border-[#CBD4C2] px-2 py-0.5 text-[11px] font-semibold">
+          Audit
+        </span>
+      </summary>
+
+      <div className="mt-3 grid gap-2 text-[12px] text-[#4F5A3E] sm:grid-cols-2 xl:grid-cols-4">
+        <EvidenceTile label="Inbound" value={bodySource} />
+        <EvidenceTile
+          label="Thread"
+          value={`${replyContext?.threadHistory.length ?? selected.messageCount} message${
+            (replyContext?.threadHistory.length ?? selected.messageCount) === 1 ? "" : "s"
+          }`}
+        />
+        <EvidenceTile
+          label="Voice"
+          value={
+            selectedDraft && isLoading
+              ? "loading"
+              : `${references.length} source${references.length === 1 ? "" : "s"}`
+          }
+        />
+        <EvidenceTile label="Facts" value={`${contact?.personFacts?.length ?? 0} available`} />
+      </div>
+
+      {isLoading ? (
+        <div className="mt-3 flex items-center gap-2 rounded-[8px] border border-[#DCE3D8] bg-[#FAF8F5]/70 px-3 py-2 text-[12px] text-[#647052]">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading exact draft context...
+        </div>
+      ) : (
+        <div className="mt-3 grid gap-3">
+          <div className="rounded-[9px] border border-[#DCE3D8] bg-[#FAF8F5]/70 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7E8B66]">
+                Message used
+              </span>
+              <span className="rounded-[6px] bg-[#E5EBDD] px-2 py-0.5 text-[10.5px] font-semibold text-[#647052]">
+                {bodySource}
+              </span>
+            </div>
+            {latestInbound && (
+              <div className="mt-2 space-y-1 text-[11.5px] text-[#6A715F]">
+                <div className="truncate">
+                  From {latestInbound.fromName ?? latestInbound.fromEmail} ·{" "}
+                  {formatDistanceToNow(new Date(latestInbound.occurredAt))}
+                </div>
+                <div className="truncate">Subject: {latestInbound.subject ?? "No subject"}</div>
+              </div>
+            )}
+            <div className="mt-2 max-h-40 overflow-y-auto whitespace-pre-line text-[12px] leading-[1.62] text-[#34382D]">
+              {truncateText(bodyText, 900)}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-[9px] border border-[#DCE3D8] bg-[#FAF8F5]/70 px-3 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7E8B66]">
+                Thread loaded
+              </div>
+              {recentThread.length > 0 ? (
+                <div className="mt-2 space-y-2">
+                  {recentThread.map((message, index) => (
+                    <div
+                      key={`${message.direction}-${message.occurredAt}-${index}`}
+                      className="border-t border-[#E1E7DB] pt-2 first:border-t-0 first:pt-0"
+                    >
+                      <div className="flex items-center gap-2 text-[10.5px] font-semibold text-[#647052]">
+                        <span>{message.direction === "OUTBOUND" ? "You" : message.fromName ?? message.fromEmail}</span>
+                        <span className="text-[#9AA58E]">
+                          {formatDistanceToNow(new Date(message.occurredAt))}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11.5px] leading-5 text-[#4B5143]">
+                        {truncateText(message.snippet ?? message.subject ?? "No preview available.", 170)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-[11.5px] leading-5 text-[#6A715F]">
+                  Generate a draft to show the loaded Gmail thread here.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-[9px] border border-[#DCE3D8] bg-[#FAF8F5]/70 px-3 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7E8B66]">
+                Voice sources
+              </div>
+              {references.length > 0 ? (
+                <div className="mt-2 space-y-2">
+                  {references.slice(0, 4).map((reference) => (
+                    <div key={reference.id} className="border-t border-[#E1E7DB] pt-2 first:border-t-0 first:pt-0">
+                      <div className="truncate text-[11.5px] font-semibold text-[#4B5143]">
+                        {reference.filename}
+                      </div>
+                      <div className="mt-0.5 text-[10.5px] uppercase tracking-[0.06em] text-[#9AA58E]">
+                        {humanizeKey(reference.sourceType)}
+                      </div>
+                      {reference.toneNotes && (
+                        <p className="mt-1 text-[11.5px] leading-5 text-[#6A715F]">
+                          {truncateText(reference.toneNotes, 150)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-[11.5px] leading-5 text-[#6A715F]">
+                  {selectedDraft
+                    ? "No uploaded voice reference materials matched this draft."
+                    : "Voice sources appear after a draft is generated."}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[9px] border border-[#DCE3D8] bg-[#FAF8F5]/70 px-3 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7E8B66]">
+              Known gaps
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {missingContext.map((item) => (
+                <li key={item} className="flex gap-2 text-[11.5px] leading-5 text-[#4B5143]">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#9AA58E]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </details>
+  );
+}
+
 function ActionButton({
   icon: Icon,
   label,
@@ -1054,6 +1276,67 @@ function buildContextHighlights(contact: ContactDetail | null | undefined): stri
   }
 
   return Array.from(new Set(highlights)).slice(0, 8);
+}
+
+function buildMissingContextItems({
+  selected,
+  selectedDraft,
+  contact,
+  audit,
+}: {
+  selected: InboxItemData;
+  selectedDraft: Draft | undefined;
+  contact: ContactDetail | null | undefined;
+  audit: DraftWorkspaceAudit | null;
+}): string[] {
+  const gaps: string[] = [];
+  const latestInbound = audit?.context.replyContext?.latestInbound ?? null;
+
+  if (!selectedDraft) {
+    gaps.push("Generate the draft to load exact Gmail thread and voice provenance before saving.");
+  } else if (!audit) {
+    gaps.push("Workspace audit did not load; open the draft workspace before sending.");
+  }
+
+  if (audit && !audit.context.replyContext) {
+    gaps.push("Full Gmail thread context was not available for this draft.");
+  }
+
+  if (latestInbound && !latestInbound.bodyIsFull) {
+    gaps.push("Only a snippet was available for the latest inbound email.");
+  }
+
+  if (audit && audit.context.references.length === 0) {
+    gaps.push("No uploaded voice reference materials matched this draft.");
+  }
+
+  const nonEmailFactCount =
+    contact?.personFacts?.filter((fact) => fact.type !== "email_address").length ?? 0;
+  if (audit && !hasMemorySnapshot(audit.context.memory) && nonEmailFactCount === 0) {
+    gaps.push("No saved relationship memory or non-email contact facts were available.");
+  }
+
+  if (!selected.contactEmail && !selectedDraft?.contact.email) {
+    gaps.push("No recipient email is on file.");
+  }
+
+  if (gaps.length === 0) {
+    gaps.push("No obvious context gaps; still review the exact draft before saving to Gmail.");
+  }
+
+  return gaps;
+}
+
+function hasMemorySnapshot(memory: MemorySnapshot | null | undefined): boolean {
+  if (!memory) return false;
+  if (memory.recurringThemes.length > 0 || memory.openThreads.length > 0) return true;
+  return Object.keys(asPlainRecord(memory.personalContext)).length > 0;
+}
+
+function truncateText(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) return trimmed || "No preview available.";
+  return `${trimmed.slice(0, maxLength - 3).trim()}...`;
 }
 
 function asRecordArray(value: unknown): Array<Record<string, unknown>> {
