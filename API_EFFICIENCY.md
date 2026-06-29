@@ -68,6 +68,7 @@
 - Removed the unused generic sightings review component and converted `/api/sightings` into a fail-closed legacy stub. Current duplicate/contact-sighting review flows use the Merge and LinkedIn review surfaces instead.
 - Converted unused legacy `/api/action-items` routes into fail-closed stubs so the old dashboard action-item API cannot duplicate Gmail action extraction or mutate stale action rows.
 - Converted unused legacy `/api/suggestions` and `/api/scheduling` routes into fail-closed stubs, removing accidental Calendar/provider and broad contact-query work from retired dashboard widgets.
+- Converted unused legacy `/api/dashboard/stats` and `/api/inbox` reads into fail-closed stubs. Active home and inbox surfaces use `/api/dashboard/bootstrap` and `/api/inbox-items`.
 
 ## Next Highest-Impact Efficiency Work
 
