@@ -56,6 +56,12 @@ interface InboxItemsData {
   allInboundCount?: number;
 }
 
+interface ManualGmailSyncResult {
+  processed: number;
+  scannedActions: boolean;
+  actionsSaved: number;
+}
+
 interface DraftContact {
   id: string;
   name: string;
@@ -160,6 +166,18 @@ interface ContactDetail {
     personalContext: unknown;
     recurringThemes: string[];
   } | null;
+}
+
+function apiErrorMessage(body: unknown, fallback: string): string {
+  if (
+    body &&
+    typeof body === "object" &&
+    "error" in body &&
+    typeof body.error === "string"
+  ) {
+    return body.error;
+  }
+  return fallback;
 }
 
 interface DataHealthResponse {
@@ -303,25 +321,55 @@ export function ReplyQueueConsole() {
   const highPriority = visibleItems.filter((item) => item.priority === "high");
   const earlier = visibleItems.filter((item) => item.priority !== "high");
 
-  const invalidateWorkflow = () => {
-    queryClient.invalidateQueries({ queryKey: ["reply-queue-bootstrap"] });
+  const invalidateWorkflow = (options: { contentChanged?: boolean } = {}) => {
+    const contentChanged = options.contentChanged ?? true;
     queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
+    if (!contentChanged) return;
+
+    queryClient.invalidateQueries({ queryKey: ["reply-queue-bootstrap"] });
     queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-    queryClient.invalidateQueries({ queryKey: ["drafts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["draft-workspace-audit"] });
   };
 
   const syncMutation = useMutation({
-    mutationFn: async () => {
-      await fetch("/api/gmail/sync", { method: "POST" });
-      await fetch("/api/gmail/extract-actions", { method: "POST" });
+    mutationFn: async (): Promise<ManualGmailSyncResult> => {
+      const syncRes = await fetch("/api/gmail/sync", { method: "POST" });
+      const syncBody = await syncRes.json().catch(() => ({}));
+      if (!syncRes.ok) {
+        throw new Error(apiErrorMessage(syncBody, "Gmail sync failed"));
+      }
+
+      const processed = Number((syncBody as { processed?: number }).processed ?? 0);
+      if (processed <= 0) {
+        return { processed: 0, scannedActions: false, actionsSaved: 0 };
+      }
+
+      const extractRes = await fetch("/api/gmail/extract-actions", { method: "POST" });
+      const extractBody = await extractRes.json().catch(() => ({}));
+      if (!extractRes.ok) {
+        throw new Error(apiErrorMessage(extractBody, "Action scan failed"));
+      }
+
+      return {
+        processed,
+        scannedActions: true,
+        actionsSaved: Number((extractBody as { actionsSaved?: number }).actionsSaved ?? 0),
+      };
     },
-    onSuccess: () => {
-      invalidateWorkflow();
-      toast("Synced Gmail and refreshed the queue");
+    onSuccess: (result) => {
+      invalidateWorkflow({ contentChanged: result.scannedActions });
+      toast(
+        result.scannedActions
+          ? result.actionsSaved > 0
+            ? `Synced ${result.processed} emails and found ${result.actionsSaved} action items`
+            : `Synced ${result.processed} emails and refreshed the queue`
+          : "Gmail is already up to date",
+      );
     },
-    onError: () => toast.error("Sync failed"),
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Sync failed");
+    },
   });
 
   const updateDraft = useMutation({

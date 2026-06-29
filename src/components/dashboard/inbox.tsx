@@ -30,6 +30,24 @@ import { trimToShortPhrase } from "@/lib/inbox/response-classifier";
 
 const SWIPE_THRESHOLD = 80;
 
+interface ManualGmailSyncResult {
+  processed: number;
+  scannedActions: boolean;
+  actionsSaved: number;
+}
+
+function apiErrorMessage(body: unknown, fallback: string): string {
+  if (
+    body &&
+    typeof body === "object" &&
+    "error" in body &&
+    typeof body.error === "string"
+  ) {
+    return body.error;
+  }
+  return fallback;
+}
+
 function useSwipe(onSwipeRight: () => void, onSwipeLeft: () => void) {
   const startX = useRef(0);
   const currentX = useRef(0);
@@ -309,17 +327,42 @@ export function Inbox() {
   // ─── Mutations ──────────────────────────────────────────────
 
   const syncMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<ManualGmailSyncResult> => {
       const syncRes = await fetch("/api/gmail/sync", { method: "POST" });
-      if (!syncRes.ok) throw new Error("Gmail sync failed");
+      const syncBody = await syncRes.json().catch(() => ({}));
+      if (!syncRes.ok) {
+        throw new Error(apiErrorMessage(syncBody, "Gmail sync failed"));
+      }
+
+      const processed = Number((syncBody as { processed?: number }).processed ?? 0);
+      if (processed <= 0) {
+        return { processed: 0, scannedActions: false, actionsSaved: 0 };
+      }
 
       const extractRes = await fetch("/api/gmail/extract-actions", { method: "POST" });
-      if (!extractRes.ok) throw new Error("Action scan failed");
+      const extractBody = await extractRes.json().catch(() => ({}));
+      if (!extractRes.ok) {
+        throw new Error(apiErrorMessage(extractBody, "Action scan failed"));
+      }
+
+      return {
+        processed,
+        scannedActions: true,
+        actionsSaved: Number((extractBody as { actionsSaved?: number }).actionsSaved ?? 0),
+      };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      toast("Synced and scanned for new items");
+    onSuccess: (result) => {
+      if (result.scannedActions) {
+        queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+        toast(
+          result.actionsSaved > 0
+            ? `Synced ${result.processed} emails and found ${result.actionsSaved} action items`
+            : `Synced ${result.processed} emails and scanned for new items`,
+        );
+      } else {
+        toast("Gmail is already up to date");
+      }
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Sync failed");
