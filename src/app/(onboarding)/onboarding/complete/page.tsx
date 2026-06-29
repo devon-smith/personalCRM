@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 
@@ -11,21 +11,29 @@ interface SelectedCircle {
   followUpDays: number;
 }
 
+function loadStoredCircles(): SelectedCircle[] {
+  if (typeof window === "undefined") return [];
+  const stored = window.sessionStorage.getItem("onboarding-circles");
+  if (!stored) return [];
+  try {
+    return JSON.parse(stored) as SelectedCircle[];
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredImportSource(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem("onboarding-import-source");
+}
+
 export default function OnboardingComplete() {
   const router = useRouter();
-  const [circles, setCircles] = useState<SelectedCircle[]>([]);
-  const [importSource, setImportSource] = useState<string | null>(null);
+  const [circles] = useState<SelectedCircle[]>(loadStoredCircles);
+  const [importSource] = useState<string | null>(loadStoredImportSource);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const stored = sessionStorage.getItem("onboarding-circles");
-    if (stored) {
-      setCircles(JSON.parse(stored) as SelectedCircle[]);
-    }
-    setImportSource(sessionStorage.getItem("onboarding-import-source"));
-  }, []);
 
   async function handleComplete() {
     setSaving(true);

@@ -127,6 +127,7 @@ export function DraftComposer() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Reset state when opening
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional modal-open reset */
   useEffect(() => {
     if (isOpen) {
       setDrafts(null);
@@ -156,6 +157,7 @@ export function DraftComposer() {
       }
     }
   }, [isOpen, presetContactId, presetTone, presetContext]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Resolve preset contact — fetch the single contact by ID rather than
   // loading the entire contact list (which can be ~30k rows). The result

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import {
   AlertTriangle,
   Mail,
@@ -108,7 +109,7 @@ export function SyncAlerts() {
       message:
         "Connect Gmail to sync emails and auto-discover contacts from your inbox.",
       action: (
-        <a
+        <Link
           href="/api/auth/add-google-account"
           className="inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors"
           style={{
@@ -124,16 +125,18 @@ export function SyncAlerts() {
         >
           Connect Google
           <ExternalLink className="h-3 w-3" />
-        </a>
+        </Link>
       ),
     });
   }
 
   // WhatsApp disconnected or stale heartbeat (>3 minutes)
+  // eslint-disable-next-line react-hooks/purity -- stale heartbeat depends on current time
+  const nowMs = Date.now();
   const whatsappStale =
     health.whatsapp?.status === "connected" &&
     health.whatsapp.lastSyncAt &&
-    Date.now() - new Date(health.whatsapp.lastSyncAt).getTime() > 3 * 60 * 1000;
+    nowMs - new Date(health.whatsapp.lastSyncAt).getTime() > 3 * 60 * 1000;
 
   if (health.whatsapp?.status === "disconnected" || whatsappStale) {
     alerts.push({

@@ -293,9 +293,11 @@ export function NetworkMap() {
   const [circleFilter, setCircleFilter] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- mounted gates the client-only Leaflet map */
   useEffect(() => {
     setMounted(true);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const { data, isLoading } = useQuery<MapResponse>({
     queryKey: ["circles-map"],

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Loader2, ChevronDown, UserPlus, ExternalLink, Mail, Users, Calendar, Sparkles, Check, Smartphone, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -86,13 +87,13 @@ function SourceAction({
     !hasGoogleOAuth
   ) {
     return (
-      <a
+      <Link
         href="/api/auth/signin?callbackUrl=/settings"
         className="flex items-center gap-1 rounded-md bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-[#7B8189] transition-colors hover:bg-[#EDEEF0] hover:text-[#6366F1]"
       >
         <ExternalLink className="h-3 w-3" />
         Connect
-      </a>
+      </Link>
     );
   }
 

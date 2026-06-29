@@ -47,10 +47,13 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const previousPathname = useRef(pathname);
   const scrollPositions = useRef<Map<string, number>>(new Map());
+  // eslint-disable-next-line react-hooks/refs -- previous route is read to derive transition direction
   const previousIndex = routeIndex(previousPathname.current);
   const currentIndex = routeIndex(pathname);
+  // eslint-disable-next-line react-hooks/refs -- previous route is read to derive transition direction
+  const isSamePathname = previousPathname.current === pathname;
   const direction =
-    previousPathname.current === pathname
+    isSamePathname
       ? "neutral"
       : currentIndex > previousIndex
         ? "forward"

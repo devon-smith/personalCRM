@@ -8,6 +8,21 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const { Client } = pg;
 
+interface InboxRow {
+  chatId: string;
+  contactId: string;
+  summary: string | null;
+  occurredAt: Date;
+}
+
+interface IdRow {
+  id: string;
+}
+
+interface ContactNameRow extends IdRow {
+  name: string;
+}
+
 async function main() {
   console.log("Connecting to:", process.env.DATABASE_URL?.replace(/:[^@]+@/, ":***@"));
   const client = new Client({ connectionString: process.env.DATABASE_URL });
@@ -78,7 +93,8 @@ async function main() {
   );
 
   // Check which have outbound after
-  const inboxChatIds = inboxRes.rows.map((r: any) => r.chatId);
+  const inboxRows = inboxRes.rows as InboxRow[];
+  const inboxChatIds = inboxRows.map((r) => r.chatId);
 
   const outboundAfterRes = inboxChatIds.length > 0
     ? await client.query(
@@ -103,18 +119,22 @@ async function main() {
       )
     : { rows: [] };
 
-  const resolvedSet = new Set(outboundAfterRes.rows.map((r: any) => r.chatId));
-  const trueInbox = inboxRes.rows.filter((r: any) => !resolvedSet.has(r.chatId));
+  const resolvedSet = new Set(
+    (outboundAfterRes.rows as Pick<InboxRow, "chatId">[]).map((r) => r.chatId),
+  );
+  const trueInbox = inboxRows.filter((r) => !resolvedSet.has(r.chatId));
 
   // Get contact names
-  const contactIds = [...new Set(trueInbox.map((r: any) => r.contactId))];
+  const contactIds = [...new Set(trueInbox.map((r) => r.contactId))];
   const contactsRes = contactIds.length > 0
     ? await client.query(
         `SELECT id, name FROM "Contact" WHERE id = ANY($1)`,
         [contactIds]
       )
     : { rows: [] };
-  const nameMap = new Map(contactsRes.rows.map((c: any) => [c.id, c.name]));
+  const nameMap = new Map(
+    (contactsRes.rows as ContactNameRow[]).map((c) => [c.id, c.name]),
+  );
 
   console.log(`\n\n=== TRUE INBOX (${trueInbox.length} items) ===`);
   for (const r of trueInbox) {
@@ -123,7 +143,7 @@ async function main() {
 
   // Check Cooper specifically
   if (cooperId) {
-    const cooperInInbox = trueInbox.some((r: any) => r.contactId === cooperId);
+    const cooperInInbox = trueInbox.some((r) => r.contactId === cooperId);
     console.log(`\nCooper in true inbox: ${cooperInInbox}`);
 
     if (!cooperInInbox) {

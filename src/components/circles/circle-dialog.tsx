@@ -42,6 +42,7 @@ export function CircleDialog({
   const [cadence, setCadence] = useState(initialValues?.followUpDays ?? 30);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional form reset when the dialog opens */
   useEffect(() => {
     if (open) {
       setName(initialValues?.name ?? "");
@@ -50,6 +51,7 @@ export function CircleDialog({
       setShowDeleteConfirm(false);
     }
   }, [open, initialValues]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {

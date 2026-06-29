@@ -50,6 +50,7 @@ export function ContactFormDialog({
   const [followUpDays, setFollowUpDays] = useState("");
 
   // Populate form when editing
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional form synchronization when editing */
   useEffect(() => {
     if (existing && isEditing) {
       setName(existing.name);
@@ -67,8 +68,10 @@ export function ContactFormDialog({
       setFollowUpDays(existing.followUpDays?.toString() ?? "");
     }
   }, [existing, isEditing]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Reset form when dialog closes
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional form reset when the dialog closes */
   useEffect(() => {
     if (!open) {
       setName("");
@@ -87,6 +90,7 @@ export function ContactFormDialog({
       setFollowUpDays("");
     }
   }, [open]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function handleTagKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && tagInput.trim()) {

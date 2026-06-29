@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { useMultiFileAuthState } from "@whiskeysockets/baileys";
+import { useMultiFileAuthState as createMultiFileAuthState } from "@whiskeysockets/baileys";
 import { config } from "./config.js";
 
 /**
@@ -9,5 +9,5 @@ import { config } from "./config.js";
  */
 export async function initAuthState() {
   await mkdir(config.authDir, { recursive: true });
-  return useMultiFileAuthState(config.authDir);
+  return createMultiFileAuthState(config.authDir);
 }

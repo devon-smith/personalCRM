@@ -249,7 +249,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Re-match existing interactions from this handle to the contact
-    const sourcePrefix = isEmail ? "gmail:" : "imsg:";
     let rematchedCount = 0;
 
     if (!isEmail) {
@@ -286,6 +285,7 @@ export async function POST(req: NextRequest) {
           },
           data: { contactId },
         });
+        rematchedCount = result.count;
         // Note: This is a simplified re-match. In production, you'd want to
         // track handle→interaction mappings more precisely.
       }

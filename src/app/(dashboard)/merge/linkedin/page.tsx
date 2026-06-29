@@ -16,7 +16,6 @@ import {
   HelpCircle,
   ArrowRight,
   ExternalLink,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -132,12 +131,16 @@ export default function LinkedInReviewPage() {
   const visibleItems = allItems
     .filter((i) => !resolvedIds.has(i.id))
     .filter((i) => filter === "all" || i.category === filter);
+  const boundedActiveIndex =
+    visibleItems.length === 0
+      ? 0
+      : Math.min(activeIndex, visibleItems.length - 1);
 
   // Keyboard navigation
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (visibleItems.length === 0) return;
-      const item = visibleItems[activeIndex];
+      const item = visibleItems[boundedActiveIndex];
       if (!item) return;
 
       if (e.key === "ArrowDown" || e.key === "j") {
@@ -161,20 +164,13 @@ export default function LinkedInReviewPage() {
         resolveMutation.mutate({ sightingId: item.id, action: "dismiss" });
       }
     },
-    [visibleItems, activeIndex, resolveMutation],
+    [visibleItems, boundedActiveIndex, resolveMutation],
   );
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  // Keep activeIndex in bounds
-  useEffect(() => {
-    if (activeIndex >= visibleItems.length && visibleItems.length > 0) {
-      setActiveIndex(visibleItems.length - 1);
-    }
-  }, [activeIndex, visibleItems.length]);
 
   if (isLoading) {
     return (
@@ -337,7 +333,7 @@ export default function LinkedInReviewPage() {
           <ReviewCard
             key={item.id}
             item={item}
-            isActive={idx === activeIndex}
+            isActive={idx === boundedActiveIndex}
             isPending={resolveMutation.isPending}
             onLink={(updateCompany) =>
               resolveMutation.mutate({

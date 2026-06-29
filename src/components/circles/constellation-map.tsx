@@ -171,9 +171,11 @@ function StoriesPanel({
   }, [goNext, goPrev, onClose]);
 
   // Reset index when circle changes
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional story reset when the selected circle changes */
   useEffect(() => {
     setStoryIndex(0);
   }, [circleId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function formatTime(iso: string): string {
     const d = new Date(iso);
@@ -296,19 +298,20 @@ function StoriesPanel({
 // ─── Star tooltip ────────────────────────────────────────────
 function StarTooltip({
   star,
-  containerRef,
+  containerWidth,
 }: {
   readonly star: StarPosition;
-  readonly containerRef: React.RefObject<HTMLDivElement | null>;
+  readonly containerWidth: number;
 }) {
-  const rect = containerRef.current?.getBoundingClientRect();
-  if (!rect) return null;
+  if (containerWidth <= 0) return null;
 
   // Keep tooltip within bounds
   const tooltipWidth = 180;
   let left = star.x - tooltipWidth / 2;
   if (left < 8) left = 8;
-  if (left + tooltipWidth > rect.width - 8) left = rect.width - tooltipWidth - 8;
+  if (left + tooltipWidth > containerWidth - 8) {
+    left = containerWidth - tooltipWidth - 8;
+  }
 
   return (
     <div
@@ -529,7 +532,10 @@ export function ConstellationMap() {
 
       {/* Tooltip */}
       {hoveredStar && (
-        <StarTooltip star={hoveredStar} containerRef={containerRef} />
+        <StarTooltip
+          star={hoveredStar}
+          containerWidth={dimensions.width}
+        />
       )}
 
       {/* Stories side panel */}

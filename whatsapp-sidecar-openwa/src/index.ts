@@ -110,7 +110,7 @@ async function start(): Promise<void> {
 // ─── Graceful shutdown ──────────────────────────────────────
 
 let shuttingDown = false;
-let activeClient: Client | null = null;
+const activeClient: Client | null = null;
 
 async function gracefulShutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
