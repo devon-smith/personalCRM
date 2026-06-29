@@ -454,7 +454,7 @@ function SyncRunRow({
 }) {
   const isError = run.status === "error";
   const statusColor = isError
-    ? "var(--accent-coral)"
+    ? "var(--status-urgent)"
     : run.status === "success"
       ? "var(--status-success)"
       : "var(--text-tertiary)";
@@ -487,7 +487,7 @@ function SyncRunRow({
         </span>
       </div>
       {run.error && (
-        <p className="basis-full truncate text-[11px]" style={{ color: "var(--accent-coral)" }}>
+        <p className="basis-full truncate text-[11px]" style={{ color: "var(--status-urgent)" }}>
           {run.error}
         </p>
       )}

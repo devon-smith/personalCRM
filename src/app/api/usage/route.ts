@@ -75,6 +75,22 @@ export interface UsageResponse {
     successRuns: number;
     errorRuns: number;
     runningRuns: number;
+    budget: {
+      providerCallsPerDay: number;
+      browserFallbackCallsPerDay: number;
+      errorRatePercent: number;
+      windowProviderCallLimit: number;
+      windowBrowserFallbackCallLimit: number;
+    };
+    budgetAlerts: Array<{
+      id: string;
+      severity: "warning" | "info";
+      title: string;
+      message: string;
+      actual: number;
+      limit: number | null;
+      unit: string;
+    }>;
     bySource: Array<{
       source: string;
       runCount: number;
@@ -99,6 +115,12 @@ export interface UsageResponse {
     }>;
   };
 }
+
+const SYNC_BUDGET = {
+  providerCallsPerDay: 40,
+  browserFallbackCallsPerDay: 4,
+  errorRatePercent: 10,
+};
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -334,7 +356,7 @@ export async function GET(request: Request) {
     }),
     { calls: 0, in: 0, out: 0, cost: 0 },
   );
-  const sync = buildSyncUsage(syncRows);
+  const sync = buildSyncUsage(syncRows, days);
 
   const response: UsageResponse = {
     windowDays: days,
@@ -367,6 +389,7 @@ function buildSyncUsage(
     provider_calls: bigint | null;
     items_processed: bigint | null;
   }>,
+  days: number,
 ): UsageResponse["sync"] {
   const sourceMap = new Map<
     string,
@@ -384,6 +407,9 @@ function buildSyncUsage(
   >();
   const statusMap = new Map<string, number>();
   const errorMap = new Map<string, number>();
+  const windowProviderCallLimit = SYNC_BUDGET.providerCallsPerDay * days;
+  const windowBrowserFallbackCallLimit =
+    SYNC_BUDGET.browserFallbackCallsPerDay * days;
 
   let totalRuns = 0;
   let totalProviderCalls = 0;
@@ -391,6 +417,7 @@ function buildSyncUsage(
   let successRuns = 0;
   let errorRuns = 0;
   let runningRuns = 0;
+  let browserFallbackProviderCalls = 0;
 
   for (const row of rows) {
     const runCount = Number(row.run_count);
@@ -406,6 +433,9 @@ function buildSyncUsage(
     if (isSuccess) successRuns += runCount;
     if (isError) errorRuns += runCount;
     if (isRunning) runningRuns += runCount;
+    if (row.trigger === "browser_fallback") {
+      browserFallbackProviderCalls += providerCalls;
+    }
 
     const source = sourceMap.get(row.source) ?? {
       runCount: 0,
@@ -440,6 +470,62 @@ function buildSyncUsage(
     }
   }
 
+  const errorRatePercent =
+    totalRuns > 0 ? Math.round((errorRuns / totalRuns) * 100) : 0;
+  const budgetAlerts: UsageResponse["sync"]["budgetAlerts"] = [];
+
+  if (totalProviderCalls > windowProviderCallLimit) {
+    budgetAlerts.push({
+      id: "sync-provider-call-budget",
+      severity: "warning",
+      title: "Google sync call budget exceeded",
+      message:
+        "Sync used more Google provider calls than expected for this window. Check for repeated full syncs, provider retries, or an unhealthy worker.",
+      actual: totalProviderCalls,
+      limit: windowProviderCallLimit,
+      unit: "calls",
+    });
+  }
+
+  if (browserFallbackProviderCalls > windowBrowserFallbackCallLimit) {
+    budgetAlerts.push({
+      id: "browser-fallback-budget",
+      severity: "warning",
+      title: "Browser fallback is doing too much sync work",
+      message:
+        "Browser fallback should be rare in production. If it carries the sync load, users pay the latency cost and Google calls become harder to control.",
+      actual: browserFallbackProviderCalls,
+      limit: windowBrowserFallbackCallLimit,
+      unit: "calls",
+    });
+  }
+
+  if (errorRuns > 0 && errorRatePercent >= SYNC_BUDGET.errorRatePercent) {
+    budgetAlerts.push({
+      id: "sync-error-rate",
+      severity: "warning",
+      title: "Sync error rate is elevated",
+      message:
+        "A rising error rate usually means auth churn, provider rate limits, or network instability. Resolve this before adding more automatic sync frequency.",
+      actual: errorRatePercent,
+      limit: SYNC_BUDGET.errorRatePercent,
+      unit: "%",
+    });
+  }
+
+  if (runningRuns > 0) {
+    budgetAlerts.push({
+      id: "sync-runs-still-running",
+      severity: "info",
+      title: "Sync runs are still marked running",
+      message:
+        "One or more sync runs have not finished yet. If this persists, inspect worker health before increasing sync cadence.",
+      actual: runningRuns,
+      limit: null,
+      unit: "runs",
+    });
+  }
+
   return {
     totalRuns,
     totalProviderCalls,
@@ -447,6 +533,14 @@ function buildSyncUsage(
     successRuns,
     errorRuns,
     runningRuns,
+    budget: {
+      providerCallsPerDay: SYNC_BUDGET.providerCallsPerDay,
+      browserFallbackCallsPerDay: SYNC_BUDGET.browserFallbackCallsPerDay,
+      errorRatePercent: SYNC_BUDGET.errorRatePercent,
+      windowProviderCallLimit,
+      windowBrowserFallbackCallLimit,
+    },
+    budgetAlerts,
     bySource: Array.from(sourceMap.entries())
       .map(([source, aggregate]) => ({ source, ...aggregate }))
       .sort((a, b) => b.providerCalls - a.providerCalls),

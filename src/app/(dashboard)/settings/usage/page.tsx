@@ -3,7 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Activity, AlertCircle, BarChart3, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  Activity,
+  AlertCircle,
+  BarChart3,
+  CheckCircle2,
+  RefreshCw,
+  TriangleAlert,
+} from "lucide-react";
 import type { UsageResponse } from "@/app/api/usage/route";
 
 const WINDOWS: Array<{ days: number; label: string }> = [
@@ -82,11 +90,11 @@ export default function UsagePage() {
       {error && (
         <div
           className="crm-card flex items-center gap-3 p-4"
-          style={{ borderColor: "var(--accent-coral)" }}
+          style={{ borderColor: "var(--status-urgent)" }}
         >
           <AlertCircle
             className="h-4 w-4"
-            style={{ color: "var(--accent-coral)" }}
+            style={{ color: "var(--status-urgent)" }}
           />
           <p className="ds-body-sm">Failed to load usage stats.</p>
         </div>
@@ -196,6 +204,8 @@ export default function UsagePage() {
                   />
                 </div>
 
+                <SyncBudgetPanel sync={data.sync} />
+
                 <div className="grid gap-3 lg:grid-cols-2">
                   <SyncSourceTable rows={data.sync.bySource} />
                   <SyncTriggerTable rows={data.sync.byTrigger} />
@@ -215,9 +225,8 @@ export default function UsagePage() {
                           key={row.category}
                           className="rounded-full px-2.5 py-1 text-[12px] capitalize"
                           style={{
-                            color: "var(--accent-coral)",
-                            backgroundColor:
-                              "color-mix(in srgb, var(--accent-coral) 12%, transparent)",
+                            color: "var(--status-urgent)",
+                            backgroundColor: "var(--status-urgent-bg)",
                           }}
                         >
                           {formatLabel(row.category)} · {row.runCount}
@@ -430,6 +439,114 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SyncBudgetPanel({ sync }: { sync: UsageResponse["sync"] }) {
+  const fallbackCalls =
+    sync.byTrigger.find((row) => row.trigger === "browser_fallback")
+      ?.providerCalls ?? 0;
+
+  if (sync.budgetAlerts.length === 0) {
+    return (
+      <div
+        className="crm-card flex items-start gap-3 p-4"
+        style={{
+          borderColor: "var(--status-success-bg)",
+          backgroundColor: "var(--status-success-bg)",
+        }}
+      >
+        <CheckCircle2
+          className="mt-0.5 h-4 w-4 shrink-0"
+          style={{ color: "var(--status-success)" }}
+        />
+        <div className="min-w-0">
+          <p className="ds-body-sm font-medium">Sync is within budget</p>
+          <p
+            className="mt-1 text-[12px] leading-relaxed"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Google sync used {sync.totalProviderCalls.toLocaleString()} of{" "}
+            {sync.budget.windowProviderCallLimit.toLocaleString()} calls in this
+            window. Browser fallback used {fallbackCalls.toLocaleString()} of{" "}
+            {sync.budget.windowBrowserFallbackCallLimit.toLocaleString()} calls.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      {sync.budgetAlerts.map((alert) => {
+        const isWarning = alert.severity === "warning";
+        return (
+          <div
+            key={alert.id}
+            className="crm-card flex items-start gap-3 p-4"
+            style={{
+              borderColor: isWarning
+                ? "var(--status-warning)"
+                : "var(--border-subtle)",
+              backgroundColor: isWarning
+                ? "var(--status-warning-bg)"
+                : "var(--surface)",
+            }}
+          >
+            {isWarning ? (
+              <TriangleAlert
+                className="mt-0.5 h-4 w-4 shrink-0"
+                style={{ color: "var(--status-warning)" }}
+              />
+            ) : (
+              <AlertCircle
+                className="mt-0.5 h-4 w-4 shrink-0"
+                style={{ color: "var(--status-info)" }}
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="ds-body-sm font-medium">{alert.title}</p>
+                <span
+                  className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{
+                    color: isWarning
+                      ? "var(--status-warning)"
+                      : "var(--status-info)",
+                    backgroundColor: isWarning
+                      ? "rgba(176, 139, 63, 0.12)"
+                      : "var(--status-info-bg)",
+                  }}
+                >
+                  {formatBudgetAlertValue(alert)}
+                </span>
+              </div>
+              <p
+                className="mt-1 text-[12px] leading-relaxed"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                {alert.message}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function formatBudgetAlertValue(
+  alert: UsageResponse["sync"]["budgetAlerts"][number],
+) {
+  const actual =
+    alert.unit === "%"
+      ? `${alert.actual.toLocaleString()}%`
+      : `${alert.actual.toLocaleString()} ${alert.unit}`;
+  if (alert.limit === null) return actual;
+  const limit =
+    alert.unit === "%"
+      ? `${alert.limit.toLocaleString()}%`
+      : `${alert.limit.toLocaleString()} ${alert.unit}`;
+  return `${actual} / ${limit}`;
+}
+
 function SyncSourceTable({
   rows,
 }: {
@@ -470,7 +587,7 @@ function SyncSourceTable({
                 style={{
                   color:
                     row.errorRuns > 0
-                      ? "var(--accent-coral)"
+                      ? "var(--status-urgent)"
                       : "var(--text-tertiary)",
                 }}
               >
@@ -526,7 +643,7 @@ function SyncTriggerTable({
                 style={{
                   color:
                     row.errorRuns > 0
-                      ? "var(--accent-coral)"
+                      ? "var(--status-urgent)"
                       : "var(--text-tertiary)",
                 }}
               >
@@ -571,7 +688,7 @@ function StatCard({
             tone === "primary"
               ? "var(--text-primary)"
               : tone === "warning"
-                ? "var(--accent-coral)"
+                ? "var(--status-urgent)"
                 : "var(--text-secondary)",
         }}
       >

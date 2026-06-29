@@ -27,11 +27,12 @@
 - Gmail/Calendar syncs now write durable `SyncRun` telemetry across cron, webhook, manual, and browser-fallback triggers, including per-run Google provider-call counts. Webhook worker jobs honor their `userId` payload, so a single mailbox notification no longer scans every connected user.
 - Sync-run telemetry now has a daily retention worker and structured error categories for auth, rate-limit, provider, network, and unknown failures.
 - API usage now includes sync health aggregates from `SyncRun`: run counts, Google calls, success/error totals, source/trigger breakdowns, and error categories.
+- Settings usage now computes explicit sync budget alerts from existing telemetry: total Google calls per day, browser-fallback call volume, elevated sync error rate, and long-running sync runs.
 
 ## Next Highest-Impact Efficiency Work
 
 - Add provider-call telemetry outside `AIGenerationLog`: embedding batch counts and non-sync Google requests.
-- Add an explicit sync budget/alert threshold: e.g. flag when browser fallback makes too many Google calls in a day or when sync error rate rises above a small threshold.
+- Make sync budgets configurable per environment or user once production call patterns are known.
 
 ## Product Polish Before App Finalization
 
