@@ -63,7 +63,6 @@ chrome-extension/
 | `/api/extension/sync-messages` | POST | Sync LinkedIn DMs |
 | `/api/extension/add-note` | POST | Add a note to a contact |
 | `/api/extension/add-tags` | POST | Add tags to a contact |
-| `/api/extension/log-activity` | POST | Log profile views, connections |
 | `/api/extension/follow-ups` | GET | Get overdue follow-ups |
 
 ## Troubleshooting
@@ -77,5 +76,4 @@ chrome-extension/
 
 - All DOM selectors are best-effort with multiple fallbacks. LinkedIn updates their DOM frequently, so selectors may need periodic maintenance.
 - Profile data is cached for 1 hour per URL to avoid excessive API calls.
-- Activity logging (profile views) is debounced to once per hour per contact.
 - For production deployment, replace cookie-based auth with a token: generate one in CRM settings, paste into the extension popup, and send as `Authorization` header.
