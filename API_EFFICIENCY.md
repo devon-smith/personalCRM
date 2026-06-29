@@ -12,7 +12,7 @@
 ## Changes Made In This Pass
 
 - Browser Gmail sync is now a stale fallback instead of a fixed 2-minute poll. It checks the local sync state first and skips the Gmail API when the worker/browser synced recently.
-- Browser contacts/calendar auto-sync now has a 6-hour local cooldown. Manual sync buttons still force a sync.
+- Browser fallback sync is Gmail-only. Contacts and Calendar are worker/manual sync paths so page loads never trigger hidden full-contact or Calendar provider scans.
 - `/api/health` is DB-only by default. It no longer spends a Gmail profile API call on normal dashboard loads. Use `/api/health?live=1` only when debugging token reachability.
 - Gmail and Calendar webhook-triggered worker jobs now use stable per-user Graphile job keys, so rapid push-notification bursts collapse into one pending sync per source/user instead of stacking duplicate jobs.
 - Dashboard home now uses `/api/dashboard/bootstrap` for stats, meetings, and birthdays instead of three client requests, and the page-level Gmail sync timer was removed in favor of the shared shell sync fallback.
@@ -81,7 +81,7 @@
 - Retired the WhatsApp runtime surface: removed the `NEXT_PUBLIC_ENABLE_WHATSAPP` flag, removed the Sources WhatsApp setup card, made `/api/whatsapp/*` fail closed, and removed the WhatsApp voice-corpus embedding pass.
 - Retired the iMessage runtime surface: removed the `NEXT_PUBLIC_ENABLE_IMESSAGE` flag, removed Sources/People/Settings iMessage sync UI, made `/api/imessage*` fail closed, and removed iMessage status/source checks from health and data-health payloads.
 - Removed the unused Mac `chat.db` reader, iMessage sync package, and iMessage backfill branch after verifying no active app, worker, script, or test reference remained. Gmail remains the only maintained message-ingestion backfill path.
-- Browser fallback sync now uses a short cross-tab localStorage lock, skips work while the tab is hidden, and only invalidates inbox/dashboard caches when a fallback Gmail run actually processes new mail.
+- Browser fallback sync now uses a short cross-tab localStorage lock, skips work while the tab is hidden, never auto-runs Contacts/Calendar provider calls, and only invalidates inbox/dashboard caches when a fallback Gmail run actually processes new mail.
 - Removed the tracked fail-closed legacy route stubs and retired WhatsApp sidecar projects so production no longer advertises inert Feed, Activity, WhatsApp, iMessage, backfill, cleanup, debug, or retired suggestion endpoints.
 
 ## Next Highest-Impact Efficiency Work

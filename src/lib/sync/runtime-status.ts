@@ -76,7 +76,7 @@ function getBrowserSyncMode(): SyncRuntimeStatus["browserSync"] {
 
   return {
     mode: "enabled",
-    reason: "Local development fallback is enabled.",
+    reason: "Local development Gmail fallback is enabled.",
   };
 }
 
