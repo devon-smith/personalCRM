@@ -19,6 +19,7 @@
 - `npm run worker:migrate` now initializes the Graphile Worker schema through `WORKER_DATABASE_URL` when set, matching the worker runtime and avoiding pooled-connection setup in production.
 - Manual Inbox/Reply Queue Gmail sync now runs the AI action extractor only when Gmail actually processed new mail, and zero-new-mail syncs avoid broad queue/dashboard invalidations.
 - Manual Inbox/Reply Queue Gmail sync now passes a capped list of changed Gmail thread refs into action extraction, so the extractor fetches only sync-touched threads instead of listing and re-reading a recent inbox window after every successful sync.
+- The public Gmail action-extraction route now requires those changed thread refs. Direct POSTs can no longer trigger the library's recent-inbox fallback scan; deliberate maintenance code can still use the library/backfill functions.
 - Reply queue bootstrap now returns a tiny private cache window, absorbing immediate reloads/double mounts while keeping draft/send mutations effectively fresh.
 - Reply queue selected-contact context now uses `/api/contacts/:id?scope=reply-context`, keeping the facts/profile/memory needed for drafting while capping the right-rail interaction timeline at the 5 rows it renders instead of loading the full 50-row contact detail payload.
 - Ask history now loads saved-query summaries first and lazy-loads full answers/evidence only when a row is expanded, avoiding a 200-row answer/evidence payload on every history open.

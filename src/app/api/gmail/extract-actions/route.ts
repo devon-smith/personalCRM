@@ -36,7 +36,7 @@ function parseChangedThreads(input: unknown): GmailChangedThreadRef[] {
 
 /**
  * POST /api/gmail/extract-actions
- * Run AI extraction on recent email threads to find action items.
+ * Run AI extraction on Gmail threads touched by the sync that just ran.
  */
 export async function POST(request: Request) {
   try {
@@ -49,10 +49,14 @@ export async function POST(request: Request) {
       changedThreads?: unknown;
     } | null;
     const changedThreads = parseChangedThreads(body?.changedThreads);
-    const result = await extractActionItems(
-      session.user.id,
-      changedThreads.length > 0 ? { changedThreads } : undefined,
-    );
+    if (changedThreads.length === 0) {
+      return NextResponse.json(
+        { error: "changedThreads is required; run Gmail sync before extraction" },
+        { status: 400 },
+      );
+    }
+
+    const result = await extractActionItems(session.user.id, { changedThreads });
     return NextResponse.json(result);
   } catch (error) {
     console.error("[POST /api/gmail/extract-actions]", error);
