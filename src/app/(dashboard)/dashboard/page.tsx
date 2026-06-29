@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import {
   ArrowUpRight,
@@ -14,97 +14,14 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import type { UpcomingEvent } from "@/lib/calendar";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { NetworkQueryBox } from "@/components/network-query/network-query-box";
 import { AssistantObservations } from "@/components/dashboard/assistant-observations";
 import { SyncAlerts } from "@/components/dashboard/sync-alerts";
+import type { DashboardBootstrapResponse } from "@/app/api/dashboard/bootstrap/route";
 
-interface CircleBadge {
-  id: string;
-  name: string;
-  color: string;
-}
-
-interface RecentInteraction {
-  id: string;
-  type: string;
-  subject: string | null;
-  summary: string | null;
-  occurredAt: string;
-  direction: string;
-  channel: string | null;
-  messageCount: number;
-  contact: {
-    id: string;
-    name: string;
-    company: string | null;
-    tier: string;
-    source: string;
-    circles: { circle: CircleBadge }[];
-  };
-}
-
-interface RecentlyActiveContact {
-  id: string;
-  name: string;
-  company: string | null;
-  tier: string;
-  source: string;
-  interactionCount: number;
-  lastInteraction: string | null;
-  lastInteractionType: string | null;
-  lastInteractionSummary: string | null;
-  circles: CircleBadge[];
-}
-
-interface DashboardStats {
-  tierCounts: Record<string, number>;
-  contactsThisMonth: number;
-  interactionsThisWeek: number;
-  totalContacts: number;
-  recentInteractions: RecentInteraction[];
-  overdueContacts: Array<{
-    id: string;
-    name: string;
-    company: string | null;
-    daysOverdue: number;
-    tier: string;
-  }>;
-  overdueCount: number;
-  circles: Array<{
-    id: string;
-    name: string;
-    color: string;
-    icon: string;
-    contactCount: number;
-  }>;
-  recentlyActive: RecentlyActiveContact[];
-  sourceCounts: Record<string, number>;
-}
-
-interface CalendarResponse {
-  events: UpcomingEvent[];
-  error?: string;
-}
-
-interface Birthday {
-  id: string;
-  name: string;
-  company: string | null;
-  avatarUrl: string | null;
-  birthday: string;
-  birthdayLabel: string;
-  daysUntil: number;
-  isToday: boolean;
-}
-
-interface BirthdaysResponse {
-  birthdays: Birthday[];
-}
-
-const SYNC_INTERVAL_MS = 10 * 60 * 1000;
+type Birthday = DashboardBootstrapResponse["birthdays"][number];
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -163,63 +80,18 @@ function compactLabel(value: number, label: string): string {
 }
 
 export default function DashboardPage() {
-  const queryClient = useQueryClient();
-  const syncInFlight = useRef(false);
   const { data: session } = useSession();
 
-  const runSync = useCallback(async () => {
-    if (syncInFlight.current) return;
-    syncInFlight.current = true;
-    try {
-      await fetch("/api/gmail/sync", { method: "POST" });
-      queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["upcoming-meetings"] });
-    } finally {
-      syncInFlight.current = false;
-    }
-  }, [queryClient]);
-
-  useEffect(() => {
-    const initialTimer = setTimeout(runSync, 3000);
-    const interval = setInterval(runSync, SYNC_INTERVAL_MS);
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(interval);
-    };
-  }, [runSync]);
-
-  const { data: stats, isLoading } = useQuery<DashboardStats>({
+  const { data: bootstrap, isLoading } = useQuery<DashboardBootstrapResponse>({
     queryKey: ["dashboard"],
     queryFn: async () => {
-      const res = await fetch("/api/dashboard/stats");
-      if (!res.ok) throw new Error("Failed to fetch stats");
+      const res = await fetch("/api/dashboard/bootstrap");
+      if (!res.ok) throw new Error("Failed to fetch dashboard");
       return res.json();
     },
     staleTime: 60_000,
-    refetchInterval: 60_000,
-  });
-
-  const { data: calendar } = useQuery<CalendarResponse>({
-    queryKey: ["upcoming-meetings"],
-    queryFn: async () => {
-      const res = await fetch("/api/calendar");
-      if (!res.ok) return { events: [], error: `Calendar unavailable (${res.status})` };
-      return res.json();
-    },
+    refetchInterval: 5 * 60_000,
     retry: false,
-    staleTime: 5 * 60_000,
-  });
-
-  const { data: birthdayData } = useQuery<BirthdaysResponse>({
-    queryKey: ["birthdays", 30],
-    queryFn: async () => {
-      const res = await fetch("/api/birthdays?days=30");
-      if (!res.ok) return { birthdays: [] };
-      return res.json();
-    },
-    retry: false,
-    staleTime: 10 * 60_000,
   });
 
   const firstName = getFirstName(session?.user?.name);
@@ -227,6 +99,8 @@ export default function DashboardPage() {
     ? `${getGreeting()}, ${firstName}.`
     : `${getGreeting()}.`;
 
+  const stats = bootstrap?.stats;
+  const calendar = bootstrap?.calendar;
   const todayMeetings = useMemo(
     () => (calendar?.events ?? []).filter((event) => !event.allDay && isToday(event.startTime)),
     [calendar?.events],
@@ -234,7 +108,7 @@ export default function DashboardPage() {
   const upcomingMeetings = (calendar?.events ?? []).filter((event) => !event.allDay);
   const visibleMeetings = todayMeetings.length > 0 ? todayMeetings : upcomingMeetings.slice(0, 4);
   const meetingSectionLabel = todayMeetings.length > 0 ? "Today" : "Upcoming";
-  const birthdays = birthdayData?.birthdays ?? [];
+  const birthdays = bootstrap?.birthdays ?? [];
 
   if (isLoading || !stats) {
     return (
