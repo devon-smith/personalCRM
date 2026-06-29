@@ -40,18 +40,18 @@ npm run worker:migrate
 npm run worker
 ```
 
-`npm run worker:migrate` and the worker runtime both prefer
-`WORKER_DATABASE_URL` when set, otherwise `DATABASE_URL`. In production
-use the direct Postgres connection for `WORKER_DATABASE_URL`;
-graphile-worker uses named prepared statements that do not work
-reliably through transaction pooling. The Graphile runner, web-side
-enqueue utility, and task-local Prisma clients all use the same worker
-DB helper so scheduled jobs do not accidentally fall back to the pooled
-app URL. The worker entrypoint also marks `CRM_WORKER_RUNTIME=true`,
-which lets shared app helpers that use the lazy `src/lib/prisma`
-singleton prefer `WORKER_DATABASE_URL` without changing normal Vercel
-web requests. Concurrency is 4, polls every 2s, and handles
-SIGINT/SIGTERM cleanly.
+`npm run worker:migrate` loads `.env.local` and `.env`, then prefers
+`WORKER_DATABASE_URL` when set, otherwise `DATABASE_URL`. The worker
+runtime follows the same preference. In production use the direct
+Postgres connection for `WORKER_DATABASE_URL`; graphile-worker uses
+named prepared statements that do not work reliably through transaction
+pooling. The Graphile runner, web-side enqueue utility, and task-local
+Prisma clients all use the same worker DB helper so scheduled jobs do
+not accidentally fall back to the pooled app URL. The worker entrypoint
+also marks `CRM_WORKER_RUNTIME=true`, which lets shared app helpers
+that use the lazy `src/lib/prisma` singleton prefer
+`WORKER_DATABASE_URL` without changing normal Vercel web requests.
+Concurrency is 4, polls every 2s, and handles SIGINT/SIGTERM cleanly.
 
 ## Where to run it
 

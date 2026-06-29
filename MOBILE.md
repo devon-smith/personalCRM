@@ -11,6 +11,12 @@ jobs, or Google sync locally.
 - An iPhone registered for development builds, or TestFlight access.
 - A running CRM backend with the same database/env values the web app uses.
 
+Before running the mobile scripts from a fresh shell:
+
+```bash
+nvm use 22
+```
+
 ## Local Device Build
 
 Use this when the Mac and Jennifer's iPhone are on the same Wi-Fi network.

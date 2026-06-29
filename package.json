@@ -20,7 +20,7 @@
     "deploy:audit": "tsx scripts/audit-deployment-env.ts",
     "drafts:regenerate-stale": "DOTENV_CONFIG_PATH=.env.local tsx -r dotenv/config scripts/regenerate-stale-reply-drafts.ts",
     "worker": "tsx worker/index.ts",
-    "worker:migrate": "graphile-worker --connection \"${WORKER_DATABASE_URL:-$DATABASE_URL}\" --schema-only",
+    "worker:migrate": "tsx scripts/migrate-worker-schema.ts",
     "mobile:add:ios": "npx cap add ios",
     "mobile:add:android": "npx cap add android",
     "mobile:sync": "npx cap sync",
