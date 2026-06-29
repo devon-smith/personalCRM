@@ -10,6 +10,8 @@
  * What this cleans:
  * - iMessage/SMS interactions and iMessage thread/sync state.
  * - Apple Contacts rows that have no remaining non-message history.
+ * - Apple Contacts rows with legitimate Gmail/Calendar history are
+ *   retained and reclassified as MANUAL so retired sources disappear.
  * - Obvious Devon/dev/test contacts, email rows, inbox items, drafts,
  *   and associated derived rows.
  * - Derived assistant intelligence likely polluted by message imports.
@@ -118,20 +120,34 @@ function messageInteractionWhere(userId: string) {
 }
 
 function appleContactDeleteWhere(userId: string) {
-  const messageOnly = [
-    { channel: { in: ["iMessage", "SMS"] } },
-    { sourceId: { startsWith: "imsg" } },
-  ];
-
   return {
     userId,
     source: ContactSource.APPLE_CONTACTS,
     interactions: {
       none: {
-        NOT: {
-          OR: messageOnly,
-        },
+        ...nonMessageInteractionWhere(),
       },
+    },
+  };
+}
+
+function appleContactRetainWhere(userId: string): Prisma.ContactWhereInput {
+  return {
+    userId,
+    source: ContactSource.APPLE_CONTACTS,
+    interactions: {
+      some: nonMessageInteractionWhere(),
+    },
+  };
+}
+
+function nonMessageInteractionWhere(): Prisma.InteractionWhereInput {
+  return {
+    NOT: {
+      OR: [
+        { channel: { in: ["iMessage", "SMS"] } },
+        { sourceId: { startsWith: "imsg" } },
+      ],
     },
   };
 }
@@ -333,6 +349,7 @@ async function collectDevArtifacts(userId: string) {
 async function collectPlan(userId: string) {
   const messageWhere = messageInteractionWhere(userId);
   const appleDeleteWhere = appleContactDeleteWhere(userId);
+  const appleRetainWhere = appleContactRetainWhere(userId);
   const devArtifacts = await collectDevArtifacts(userId);
 
   const [
@@ -342,6 +359,7 @@ async function collectPlan(userId: string) {
     imessageSyncStates,
     appleContactsTotal,
     appleContactsToDelete,
+    appleContactsToReclassify,
     appleContactsToKeep,
     savedQueries,
     assistantObservations,
@@ -367,6 +385,7 @@ async function collectPlan(userId: string) {
     prisma.iMessageSyncState.count({ where: { userId } }),
     prisma.contact.count({ where: { userId, source: ContactSource.APPLE_CONTACTS } }),
     prisma.contact.count({ where: appleDeleteWhere }),
+    prisma.contact.count({ where: appleRetainWhere }),
     prisma.contact.findMany({
       where: {
         userId,
@@ -429,6 +448,7 @@ async function collectPlan(userId: string) {
       imessageThreads,
       imessageSyncStates,
       appleContactsToDelete,
+      appleContactsToReclassify,
       derivedRows: {
         savedQueries,
         assistantObservations,
@@ -476,6 +496,7 @@ async function collectPlan(userId: string) {
 async function applyCleanup(userId: string) {
   const messageWhere = messageInteractionWhere(userId);
   const appleDeleteWhere = appleContactDeleteWhere(userId);
+  const appleRetainWhere = appleContactRetainWhere(userId);
   const devArtifacts = await collectDevArtifacts(userId);
 
   const appleContactIds = await prisma.contact.findMany({
@@ -550,6 +571,10 @@ async function applyCleanup(userId: string) {
         }),
         appleContacts: await tx.contact.deleteMany({
           where: { id: { in: appleContactIds.map((contact) => contact.id) } },
+        }),
+        retainedAppleContacts: await tx.contact.updateMany({
+          where: appleRetainWhere,
+          data: { source: ContactSource.MANUAL },
         }),
         devContacts: await tx.contact.deleteMany({
           where: { id: { in: devArtifacts.ids.contactIds } },
