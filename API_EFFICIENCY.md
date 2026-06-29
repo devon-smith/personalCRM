@@ -16,11 +16,11 @@
 - `/api/health` is DB-only by default. It no longer spends a Gmail profile API call on normal dashboard loads. Use `/api/health?live=1` only when debugging token reachability.
 - Gmail and Calendar webhook-triggered worker jobs now use stable per-user Graphile job keys, so rapid push-notification bursts collapse into one pending sync per source/user instead of stacking duplicate jobs.
 - Dashboard home now uses `/api/dashboard/bootstrap` for stats, meetings, and birthdays instead of three client requests, and the page-level Gmail sync timer was removed in favor of the shared shell sync fallback.
+- Reply queue now uses `/api/reply-queue/bootstrap` for inbox items, draft list, and the small Gmail reconnect/sync fields it needs. It no longer polls the full data-health payload every minute, and the legacy `/api/inbox-items` short cache is scoped per user.
 
 ## Next Highest-Impact Efficiency Work
 
 - Make worker mode the production default after deployment: set `NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true` once the worker is reliably running.
-- Consider a reply-queue bootstrap endpoint for inbox items, draft list, and source health; the dashboard home path now has a bootstrap endpoint.
 - Add response caching headers for DB-only status endpoints where safe, especially `data-health`, `birthdays`, and usage/status reads.
 - Persist AI generation fingerprints for expensive prompts. If the same reply draft context and voice refs are unchanged, reuse or offer regenerate instead of calling the model again automatically.
 - Add budget/rate telemetry per provider from `AIGenerationLog`: daily Anthropic tokens, Voyage embedding calls, Gmail sync calls, and Google Calendar calls.

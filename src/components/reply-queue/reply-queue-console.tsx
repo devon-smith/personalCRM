@@ -125,6 +125,12 @@ interface DataHealthResponse {
   googleAccounts: { needsReconnect: boolean; lastSyncedAt: string | null }[];
 }
 
+interface ReplyQueueBootstrapData {
+  inbox: InboxItemsData;
+  drafts: { drafts: Draft[] };
+  dataHealth: DataHealthResponse;
+}
+
 const STATUS_STYLES = {
   review: { text: "#8A5A36", bg: "#F3E6D8", label: "Needs review" },
   ready: { text: "#5E6B47", bg: "#EDF0EC", label: "Ready to save" },
@@ -170,35 +176,26 @@ export function ReplyQueueConsole() {
   const [view, setView] = useState<"all" | "needs-review" | "ready">("all");
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const { data: inboxData, isLoading: inboxLoading } = useQuery<InboxItemsData>({
-    queryKey: ["inbox-items", "needs-reply"],
+  const { data: bootstrapData, isLoading: bootstrapLoading } = useQuery<ReplyQueueBootstrapData>({
+    queryKey: ["reply-queue-bootstrap", "needs-reply"],
     queryFn: async () => {
-      const res = await fetch("/api/inbox-items");
-      if (!res.ok) return { items: [], totalOpen: 0 };
+      const res = await fetch("/api/reply-queue/bootstrap");
+      if (!res.ok) {
+        return {
+          inbox: { items: [], totalOpen: 0 },
+          drafts: { drafts: [] },
+          dataHealth: { googleAccounts: [] },
+        };
+      }
       return res.json();
     },
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,
   });
 
-  const { data: draftsData, isLoading: draftsLoading } = useQuery<{ drafts: Draft[] }>({
-    queryKey: ["drafts", "DRAFT"],
-    queryFn: async () => {
-      const res = await fetch("/api/drafts?status=DRAFT&limit=50");
-      if (!res.ok) return { drafts: [] };
-      return res.json();
-    },
-  });
-
-  const { data: dataHealth } = useQuery<DataHealthResponse>({
-    queryKey: ["data-health"],
-    queryFn: async () => {
-      const res = await fetch("/api/data-health");
-      if (!res.ok) return { googleAccounts: [] };
-      return res.json();
-    },
-    refetchInterval: 60 * 1000,
-  });
+  const inboxData = bootstrapData?.inbox;
+  const draftsData = bootstrapData?.drafts;
+  const dataHealth = bootstrapData?.dataHealth;
 
   const items = useMemo(() => inboxData?.items ?? [], [inboxData?.items]);
   const drafts = useMemo(() => draftsData?.drafts ?? [], [draftsData?.drafts]);
@@ -246,6 +243,7 @@ export function ReplyQueueConsole() {
   const earlier = visibleItems.filter((item) => item.priority !== "high");
 
   const invalidateWorkflow = () => {
+    queryClient.invalidateQueries({ queryKey: ["reply-queue-bootstrap"] });
     queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
     queryClient.invalidateQueries({ queryKey: ["drafts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -274,7 +272,7 @@ export function ReplyQueueConsole() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["drafts"] });
+      invalidateWorkflow();
       toast.success("Draft updated");
     },
     onError: (err) => toast.error(err.message),
@@ -377,7 +375,7 @@ export function ReplyQueueConsole() {
 
   const status = statusFor(selectedDraft, googleBlocked);
   const selectedColor = getAvatarColor(selected?.contactName ?? contact?.name ?? "Unknown");
-  const isLoading = inboxLoading || draftsLoading;
+  const isLoading = bootstrapLoading;
   const selectedCanGenerateDraft = selected
     ? ["email", "gmail"].includes(selected.channel.toLowerCase())
     : false;
