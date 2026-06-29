@@ -101,6 +101,7 @@
 - Dashboard inbox no longer exposes Dismiss or Snooze actions, including hidden swipe-left dismissal. The corresponding inbox-item API routes were removed; users now resolve with Mark replied or tune classification with Doesn't need a reply.
 - Removed the orphan inbox-item mute route and stopped checking `GmailSyncState.mutedThreads` during inbound item creation, eliminating a hidden suppression path and one DB read per inbound interaction.
 - Redirect-only aliases (`/`, `/home`, `/queries`, `/source-health`) now live in `next.config.ts` instead of App Router pages, preserving stale links while removing four static app routes from the production graph.
+- Removed the unused `/api/observations` GET route. Dashboard observations are already bundled in `/api/dashboard/bootstrap`; the focused dismiss route remains for the visible observation cards.
 
 ## Next Highest-Impact Efficiency Work
 

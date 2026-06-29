@@ -199,10 +199,9 @@ interface ThreadCandidate {
  * Filter out candidates that have a later OUTBOUND interaction in the
  * same thread — Jennifer already replied.
  *
- * Exported for the /api/observations route to re-check persisted
- * observations at render time; once a row is created we still want
- * to suppress it from the dashboard once the user replies, even
- * before the next observation-generation run.
+ * Exported for dashboard observation reads to re-check persisted rows
+ * at render time; once a row is created we still want to suppress it
+ * once the user replies, even before the next observation-generation run.
  */
 export async function dropAnsweredByThread<T extends ThreadCandidate>(
   prisma: PrismaClient,
