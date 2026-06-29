@@ -121,11 +121,8 @@ async function computeCategorization(
     frequencyMap.set(row.contactId, row._count._all);
   }
 
-  // Get all contacts (to count uncategorized)
-  const allContacts = await prisma.contact.findMany({
-    where: { userId },
-    select: { id: true },
-  });
+  // Count contacts for the uncategorized summary without loading every id.
+  const totalContacts = await prisma.contact.count({ where: { userId } });
 
   // Assign contacts to tiers (highest tier wins)
   const tierAssignments: Map<string, ContactFrequency[]> = new Map();
@@ -154,7 +151,7 @@ async function computeCategorization(
       circlesCreated: tiers.filter((t) => t.contactCount > 0).length,
       contactsAssigned: assignedIds.size,
       tiers,
-      uncategorized: allContacts.length - assignedIds.size,
+      uncategorized: totalContacts - assignedIds.size,
     };
   }
 
@@ -222,6 +219,6 @@ async function computeCategorization(
     circlesCreated,
     contactsAssigned,
     tiers: resultTiers,
-    uncategorized: allContacts.length - assignedIds.size,
+    uncategorized: totalContacts - assignedIds.size,
   };
 }
