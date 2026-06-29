@@ -1,59 +1,9 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { deploymentFeatures } from "@/lib/deployment-features";
-import { prisma } from "@/lib/prisma";
 
-/**
- * GET /api/whatsapp/status
- * Returns the WhatsApp sync state for the current user.
- */
+const disabledResponse = {
+  error: "Legacy WhatsApp status API is disabled. Gmail and Calendar are the active ingestion sources.",
+};
+
 export async function GET() {
-  try {
-    if (!deploymentFeatures.whatsapp) {
-      return NextResponse.json({
-        status: "disabled",
-        disabled: true,
-        connected: false,
-        messagesSynced: 0,
-        contactsMatched: 0,
-        unmatchedChats: [],
-      });
-    }
-
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const syncState = await prisma.whatsAppSyncState.findUnique({
-      where: { userId: session.user.id },
-    });
-
-    if (!syncState) {
-      return NextResponse.json({
-        status: "not_configured",
-        connected: false,
-        messagesSynced: 0,
-        contactsMatched: 0,
-        unmatchedChats: [],
-      });
-    }
-
-    return NextResponse.json({
-      status: syncState.connected ? "connected" : "disconnected",
-      connected: syncState.connected,
-      phone: syncState.phone,
-      lastMessageAt: syncState.lastMessageAt?.toISOString() ?? null,
-      messagesSynced: syncState.messagesSynced,
-      contactsMatched: syncState.contactsMatched,
-      unmatchedChats: syncState.unmatchedChats ?? [],
-      lastSyncAt: syncState.updatedAt.toISOString(),
-    });
-  } catch (error) {
-    console.error("[GET /api/whatsapp/status]", error);
-    return NextResponse.json(
-      { error: "Failed to get WhatsApp status" },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json(disabledResponse, { status: 404 });
 }

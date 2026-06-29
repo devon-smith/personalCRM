@@ -12,14 +12,14 @@ export interface UserProfile {
   bio: string;
   /** How they sign professional emails (e.g., "Best, Devon") */
   emailSignoff: string;
-  /** Whether to include a sign-off on casual messages (texts, WhatsApp) */
+  /** Whether to include a sign-off on casual text-style messages */
   casualSignoff: boolean;
   /** Communication style guidance for AI drafts */
   style: string;
   /** Phrases the user NEVER wants in generated drafts */
   bannedPhrases: string[];
   /** Default channels this deployment syncs (used in auto-sync and health checks) */
-  activeChannels: Array<"gmail" | "linkedin" | "whatsapp" | "imessage" | "calendar">;
+  activeChannels: Array<"gmail" | "linkedin" | "imessage" | "calendar">;
   /** Whether iMessage/chat.db sync is available (requires Mac with Messages.app) */
   imessageAvailable: boolean;
 }

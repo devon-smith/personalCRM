@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LinkedInImport } from "@/components/settings/linkedin-import";
-import { WhatsAppSync } from "@/components/settings/whatsapp-sync";
 import { deploymentFeatures } from "@/lib/deployment-features";
 import type { DataHealthResponse, GoogleAccountInfo } from "@/app/api/data-health/route";
 import type { CalendarSyncResult } from "@/app/api/calendar/route";
@@ -40,7 +39,6 @@ function formatRelativeTime(iso: string): string {
 export default function SourcesPage() {
   const queryClient = useQueryClient();
   const showIMessage = deploymentFeatures.imessage;
-  const showWhatsApp = deploymentFeatures.whatsapp;
 
   const { data, isLoading } = useQuery<DataHealthResponse>({
     queryKey: ["data-health"],
@@ -307,14 +305,6 @@ export default function SourcesPage() {
           />
         )}
       </div>
-
-      {/* ═══ SECTION 3 — Messaging ═══ */}
-      {showWhatsApp && (
-        <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "140ms" }}>
-          <h2 className="ds-heading-sm">Messaging</h2>
-          <WhatsAppSync />
-        </div>
-      )}
 
       {/* ═══ SECTION 4 — Imports ═══ */}
       <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "160ms" }}>

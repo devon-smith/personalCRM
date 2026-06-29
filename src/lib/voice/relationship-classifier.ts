@@ -136,9 +136,9 @@ export interface ClassifyArgs {
   userId: string;
   /** Email path (Gmail voice indexing). */
   recipientEmail?: string;
-  /** Direct contact path (WhatsApp / iMessage voice indexing where the
+  /** Direct contact path (for voice indexing where the
    *  outbound message has no recipient email but we already know the
-   *  Contact row from upstream phone matching). M0.x.13 addition. */
+   *  Contact row from upstream matching). */
   contactId?: string;
 }
 

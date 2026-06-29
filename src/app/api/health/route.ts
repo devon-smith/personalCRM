@@ -105,7 +105,7 @@ export async function GET(request: Request) {
     : "disabled";
 
   // Get sync timestamps
-  const [gmailSync, imessageSyncCount, whatsappSync] = await Promise.all([
+  const [gmailSync, imessageSyncCount] = await Promise.all([
     prisma.gmailSyncState.findUnique({
       where: { userId },
       select: { lastSyncAt: true, syncEnabled: true },
@@ -113,12 +113,6 @@ export async function GET(request: Request) {
     deploymentFeatures.imessage
       ? prisma.iMessageSyncState.count({ where: { userId } })
       : Promise.resolve(0),
-    deploymentFeatures.whatsapp
-      ? prisma.whatsAppSyncState.findUnique({
-          where: { userId },
-          select: { connected: true, updatedAt: true, messagesSynced: true, unmatchedChats: true },
-        })
-      : Promise.resolve(null),
   ]);
 
   // Count interactions by source prefix
@@ -176,20 +170,6 @@ export async function GET(request: Request) {
         error: imessageError,
         handlesTracked: imessageSyncCount,
       },
-      whatsapp: deploymentFeatures.whatsapp
-        ? {
-            status: whatsappSync
-              ? whatsappSync.connected
-                ? "connected"
-                : "disconnected"
-              : "not_configured",
-            lastSyncAt: whatsappSync?.updatedAt ?? null,
-            messagesSynced: whatsappSync?.messagesSynced ?? 0,
-            unmatchedCount: Array.isArray(whatsappSync?.unmatchedChats)
-              ? (whatsappSync.unmatchedChats as unknown[]).length
-              : 0,
-          }
-        : undefined,
       interactions: {
         total: totalInteractions,
         imessage: imsgCount,

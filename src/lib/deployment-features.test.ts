@@ -5,7 +5,6 @@ describe("getDeploymentFeatures", () => {
   it("defaults legacy surfaces off", () => {
     expect(getDeploymentFeatures({})).toEqual({
       imessage: false,
-      whatsapp: false,
     });
   });
 
@@ -13,11 +12,9 @@ describe("getDeploymentFeatures", () => {
     expect(
       getDeploymentFeatures({
         NEXT_PUBLIC_ENABLE_IMESSAGE: "true",
-        NEXT_PUBLIC_ENABLE_WHATSAPP: "1",
       }),
     ).toEqual({
       imessage: true,
-      whatsapp: true,
     });
   });
 });

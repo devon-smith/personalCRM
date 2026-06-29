@@ -122,7 +122,6 @@ export const FEATURE_LABELS: Record<string, string> = {
   voice_few_shot_retrieval: "Voice example retrieval",
   voice_reference_upload: "Voice reference upload",
   voice_corpus_email_index: "Voice corpus indexing — email",
-  voice_corpus_whatsapp_index: "Voice corpus indexing — WhatsApp",
   gmail_draft_thread_scan: "Gmail draft scan",
   gmail_draft_save: "Gmail draft save",
   gmail_draft_send: "Gmail draft send",

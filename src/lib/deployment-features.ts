@@ -1,6 +1,5 @@
 export interface DeploymentFeatures {
   imessage: boolean;
-  whatsapp: boolean;
 }
 
 function readFlag(value: string | undefined): boolean {
@@ -12,7 +11,6 @@ export function getDeploymentFeatures(
 ): DeploymentFeatures {
   return {
     imessage: readFlag(env.NEXT_PUBLIC_ENABLE_IMESSAGE),
-    whatsapp: readFlag(env.NEXT_PUBLIC_ENABLE_WHATSAPP),
   };
 }
 
