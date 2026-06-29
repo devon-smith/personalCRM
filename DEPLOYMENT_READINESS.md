@@ -19,6 +19,7 @@ This is the final punch list for calling the API-efficiency and polish pass done
 
 ## Vercel Deployment
 
+- Run the read-only environment audit: `npm run deploy:audit`. Use `npm run deploy:audit -- --strict` before production promotion so high-risk findings fail the command.
 - Deploy the Next.js web/API app to Vercel.
 - Use managed Postgres. Set `DATABASE_URL` to the pooled/serverless-safe URL.
 - Run migrations against production with `npx prisma migrate deploy`.
@@ -35,6 +36,7 @@ This is the final punch list for calling the API-efficiency and polish pass done
 
 ## Required Environment Variables
 
+- Verify this set with `npm run deploy:audit`; the command reports only presence and shape and does not print secret values.
 - Auth: `AUTH_SECRET`, `NEXTAUTH_URL` or equivalent app URL, `AUTH_TRUST_HOST` if needed by the host.
 - Database: `DATABASE_URL`, `WORKER_DATABASE_URL`.
 - Google OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
