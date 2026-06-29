@@ -143,7 +143,8 @@ export async function findNeighbors(
 
 /**
  * Combined ranking score for sort. strength × recency boost; recency
- * boost is 1.0 within 7 days, fades to 0.5 at 6 months, 0.2 beyond.
+ * boost is 1.0 within 7 days, fades to 0.5 at 6 months, then to
+ * the 0.2 floor at 1 year and beyond.
  */
 export function combinedScore(
   strength: number,
@@ -154,6 +155,7 @@ export function combinedScore(
   let boost: number;
   if (daysAgo <= 7) boost = 1.0;
   else if (daysAgo <= 180) boost = 1.0 - ((daysAgo - 7) / (180 - 7)) * 0.5;
+  else if (daysAgo <= 365) boost = 0.5 - ((daysAgo - 180) / (365 - 180)) * 0.3;
   else boost = 0.2;
   return strength * boost;
 }
