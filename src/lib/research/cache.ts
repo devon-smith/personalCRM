@@ -13,6 +13,12 @@ export interface CacheKey {
   externalKey: string;
 }
 
+const inflightMisses = new Map<string, Promise<unknown>>();
+
+function cacheKeyString(key: CacheKey): string {
+  return `${key.source}\u0000${key.kind}\u0000${key.externalKey}`;
+}
+
 export async function getCached<T>(key: CacheKey): Promise<T | null> {
   const row = await prisma.externalResearchCache.findUnique({
     where: {
@@ -68,7 +74,23 @@ export async function withCache<T>(
 ): Promise<T> {
   const hit = await getCached<T>(key);
   if (hit !== null) return hit;
-  const fresh = await fetcher();
-  await setCached(key, fresh, ttlMs);
-  return fresh;
+
+  const inflightKey = cacheKeyString(key);
+  const existing = inflightMisses.get(inflightKey);
+  if (existing) return existing as Promise<T>;
+
+  const pending = (async () => {
+    const fresh = await fetcher();
+    await setCached(key, fresh, ttlMs);
+    return fresh;
+  })();
+  inflightMisses.set(inflightKey, pending);
+
+  try {
+    return await pending;
+  } finally {
+    if (inflightMisses.get(inflightKey) === pending) {
+      inflightMisses.delete(inflightKey);
+    }
+  }
 }

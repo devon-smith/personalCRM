@@ -109,6 +109,7 @@
 - Default data-health account/bootstrap reads now run in parallel and select only the `GmailSyncState` fields rendered by Sources. Large sync-state fields such as `unmatchedSenders` and `mutedThreads` stay off normal source-status loads.
 - Live upcoming Calendar reads now use a short per-user in-process cache shared by Home, Calendar, meeting prep, and morning brief calls. Reopening those surfaces within a minute reuses the assembled event/contact context instead of repeating Google Calendar list calls; manual Calendar sync clears that user's cache before refetching.
 - Meeting prep now checks the shared 7-day upcoming Calendar window before widening to 30 days. Prep links opened from Home or Calendar can reuse the existing cached Calendar context instead of triggering a second, broader Google Calendar list call.
+- External research cache misses now dedupe in-flight fetches per cache key, so simultaneous meeting prep/public-research requests share one OpenAlex/Crossref/Brave/Anthropic call and one cache write instead of stampeding providers.
 
 ## Next Highest-Impact Efficiency Work
 
