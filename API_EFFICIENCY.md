@@ -14,6 +14,7 @@
 - Browser Gmail sync is now a stale fallback instead of a fixed 2-minute poll. It checks the local sync state first and skips the Gmail API when the worker/browser synced recently.
 - Browser fallback sync is Gmail-only. Contacts and Calendar are worker/manual sync paths so page loads never trigger hidden full-contact or Calendar provider scans.
 - Manual Inbox/Reply Queue Gmail sync now runs the AI action extractor only when Gmail actually processed new mail, and zero-new-mail syncs avoid broad queue/dashboard invalidations.
+- Reply queue bootstrap now returns a tiny private cache window, absorbing immediate reloads/double mounts while keeping draft/send mutations effectively fresh.
 - Meeting prep dossiers now return short private cache headers, so reloads/reopens reuse recent Calendar lookup and dossier assembly instead of rebuilding the same prep response immediately.
 - `/api/health` is DB-only by default. It no longer spends a Gmail profile API call on normal dashboard loads. Use `/api/health?live=1` only when debugging token reachability.
 - Gmail and Calendar webhook-triggered worker jobs now use stable per-user Graphile job keys, so rapid push-notification bursts collapse into one pending sync per source/user instead of stacking duplicate jobs.

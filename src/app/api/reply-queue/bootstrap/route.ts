@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { getReplyQueueBootstrap } from "@/lib/reply-queue/bootstrap";
 import type { ReplyQueueInboxView } from "@/lib/reply-queue/inbox-items";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(3, 15);
 
 export async function GET(req: Request) {
   try {
@@ -20,7 +23,7 @@ export async function GET(req: Request) {
       draftLimit: Number.isFinite(limit) ? limit : 50,
     });
 
-    return NextResponse.json(data);
+    return NextResponse.json(data, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     console.error("[GET /api/reply-queue/bootstrap]", error);
     return NextResponse.json(
