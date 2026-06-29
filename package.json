@@ -15,6 +15,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "drafts:regenerate-stale": "DOTENV_CONFIG_PATH=.env.local tsx -r dotenv/config scripts/regenerate-stale-reply-drafts.ts",
     "worker": "tsx worker/index.ts",
     "worker:migrate": "graphile-worker --connection \"$DATABASE_URL\" --schema-only",
     "mobile:add:ios": "npx cap add ios",

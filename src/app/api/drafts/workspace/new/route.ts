@@ -110,10 +110,11 @@ export async function POST(req: NextRequest) {
       sourceRequest: "initial generation",
       source: "initial",
     };
+    const resolvedContactId = result.resolvedContactId ?? contactId;
 
     const draftData = {
       userId,
-      contactId,
+      contactId: resolvedContactId,
       type: CONTEXT_TO_TYPE[context] ?? "CATCHING_UP",
       tone,
       content: result.detailed,
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
       ? await prisma.draft.update({
           where: { id: staleExistingDraftId },
           data: {
-            contactId,
+            contactId: resolvedContactId,
             type: draftData.type,
             tone,
             content: result.detailed,

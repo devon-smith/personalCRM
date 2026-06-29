@@ -56,6 +56,7 @@ export interface DraftResult {
   readonly quick: string;
   readonly detailed: string;
   readonly subjectLine: string | null;
+  readonly resolvedContactId?: string;
   /** M0.x.5: what fed the prompt. Used by the draft modal's
    *  "What I'm using" disclosure so Jennifer can audit provenance. */
   readonly voiceContextUsed?: {
@@ -87,9 +88,37 @@ const CONTEXT_LABELS: Record<DraftContext, string> = {
 };
 
 export async function generateDraft(params: GenerateDraftParams): Promise<DraftResult> {
+  // M0.x.4/M0.x.18: reply mode must resolve the actual inbound
+  // sender before loading contact memory/facts. Inbox classification
+  // can attach a thread to the wrong contact in group-ish Gmail
+  // threads; the latest inbound email is the authoritative reply
+  // recipient.
+  let replyContext: ReplyContext | null = params.replyContext ?? null;
+  if (
+    !replyContext &&
+    params.context === "reply_email" &&
+    params.threadKey
+  ) {
+    try {
+      replyContext = await loadReplyContext({
+        prisma,
+        userId: params.userId,
+        threadKey: params.threadKey,
+      });
+    } catch (err) {
+      console.warn("[draft-generator] loadReplyContext failed:", err);
+    }
+  }
+
+  const resolvedContactId = await resolveReplyContactId({
+    userId: params.userId,
+    requestedContactId: params.contactId,
+    replyContext,
+  });
+
   // Gather contact context
   const contact = await prisma.contact.findUnique({
-    where: { id: params.contactId },
+    where: { id: resolvedContactId },
     select: {
       name: true,
       email: true,
@@ -108,7 +137,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
 
   // Get last 5 interactions
   const interactions = await prisma.interaction.findMany({
-    where: { contactId: params.contactId, userId: params.userId },
+    where: { contactId: resolvedContactId, userId: params.userId },
     orderBy: { occurredAt: "desc" },
     take: 5,
     select: {
@@ -123,7 +152,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
 
   // Get journal entries (last 2)
   const journalEntries = await prisma.journalEntry.findMany({
-    where: { contactId: params.contactId, userId: params.userId },
+    where: { contactId: resolvedContactId, userId: params.userId },
     orderBy: { createdAt: "desc" },
     take: 2,
     select: { id: true, content: true, mood: true, createdAt: true },
@@ -132,7 +161,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
   // Get ContactMemory (M8.3) — synthesized conversational context.
   // Null when the memory-synthesis worker hasn't run yet for this contact.
   const memory = await prisma.contactMemory.findUnique({
-    where: { contactId: params.contactId },
+    where: { contactId: resolvedContactId },
     select: {
       discussedTopics: true,
       theyMentioned: true,
@@ -144,23 +173,23 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
 
   const personFacts = await loadPersonFactsForPrompt(prisma, {
     userId: params.userId,
-    contactId: params.contactId,
+    contactId: resolvedContactId,
   });
 
   // Get changelog entries (life updates)
   const lifeUpdates = await prisma.contactChangelog.findMany({
-    where: { contactId: params.contactId, status: { in: ["PENDING", "SEEN"] } },
+    where: { contactId: resolvedContactId, status: { in: ["PENDING", "SEEN"] } },
     orderBy: { detectedAt: "desc" },
     take: 2,
     select: { id: true, type: true, field: true, oldValue: true, newValue: true },
   });
 
   const inputRefs = [
-    `contact:${params.contactId}`,
+    `contact:${resolvedContactId}`,
     ...interactions.map((i) => `interaction:${i.id}`),
     ...journalEntries.map((j) => `journal:${j.id}`),
     ...lifeUpdates.map((u) => `changelog:${u.id}`),
-    ...(memory ? [`memory:${params.contactId}`] : []),
+    ...(memory ? [`memory:${resolvedContactId}`] : []),
     ...personFacts.map((fact) => `personFact:${fact.id}`),
   ];
 
@@ -187,27 +216,6 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
   // doesn't pad with empty headers.
   const memorySummary = memory ? buildMemorySummary(memory) : "";
   const personFactsSummary = buildPersonFactsPromptBlock(personFacts);
-
-  // M0.x.4: reply mode must read the actual inbound message, not just
-  // its 140-char snippet. Fetch when (a) caller asked for reply_email,
-  // (b) didn't pre-load it, (c) has a threadKey. Fail-open: a Gmail
-  // hiccup falls back to the snippet path silently.
-  let replyContext: ReplyContext | null = params.replyContext ?? null;
-  if (
-    !replyContext &&
-    params.context === "reply_email" &&
-    params.threadKey
-  ) {
-    try {
-      replyContext = await loadReplyContext({
-        prisma,
-        userId: params.userId,
-        threadKey: params.threadKey,
-      });
-    } catch (err) {
-      console.warn("[draft-generator] loadReplyContext failed:", err);
-    }
-  }
 
   // Try AI generation first, fall back to templates
   if (process.env.ANTHROPIC_API_KEY) {
@@ -247,6 +255,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
             ]
           : inputRefs,
         voiceContext,
+        resolvedContactId,
       });
     } catch (err) {
       console.error("[draft-generator] AI generation failed, using templates:", err);
@@ -279,6 +288,7 @@ export async function generateDraft(params: GenerateDraftParams): Promise<DraftR
     daysSinceLastInteraction: interactions[0]
       ? Math.floor((Date.now() - new Date(interactions[0].occurredAt).getTime()) / 86400000)
       : null,
+    resolvedContactId,
   });
 }
 
@@ -295,6 +305,72 @@ interface VoiceContext {
   userInstructions: string | null;
 }
 
+async function resolveReplyContactId(args: {
+  readonly userId: string;
+  readonly requestedContactId: string;
+  readonly replyContext: ReplyContext | null;
+}): Promise<string> {
+  const inboundEmail = args.replyContext?.latestInbound.fromEmail
+    ?.trim()
+    .toLowerCase();
+  if (!inboundEmail) return args.requestedContactId;
+
+  const requested = await prisma.contact.findUnique({
+    where: { id: args.requestedContactId },
+    select: { id: true, email: true, additionalEmails: true },
+  });
+
+  if (contactHasEmail(requested, inboundEmail)) {
+    return args.requestedContactId;
+  }
+
+  const existing = await prisma.contact.findFirst({
+    where: {
+      userId: args.userId,
+      OR: [
+        { email: { equals: inboundEmail, mode: "insensitive" } },
+        { additionalEmails: { has: inboundEmail } },
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (existing) return existing.id;
+
+  const inboundName = args.replyContext?.latestInbound.fromName?.trim();
+  const created = await prisma.contact.create({
+    data: {
+      userId: args.userId,
+      name: inboundName || displayNameFromEmail(inboundEmail),
+      email: inboundEmail,
+      tags: [],
+      source: "GMAIL_DISCOVER",
+      importedAt: new Date(),
+    },
+    select: { id: true },
+  });
+
+  return created.id;
+}
+
+function contactHasEmail(
+  contact: { email: string | null; additionalEmails: string[] } | null,
+  email: string,
+): boolean {
+  if (!contact) return false;
+  if (contact.email?.toLowerCase() === email) return true;
+  return contact.additionalEmails.some((candidate) => candidate.toLowerCase() === email);
+}
+
+function displayNameFromEmail(email: string): string {
+  const local = email.split("@")[0] || email;
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || email;
+}
+
 async function generateWithAI(params: Omit<GenerateDraftParams, "replyContext"> & {
   contact: { name: string; company: string | null; role: string | null; tier: string; notes: string | null };
   firstName: string;
@@ -307,6 +383,7 @@ async function generateWithAI(params: Omit<GenerateDraftParams, "replyContext"> 
   inputRefs: string[];
   voiceContext: VoiceContext | null;
   replyContext: ReplyContext | null;
+  resolvedContactId: string;
 }): Promise<DraftResult> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const startedAt = Date.now();
@@ -460,7 +537,11 @@ Return ONLY valid JSON with no markdown:
 
     const text =
       message.content[0].type === "text" ? message.content[0].text : "";
-    const result = parseDraftResponse(text, voiceContextUsed);
+    const result = parseDraftResponse(
+      text,
+      voiceContextUsed,
+      params.resolvedContactId,
+    );
     lastIssues = findDraftQualityIssues(result, {
       context: params.context,
       replyContext: params.replyContext,
@@ -499,6 +580,7 @@ Return ONLY valid JSON with no markdown:
 function parseDraftResponse(
   text: string,
   voiceContextUsed: DraftResult["voiceContextUsed"],
+  resolvedContactId?: string,
 ): DraftResult {
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -512,6 +594,7 @@ function parseDraftResponse(
             ? parsed.subjectLine
             : null,
         voiceContextUsed,
+        resolvedContactId,
       };
     }
   } catch {
@@ -519,7 +602,13 @@ function parseDraftResponse(
     // is acceptable for non-reply workflows.
   }
 
-  return { quick: text, detailed: text, subjectLine: null, voiceContextUsed };
+  return {
+    quick: text,
+    detailed: text,
+    subjectLine: null,
+    voiceContextUsed,
+    resolvedContactId,
+  };
 }
 
 const GENERIC_REPLY_PATTERNS: RegExp[] = [
@@ -866,6 +955,7 @@ function generateFromTemplate(params: {
   circleNames: string[];
   threadSubject?: string;
   daysSinceLastInteraction: number | null;
+  resolvedContactId: string;
 }): DraftResult {
   const profile = getUserProfile();
   const { tone, context, firstName, company, threadSubject, daysSinceLastInteraction } = params;
@@ -922,21 +1012,31 @@ function generateFromTemplate(params: {
 
   // Try exact match first, then fallback chain
   const key = `${tone}_${context}`;
-  if (templates[key]) return templates[key];
+  if (templates[key]) {
+    return { ...templates[key], resolvedContactId: params.resolvedContactId };
+  }
 
   // Fallback: try tone category
   const toneCategory = isCasual ? "casual" : tone === "congratulatory" ? "congratulatory" : "professional";
   const fallbackKey = `${toneCategory}_${context}`;
-  if (templates[fallbackKey]) return templates[fallbackKey];
+  if (templates[fallbackKey]) {
+    return {
+      ...templates[fallbackKey],
+      resolvedContactId: params.resolvedContactId,
+    };
+  }
 
   // Fallback: try warm variant
   const warmKey = `warm_${context}`;
-  if (templates[warmKey]) return templates[warmKey];
+  if (templates[warmKey]) {
+    return { ...templates[warmKey], resolvedContactId: params.resolvedContactId };
+  }
 
   // Ultimate fallback
   return {
     quick: `Hey ${firstName}, wanted to reach out. Let me know if you have a moment to chat.`,
     detailed: `Hey ${firstName}, hope you're doing well${companyRef}. I wanted to reach out and connect — it's been a while since we last talked. Would love to catch up if you have some time.${signoff}`,
     subjectLine: `Hey ${firstName}`,
+    resolvedContactId: params.resolvedContactId,
   };
 }

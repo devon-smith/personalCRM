@@ -83,10 +83,11 @@ export async function POST(req: NextRequest) {
 
     // Persist the selected variant (default to detailed) as a Draft record
     const selectedContent = variant === "quick" ? result.quick : result.detailed;
+    const resolvedContactId = result.resolvedContactId ?? contactId;
     const draft = await prisma.draft.create({
       data: {
         userId: session.user.id,
-        contactId,
+        contactId: resolvedContactId,
         type: CONTEXT_TO_TYPE[context] ?? "CATCHING_UP",
         tone,
         content: selectedContent,
