@@ -314,7 +314,7 @@ function buildThreadSummary(
 }
 
 /**
- * Classify an email thread using the strict prompt matching message-actions.ts.
+ * Classify an email thread using the strict action-item prompt.
  */
 async function classifyThread(
   threadSummary: string,
