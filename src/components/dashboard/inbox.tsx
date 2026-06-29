@@ -11,7 +11,6 @@ import {
   RefreshCw,
   ChevronDown,
   ArrowUpRight,
-  ArrowDownLeft,
   X,
   Linkedin,
   Bell,
@@ -26,7 +25,6 @@ import { EvidenceChevron } from "@/components/shared/evidence-chevron";
 import { useSessionExpanded } from "@/components/ds";
 import { useDraftComposer } from "@/lib/draft-composer-context";
 import { trimToShortPhrase } from "@/lib/inbox/response-classifier";
-import { deploymentFeatures } from "@/lib/deployment-features";
 
 // ─── Swipe gesture hook ─────────────────────────────────────
 
@@ -184,19 +182,6 @@ function restoreInboxSnapshots(
   });
 }
 
-interface ActivityItem {
-  id: string;
-  type: string;
-  direction: string | null;
-  channel: string | null;
-  subject: string | null;
-  summary: string | null;
-  occurredAt: string;
-  contactId: string;
-  contactName: string;
-  contactCompany: string | null;
-}
-
 // ─── Helpers ─────────────────────────────────────────────────
 
 function ChannelIcon({ channel, size = 14 }: { channel: string; size?: number }) {
@@ -287,8 +272,7 @@ const SNOOZE_OPTIONS = [
 
 export function Inbox() {
   const queryClient = useQueryClient();
-  const showActivity = deploymentFeatures.activity;
-  const [activeTab, setActiveTab] = useState<"inbox" | "groups" | "activity">("inbox");
+  const [activeTab, setActiveTab] = useState<"inbox" | "groups">("inbox");
   // M0.x.2 — "Needs reply" (default) vs "All inbound". Local state
   // is fine; the server query keys off this and React Query caches
   // per-key, so flipping the toggle returns instantly the second
@@ -322,18 +306,6 @@ export function Inbox() {
     refetchOnWindowFocus: false,
   });
 
-  const { data: activityData, isLoading: loadingActivity } = useQuery<{
-    items: ActivityItem[];
-  }>({
-    queryKey: ["activity"],
-    queryFn: async () => {
-      const res = await fetch("/api/activity");
-      if (!res.ok) return { items: [] };
-      return res.json();
-    },
-    enabled: showActivity && activeTab === "activity",
-  });
-
   // ─── Mutations ──────────────────────────────────────────────
 
   const syncMutation = useMutation({
@@ -346,7 +318,6 @@ export function Inbox() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
-      queryClient.invalidateQueries({ queryKey: ["activity"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       toast("Synced and scanned for new items");
     },
@@ -549,13 +520,9 @@ export function Inbox() {
   // Items arrive pre-sorted by priorityScore DESC from the API (drafts deprioritized)
   const waitingItems = inboxData?.items ?? [];
   const groupChatItems = inboxData?.groupChats ?? [];
-  const activityItems = activityData?.items ?? [];
   const inboxCount = waitingItems.length;
   const groupCount = groupChatItems.length;
-  const isLoading =
-    activeTab === "activity"
-      ? loadingActivity
-      : loadingNR;
+  const isLoading = loadingNR;
 
   return (
     <div
@@ -641,30 +608,6 @@ export function Inbox() {
               </span>
             )}
           </button>
-          {showActivity && (
-            <button
-              onClick={() => setActiveTab("activity")}
-              className="rounded-full px-4 py-1.5 text-[13px] font-medium transition-all"
-              style={{
-                backgroundColor:
-                  activeTab === "activity"
-                    ? "#FFFFFF"
-                    : "transparent",
-                color:
-                  activeTab === "activity"
-                    ? "var(--text-primary)"
-                    : "var(--text-tertiary)",
-                boxShadow:
-                  activeTab === "activity"
-                    ? "0 1px 3px rgba(0,0,0,0.06)"
-                    : "none",
-                transitionDuration: "var(--duration-fast)",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              History
-            </button>
-          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -759,7 +702,7 @@ export function Inbox() {
             }
             onBulkResolve={() => bulkResolveMutation.mutate()}
           />
-        ) : activeTab === "groups" ? (
+        ) : (
           <GroupsTab
             groupItems={groupChatItems}
             showAll={showAll}
@@ -770,8 +713,6 @@ export function Inbox() {
               snoozeMutation.mutate({ itemId, hours, channel })
             }
           />
-        ) : (
-          <ActivityTab items={activityItems} />
         )}
       </div>
       </PullToRefreshWrapper>
@@ -2017,158 +1958,5 @@ function SnoozeDropdown({
         ))}
       </div>
     </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ACTIVITY TAB
-// ═══════════════════════════════════════════════════════════════
-
-function ActivityTab({ items }: { items: ActivityItem[] }) {
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col items-center py-12 text-center">
-        <p
-          className="text-[14px] font-medium"
-          style={{ color: "#1A1A1A", letterSpacing: "-0.01em" }}
-        >
-          No recent history
-        </p>
-        <p className="text-[12px] mt-1" style={{ color: "#7B8189" }}>
-          Interactions will show up here as they happen
-        </p>
-      </div>
-    );
-  }
-
-  const timeGroups = groupByTime(items);
-
-  return (
-    <div>
-      {timeGroups.map(({ group, items: groupItems }) => (
-        <div key={group}>
-          <p
-            className="text-[11px] font-semibold uppercase tracking-wider mb-3 mt-5 first:mt-0"
-            style={{ color: "#7B8189", letterSpacing: "0.06em" }}
-          >
-            {group}
-          </p>
-
-          {/* Timeline */}
-          <div className="relative">
-            {/* Vertical line */}
-            <div
-              className="absolute left-[7px] top-3 bottom-3 w-px"
-              style={{ backgroundColor: "#E2E4E8" }}
-            />
-
-            <div className="space-y-0">
-              {groupItems.map((item) => (
-                <TimelineEntry key={item.id} item={item} />
-              ))}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Timeline Entry ──────────────────────────────────────────
-
-function TimelineEntry({ item }: { item: ActivityItem }) {
-  const isOutbound = item.direction === "OUTBOUND";
-  const channelColor =
-    CHANNEL_DOT_COLORS[item.channel ?? ""] ?? "#B5BAC0";
-  const preview =
-    item.summary?.slice(0, 120) ??
-    item.subject ??
-    item.type.toLowerCase();
-
-  const time = new Date(item.occurredAt).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-
-  return (
-    <div
-      className="group relative flex items-start gap-3 py-2 rounded-xl transition-colors cursor-default"
-      style={{ transitionDuration: "var(--duration-fast)" }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "#F5F6F8";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = "";
-      }}
-    >
-      {/* Timeline dot */}
-      <div
-        className="relative z-10 mt-1.5 h-[15px] w-[15px] shrink-0 rounded-full border-[2.5px]"
-        style={{
-          borderColor: channelColor,
-          backgroundColor: "#FFFFFF",
-        }}
-      />
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          {/* Direction arrow */}
-          {isOutbound ? (
-            <ArrowUpRight
-              className="h-3 w-3 shrink-0"
-              style={{ color: "#059669" }}
-            />
-          ) : (
-            <ArrowDownLeft
-              className="h-3 w-3 shrink-0"
-              style={{ color: "#3B82F6" }}
-            />
-          )}
-
-          <span
-            className="text-[13px] font-medium"
-            style={{ color: "#1A1A1A", letterSpacing: "-0.01em" }}
-          >
-            {isOutbound ? "You" : item.contactName}
-          </span>
-          <span className="text-[12px]" style={{ color: "#B5BAC0" }}>
-            →
-          </span>
-          <span
-            className="text-[13px] font-medium truncate"
-            style={{ color: "#1A1A1A", letterSpacing: "-0.01em" }}
-          >
-            {isOutbound ? item.contactName : "You"}
-          </span>
-
-          {/* Channel icon */}
-          <span style={{ color: "#B5BAC0" }}>
-            <ChannelIcon channel={item.channel ?? "unknown"} size={12} />
-          </span>
-        </div>
-
-        {/* Preview */}
-        <p
-          className="text-[13px] mt-0.5 truncate"
-          style={{
-            color: "#4A4E54",
-            letterSpacing: "-0.01em",
-            paddingLeft: isOutbound ? 20 : 0,
-          }}
-        >
-          {preview}
-        </p>
-      </div>
-
-      {/* Time */}
-      <span
-        className="shrink-0 text-[11px] mt-0.5 tabular-nums"
-        style={{ color: "#B5BAC0", letterSpacing: "-0.01em" }}
-      >
-        {time}
-      </span>
-    </div>
   );
 }
