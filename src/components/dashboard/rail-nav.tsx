@@ -19,7 +19,10 @@ import { useSession, signOut } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import type { DataHealthResponse } from "@/app/api/data-health/route";
+
+interface GoogleSourceStatus {
+  needsReconnect: boolean;
+}
 
 interface RailItem {
   href: string;
@@ -53,20 +56,19 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const tools = ITEMS.filter((i) => i.group === "tools");
 
   // Sources now lives inside Settings, so the terracotta reconnect
-  // dot rides the Settings item. Same query the banner uses; React Query
-  // dedups the network hit.
-  const { data: dataHealth } = useQuery<DataHealthResponse>({
-    queryKey: ["data-health"],
+  // dot rides the Settings item. This uses a small source-status query,
+  // not the full Settings data-health report.
+  const { data: googleStatus } = useQuery<GoogleSourceStatus>({
+    queryKey: ["source-status", "google"],
     queryFn: async () => {
-      const res = await fetch("/api/data-health");
+      const res = await fetch("/api/source-status/google");
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
   });
-  const settingsHasIssue =
-    (dataHealth?.googleAccounts.filter((a) => a.needsReconnect).length ?? 0) > 0;
+  const settingsHasIssue = googleStatus?.needsReconnect ?? false;
 
   return (
     <aside

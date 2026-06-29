@@ -3,7 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { AlertCircle } from "lucide-react";
-import type { DataHealthResponse } from "@/app/api/data-health/route";
+
+interface GoogleSourceAccountStatus {
+  email: string;
+  needsReconnect: boolean;
+}
+
+interface GoogleSourceStatus {
+  accounts: GoogleSourceAccountStatus[];
+}
 
 /**
  * A calm "needs reconnect" row. Terracotta on warm-paper, not a red
@@ -12,10 +20,10 @@ import type { DataHealthResponse } from "@/app/api/data-health/route";
  * from anywhere even when the banner isn't on screen.
  */
 export function ReconnectBanner() {
-  const { data } = useQuery<DataHealthResponse>({
-    queryKey: ["data-health"],
+  const { data } = useQuery<GoogleSourceStatus>({
+    queryKey: ["source-status", "google"],
     queryFn: async () => {
-      const res = await fetch("/api/data-health");
+      const res = await fetch("/api/source-status/google");
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -23,7 +31,7 @@ export function ReconnectBanner() {
     refetchOnWindowFocus: true,
   });
 
-  const broken = data?.googleAccounts.filter((a) => a.needsReconnect) ?? [];
+  const broken = data?.accounts.filter((account) => account.needsReconnect) ?? [];
   if (broken.length === 0) return null;
 
   const label =

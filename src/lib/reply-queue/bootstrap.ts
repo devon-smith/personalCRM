@@ -3,6 +3,7 @@ import {
   getReplyQueueInbox,
   type ReplyQueueInboxView,
 } from "@/lib/reply-queue/inbox-items";
+import { getGoogleSourceStatus } from "@/lib/source-status/google";
 
 export interface ReplyQueueDraftContact {
   id: string;
@@ -56,21 +57,10 @@ export async function getReplyQueueDrafts(
 export async function getReplyQueueGoogleAccounts(
   userId: string,
 ): Promise<ReplyQueueGoogleAccount[]> {
-  const accounts = await prisma.account.findMany({
-    where: {
-      userId,
-      provider: "google",
-      access_token: { not: null },
-    },
-    select: {
-      needsReconnect: true,
-      lastRefreshAt: true,
-    },
-  });
-
-  return accounts.map((account) => ({
+  const status = await getGoogleSourceStatus(userId);
+  return status.accounts.map((account) => ({
     needsReconnect: account.needsReconnect,
-    lastSyncedAt: account.lastRefreshAt?.toISOString() ?? null,
+    lastSyncedAt: account.lastSyncedAt,
   }));
 }
 

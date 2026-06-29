@@ -95,9 +95,9 @@ export function SyncAlerts() {
   }> = [];
 
   // Note: gmail-expired alert removed here. ReconnectBanner already
-  // surfaces the same signal (its own /api/data-health query reads
-  // Account.needsReconnect, same root cause), and the rail nav shows a
-  // terracotta dot. Three places signaling the same problem was clutter.
+  // surfaces the same signal via the light Google source-status query,
+  // and the rail nav shows a terracotta dot. Three places signaling the
+  // same problem was clutter.
 
   // Gmail disconnected
   if (health.gmail.status === "disconnected") {

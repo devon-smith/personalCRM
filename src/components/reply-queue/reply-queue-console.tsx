@@ -244,6 +244,7 @@ export function ReplyQueueConsole() {
 
   const invalidateWorkflow = () => {
     queryClient.invalidateQueries({ queryKey: ["reply-queue-bootstrap"] });
+    queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
     queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
     queryClient.invalidateQueries({ queryKey: ["drafts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });

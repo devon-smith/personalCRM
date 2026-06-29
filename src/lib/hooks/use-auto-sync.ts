@@ -63,6 +63,7 @@ export function useAutoSync() {
 
       queryClient.invalidateQueries({ queryKey: ["unresponded-threads"] });
       queryClient.invalidateQueries({ queryKey: ["data-health"] });
+      queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
 
       if (data.processed > 0) {
         queryClient.invalidateQueries({ queryKey: ["contacts"] });
@@ -112,6 +113,7 @@ export function useAutoSync() {
 
     queryClient.invalidateQueries({ queryKey: ["contacts"] });
     queryClient.invalidateQueries({ queryKey: ["data-health"] });
+    queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
     queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
