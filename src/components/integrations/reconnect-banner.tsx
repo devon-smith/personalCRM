@@ -28,7 +28,7 @@ export function ReconnectBanner() {
       return res.json();
     },
     staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const broken = data?.accounts.filter((account) => account.needsReconnect) ?? [];

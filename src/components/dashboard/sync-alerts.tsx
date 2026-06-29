@@ -52,7 +52,7 @@ export function SyncAlerts() {
       return res.json();
     },
     staleTime: 60 * 1000,
-    refetchOnWindowFocus: true, // Re-check after returning from Google OAuth
+    refetchOnWindowFocus: false,
     retry: false,
   });
 

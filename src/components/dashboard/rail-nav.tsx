@@ -66,7 +66,7 @@ export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
       return res.json();
     },
     staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
   const settingsHasIssue = googleStatus?.needsReconnect ?? false;
 
