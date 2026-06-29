@@ -50,6 +50,10 @@ export const contactListSelect = {
   },
 } satisfies Prisma.ContactSelect;
 
+export type ContactListItem = Prisma.ContactGetPayload<{
+  select: typeof contactListSelect;
+}>;
+
 export function buildContactListQuery(searchParams: URLSearchParams, userId: string) {
   const search = searchParams.get("search") ?? "";
   const tier = searchParams.get("tier");

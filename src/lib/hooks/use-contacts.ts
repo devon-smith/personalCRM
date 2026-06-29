@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Contact, Interaction } from "@/generated/prisma/client";
+import type { ContactListItem } from "@/lib/contact-list-query";
 
-export type ContactWithCount = Contact & {
-  _count: { interactions: number };
-  circles: { circle: { id: string; name: string; color: string } }[];
-};
+export type ContactWithCount = ContactListItem;
 
 export type ContactWithDetails = Contact & {
   interactions: Interaction[];
