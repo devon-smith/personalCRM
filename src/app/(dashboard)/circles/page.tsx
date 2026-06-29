@@ -464,8 +464,19 @@ export default function CirclesPage() {
   const handleEdit = useCallback(
     (data: { name: string; color: string; followUpDays: number }) => {
       if (!editingCircle) return;
+      const update: {
+        id: string;
+        name?: string;
+        color?: string;
+        followUpDays?: number;
+      } = { id: editingCircle.id };
+      if (data.name !== editingCircle.name) update.name = data.name;
+      if (data.color !== editingCircle.color) update.color = data.color;
+      if (data.followUpDays !== editingCircle.followUpDays) {
+        update.followUpDays = data.followUpDays;
+      }
       updateCircle.mutate(
-        { id: editingCircle.id, ...data },
+        update,
         {
           onSuccess: () => {
             setEditingCircle(null);

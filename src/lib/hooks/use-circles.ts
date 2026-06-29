@@ -34,6 +34,12 @@ export interface CircleWithContacts {
 
 export type CircleSummary = Omit<CircleWithContacts, "contacts" | "health">;
 
+type CircleMetadataPatch = Partial<CircleSummary> & { id: string };
+
+interface PeopleBootstrapCircleCache {
+  circles: { id: string; name: string; color: string }[];
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
@@ -46,6 +52,59 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 function invalidateCircleCaches(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ["circles"] });
   queryClient.invalidateQueries({ queryKey: ["contacts", "people-bootstrap"] });
+}
+
+function sortCircles<T extends { sortOrder?: number; name: string }>(circles: T[]) {
+  return [...circles].sort((a, b) => {
+    const sortDelta = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    return sortDelta !== 0 ? sortDelta : a.name.localeCompare(b.name);
+  });
+}
+
+export function patchCircleMetadataCaches(
+  queryClient: QueryClient,
+  circle: CircleMetadataPatch,
+) {
+  queryClient.setQueriesData<CircleWithContacts[]>(
+    { queryKey: ["circles"], exact: true },
+    (current) => current
+      ? sortCircles(
+          current.map((item) =>
+            item.id === circle.id ? { ...item, ...circle } : item,
+          ),
+        )
+      : current,
+  );
+
+  queryClient.setQueriesData<CircleSummary[]>(
+    { queryKey: ["circles", "summary"], exact: true },
+    (current) => current
+      ? sortCircles(
+          current.map((item) =>
+            item.id === circle.id ? { ...item, ...circle } : item,
+          ),
+        )
+      : current,
+  );
+
+  queryClient.setQueriesData<PeopleBootstrapCircleCache>(
+    { queryKey: ["contacts", "people-bootstrap"] },
+    (current) => {
+      if (!current?.circles) return current;
+      return {
+        ...current,
+        circles: current.circles.map((item) =>
+          item.id === circle.id
+            ? {
+                ...item,
+                name: circle.name ?? item.name,
+                color: circle.color ?? item.color,
+              }
+            : item,
+        ),
+      };
+    },
+  );
 }
 
 export function useCircles() {
@@ -89,13 +148,16 @@ export function useUpdateCircle() {
       icon?: string;
       followUpDays?: number;
     }) =>
-      fetchJson(`/api/circles/${id}`, {
+      fetchJson<CircleMetadataPatch>(`/api/circles/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       }),
-    onSuccess: () => {
-      invalidateCircleCaches(queryClient);
+    onSuccess: (circle, variables) => {
+      patchCircleMetadataCaches(queryClient, circle);
+      if (variables.followUpDays !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ["circles"], exact: true });
+      }
     },
   });
 }
