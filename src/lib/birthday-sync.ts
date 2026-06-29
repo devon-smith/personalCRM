@@ -42,6 +42,20 @@ export async function syncBirthdaysFromCalendar(
     return { scanned: 0, matched: 0, updated: 0, alreadyHad: 0, entries: [] };
   }
 
+  const parsedBirthdays = birthdayEvents
+    .map(parseBirthdayEvent)
+    .filter((entry): entry is { name: string; date: Date } => entry !== null);
+
+  if (parsedBirthdays.length === 0) {
+    return {
+      scanned: birthdayEvents.length,
+      matched: 0,
+      updated: 0,
+      alreadyHad: 0,
+      entries: [],
+    };
+  }
+
   // Load all contacts for matching
   const contacts = await prisma.contact.findMany({
     where: { userId },
@@ -62,10 +76,7 @@ export async function syncBirthdaysFromCalendar(
   let alreadyHad = 0;
   const entries: BirthdaySyncEntry[] = [];
 
-  for (const event of birthdayEvents) {
-    const parsed = parseBirthdayEvent(event);
-    if (!parsed) continue;
-
+  for (const parsed of parsedBirthdays) {
     const contactKey = parsed.name.toLowerCase().trim();
     const contact = contactByName.get(contactKey);
     if (!contact) continue;
@@ -181,8 +192,6 @@ function parseBirthdayEvent(
   let name: string | null = null;
 
   if (summary.toLowerCase().endsWith("'s birthday")) {
-    name = summary.slice(0, -"'s birthday".length).trim();
-  } else if (summary.toLowerCase().endsWith("'s birthday")) {
     name = summary.slice(0, -"'s birthday".length).trim();
   } else if (summary.toLowerCase().startsWith("birthday - ")) {
     name = summary.slice("birthday - ".length).trim();

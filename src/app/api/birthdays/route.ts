@@ -4,6 +4,18 @@ import { getUpcomingBirthdays } from "@/lib/birthdays";
 import { syncBirthdaysFromCalendar } from "@/lib/birthday-sync";
 import { privateCacheHeaders } from "@/lib/http/cache";
 
+const BIRTHDAY_SYNC_REUSE_MS = 60_000;
+type BirthdaySyncRunResult = Awaited<ReturnType<typeof syncBirthdaysFromCalendar>>;
+
+const inFlightBirthdaySync = new Map<string, Promise<BirthdaySyncRunResult>>();
+const recentBirthdaySync = new Map<
+  string,
+  {
+    expiresAt: number;
+    result: BirthdaySyncRunResult;
+  }
+>();
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -27,8 +39,29 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const userId = session.user.id;
+  let activeSync: Promise<BirthdaySyncRunResult> | null = null;
+
   try {
-    const result = await syncBirthdaysFromCalendar(session.user.id);
+    const recent = recentBirthdaySync.get(userId);
+    if (recent && recent.expiresAt > Date.now()) {
+      return NextResponse.json({ ...recent.result, cached: true });
+    }
+
+    const existing = inFlightBirthdaySync.get(userId);
+    if (existing) {
+      const result = await existing;
+      return NextResponse.json({ ...result, cached: true });
+    }
+
+    const sync = syncBirthdaysFromCalendar(userId);
+    activeSync = sync;
+    inFlightBirthdaySync.set(userId, sync);
+    const result = await sync;
+    recentBirthdaySync.set(userId, {
+      result,
+      expiresAt: Date.now() + BIRTHDAY_SYNC_REUSE_MS,
+    });
     return NextResponse.json(result);
   } catch (error) {
     console.error("[POST /api/birthdays]", error);
@@ -36,5 +69,9 @@ export async function POST() {
       { error: error instanceof Error ? error.message : "Failed to sync birthdays" },
       { status: 500 },
     );
+  } finally {
+    if (activeSync && inFlightBirthdaySync.get(userId) === activeSync) {
+      inFlightBirthdaySync.delete(userId);
+    }
   }
 }

@@ -181,6 +181,7 @@
 - Push-watch setup now dedupes in-flight requests and reuses the last per-user setup result for 60 seconds. Repeated setup POSTs no longer stop/create duplicate Calendar channels or refresh Gmail watches back-to-back during mobile double taps or retry loops.
 - Circle auto-categorize now uses a contact count for the uncategorized summary instead of loading every contact id. Preview/apply runs still use the interaction group counts they need, but skip a broad contact row read.
 - Contact location enrichment now runs as a bounded incremental pass: at most 120 contacts, 10 Nominatim geocodes, and 25 AI company lookups per request, with per-request city geocode caching and an in-flight per-user guard. The map "Locate them" action can make progress without turning one HTTP request into a long provider crawl.
+- Birthday Calendar extraction now dedupes in-flight scans and reuses the last per-user result for 60 seconds. It also parses Calendar events before loading contacts, so non-birthday event results do not trigger a broad contact matching read.
 
 ## Next Highest-Impact Efficiency Work
 
