@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
 import { classifyRecipient } from "@/lib/voice/relationship-classifier";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(300, 600);
 
 function relationshipTypeResponse(relationshipType: string | null) {
   return NextResponse.json(
     { relationshipType },
-    {
-      headers: {
-        "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
-      },
-    },
+    { headers: READ_CACHE_HEADERS },
   );
 }
 

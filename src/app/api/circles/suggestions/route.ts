@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import {
   generateCircleSuggestions,
   type CircleSuggestion,
 } from "@/lib/circle-suggestions";
 
 export type { CircleSuggestion };
+
+const READ_CACHE_HEADERS = privateCacheHeaders(60, 300);
 
 /** GET — Smart circle suggestions based on contact data */
 export async function GET() {
@@ -18,11 +21,7 @@ export async function GET() {
     const suggestions = await generateCircleSuggestions(session.user.id);
     return NextResponse.json(
       { suggestions },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
-        },
-      },
+      { headers: READ_CACHE_HEADERS },
     );
   } catch (error) {
     console.error("[GET /api/circles/suggestions]", error);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
 import { RELATIONSHIP_TYPES } from "@/lib/voice/relationship-classifier";
 import {
@@ -15,6 +16,7 @@ const EMPTY_LEARNED: LearnedProfile = {
   generatedAt: 0,
 };
 const EMPTY_OVERRIDES: VoiceOverrides = { removedPhrases: [], assertions: {} };
+const READ_CACHE_HEADERS = privateCacheHeaders(30, 300);
 
 /**
  * GET /api/voice/bootstrap
@@ -84,10 +86,6 @@ export async function GET() {
         addedAt: row.addedAt.toISOString(),
       })),
     },
-    {
-      headers: {
-        "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
-      },
-    },
+    { headers: READ_CACHE_HEADERS },
   );
 }

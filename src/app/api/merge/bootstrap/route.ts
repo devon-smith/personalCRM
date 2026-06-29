@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
 import { buildDuplicateGroups } from "@/lib/contact-duplicates";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(30, 120);
 
 export async function GET() {
   try {
@@ -52,11 +55,7 @@ export async function GET() {
         },
         linkedInReview: { totalPending: linkedInPendingCount },
       },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=30, stale-while-revalidate=120",
-        },
-      },
+      { headers: READ_CACHE_HEADERS },
     );
   } catch (error) {
     console.error("[GET /api/merge/bootstrap]", error);

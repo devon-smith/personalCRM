@@ -9,6 +9,7 @@ import {
   getCalendarSyncStatus,
   type CalendarSyncStatus,
 } from "@/lib/calendar/status";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { runCalendarSyncForUser } from "@/lib/sync/google-sync-runs";
 import { parseSyncTrigger } from "@/lib/sync/run-telemetry";
 
@@ -25,9 +26,7 @@ function calendarConnectionError(status: CalendarSyncStatus): string | null {
   return null;
 }
 
-const READ_CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
-};
+const READ_CACHE_HEADERS = privateCacheHeaders(30, 300);
 
 /** GET — Fetch upcoming calendar events */
 export async function GET() {

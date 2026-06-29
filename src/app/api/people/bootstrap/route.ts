@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
 import {
   buildContactListQuery,
   ContactListQueryError,
   contactListSelect,
 } from "@/lib/contact-list-query";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(30, 120);
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,11 +41,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(
       { contacts, circles, totalPendingDuplicates },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=30, stale-while-revalidate=120",
-        },
-      },
+      { headers: READ_CACHE_HEADERS },
     );
   } catch (error) {
     if (error instanceof ContactListQueryError) {
