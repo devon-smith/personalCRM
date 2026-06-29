@@ -48,7 +48,6 @@ export default function SourcesPage() {
   const refreshSourceViews = () => {
     queryClient.invalidateQueries({ queryKey: ["data-health"] });
     queryClient.invalidateQueries({ queryKey: ["source-status", "google"] });
-    queryClient.invalidateQueries({ queryKey: ["gmail-source-health"] });
   };
 
   // ─── Sync mutations ───
