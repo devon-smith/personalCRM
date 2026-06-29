@@ -36,6 +36,7 @@
 - Calendar empty states now use DB-only sync status returned with `/api/calendar`, so the Calendar and home meeting surfaces distinguish disconnected/missing-scope, never-synced, failed-sync, and genuinely-empty states without extra Google calls.
 - Legacy/development surfaces are now hidden from the main UI unless enabled by public deployment flags: `NEXT_PUBLIC_ENABLE_IMESSAGE`, `NEXT_PUBLIC_ENABLE_WHATSAPP`, `NEXT_PUBLIC_ENABLE_ACTIVITY`, and `NEXT_PUBLIC_ENABLE_FEED`. Their direct API routes also fail closed with disabled/404 responses, including Feed, Activity, extension Feed/Activity writes, iMessage, and WhatsApp.
 - Reply queue draft review now lazily loads selected-draft provenance from the draft workspace context: exact inbound message source, loaded thread depth, matching voice references, and known missing context.
+- Legacy Source health no longer polls its wide DB-only health report every minute. It now uses a five-minute client stale window, manual refresh, and a short private cache header.
 
 ## Next Highest-Impact Efficiency Work
 

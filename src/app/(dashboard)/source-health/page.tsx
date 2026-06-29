@@ -1,36 +1,62 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Database, Loader2, Mail } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Database, Loader2, Mail, RefreshCw } from "lucide-react";
 import type { GmailSourceHealthResponse } from "@/app/api/gmail/source-health/route";
 
 export default function SourceHealthPage() {
-  const { data, isLoading, error } = useQuery<GmailSourceHealthResponse>({
+  const { data, isLoading, isFetching, error, refetch, dataUpdatedAt } = useQuery<GmailSourceHealthResponse>({
     queryKey: ["gmail-source-health"],
     queryFn: async () => {
       const res = await fetch("/api/gmail/source-health");
       if (!res.ok) throw new Error("Failed to load Gmail source health");
       return res.json();
     },
-    refetchInterval: 60_000,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-6 sm:py-10">
-      <header className="mb-6">
-        <div
-          className="text-[11px] font-semibold uppercase tracking-[0.14em]"
-          style={{ color: "var(--text-tertiary)" }}
-        >
-          Deployment readiness
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div
+            className="text-[11px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: "var(--text-tertiary)" }}
+          >
+            Deployment readiness
+          </div>
+          <h1 className="mt-1 ds-display-md" style={{ color: "var(--text-primary)" }}>
+            Source health
+          </h1>
+          <p className="mt-1 max-w-2xl text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+            Gmail is the primary communication source. This page tracks whether
+            sync, matching, reply queueing, and Gmail drafts are healthy.
+          </p>
+          {dataUpdatedAt > 0 && (
+            <p className="mt-2 text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+              Last checked {formatDate(new Date(dataUpdatedAt).toISOString())}
+            </p>
+          )}
         </div>
-        <h1 className="mt-1 ds-display-md" style={{ color: "var(--text-primary)" }}>
-          Source health
-        </h1>
-        <p className="mt-1 max-w-2xl text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-          Gmail is the primary communication source. This page tracks whether
-          sync, matching, reply queueing, and Gmail drafts are healthy.
-        </p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          className="inline-flex w-fit items-center gap-2 rounded-[8px] border px-3 py-2 text-[12px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          {isFetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          {isFetching ? "Refreshing" : "Refresh"}
+        </button>
       </header>
 
       {isLoading ? (
