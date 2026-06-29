@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import Anthropic from "@anthropic-ai/sdk";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(10 * 60, 30 * 60);
 
 export interface CircleIntelligence {
   readonly narrative: string;
@@ -68,7 +71,7 @@ export async function GET(
       return NextResponse.json({
         narrative: "This circle is empty. Add some contacts to get insights.",
         contactInsights: [],
-      });
+      }, { headers: READ_CACHE_HEADERS });
     }
 
     // Build context for AI
@@ -89,7 +92,10 @@ export async function GET(
 
     // If no API key, return template-based response
     if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(generateTemplateFallback(circle.name, contacts));
+      return NextResponse.json(
+        generateTemplateFallback(circle.name, contacts),
+        { headers: READ_CACHE_HEADERS },
+      );
     }
 
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -128,13 +134,16 @@ For conversation starters: be genuine and specific. Reference their work, someth
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]) as CircleIntelligence;
-        return NextResponse.json(parsed);
+        return NextResponse.json(parsed, { headers: READ_CACHE_HEADERS });
       }
     } catch {
       // Parse failure — fall through to template
     }
 
-    return NextResponse.json(generateTemplateFallback(circle.name, contacts));
+    return NextResponse.json(
+      generateTemplateFallback(circle.name, contacts),
+      { headers: READ_CACHE_HEADERS },
+    );
   } catch (error) {
     console.error("[GET /api/circles/[id]/intelligence]", error);
     return NextResponse.json(

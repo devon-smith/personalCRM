@@ -145,6 +145,7 @@ function IntelligencePanel({ circleId }: { readonly circleId: string }) {
       return res.json();
     },
     staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   if (isLoading) {
