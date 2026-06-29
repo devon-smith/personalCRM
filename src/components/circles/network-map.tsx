@@ -306,6 +306,8 @@ export function NetworkMap() {
       if (!res.ok) throw new Error("Failed to load map");
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Circle legend items

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { privateCacheHeaders } from "@/lib/http/cache";
 
 export interface MapContact {
   readonly id: string;
@@ -33,61 +34,63 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const totalContacts = await prisma.contact.count({
-      where: { userId: session.user.id },
-    });
+    const [totalContacts, memberships, uncircledContacts] = await Promise.all([
+      prisma.contact.count({
+        where: { userId: session.user.id },
+      }),
 
-    // Fetch contacts that have lat/lng and belong to at least one circle
-    const memberships = await prisma.contactCircle.findMany({
-      where: {
-        circle: { userId: session.user.id },
-        contact: {
-          latitude: { not: null },
-          longitude: { not: null },
-        },
-      },
-      select: {
-        circle: {
-          select: { id: true, name: true, color: true },
-        },
-        contact: {
-          select: {
-            id: true,
-            name: true,
-            company: true,
-            role: true,
-            avatarUrl: true,
-            latitude: true,
-            longitude: true,
-            city: true,
-            state: true,
-            country: true,
+      // Fetch contacts that have lat/lng and belong to at least one circle
+      prisma.contactCircle.findMany({
+        where: {
+          circle: { userId: session.user.id },
+          contact: {
+            latitude: { not: null },
+            longitude: { not: null },
           },
         },
-      },
-    });
+        select: {
+          circle: {
+            select: { id: true, name: true, color: true },
+          },
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              company: true,
+              role: true,
+              avatarUrl: true,
+              latitude: true,
+              longitude: true,
+              city: true,
+              state: true,
+              country: true,
+            },
+          },
+        },
+      }),
 
-    // Also fetch located contacts that are NOT in any circle
-    const uncircledContacts = await prisma.contact.findMany({
-      where: {
-        userId: session.user.id,
-        latitude: { not: null },
-        longitude: { not: null },
-        circles: { none: {} },
-      },
-      select: {
-        id: true,
-        name: true,
-        company: true,
-        role: true,
-        avatarUrl: true,
-        latitude: true,
-        longitude: true,
-        city: true,
-        state: true,
-        country: true,
-      },
-    });
+      // Also fetch located contacts that are NOT in any circle
+      prisma.contact.findMany({
+        where: {
+          userId: session.user.id,
+          latitude: { not: null },
+          longitude: { not: null },
+          circles: { none: {} },
+        },
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          role: true,
+          avatarUrl: true,
+          latitude: true,
+          longitude: true,
+          city: true,
+          state: true,
+          country: true,
+        },
+      }),
+    ]);
 
     // Build map contacts — one entry per circle membership
     const mapContacts: MapContact[] = memberships.map((m) => ({
@@ -136,13 +139,16 @@ export async function GET() {
     const cities = new Set(uniqueContacts.map((c) => c.city).filter(Boolean));
     const countries = new Set(uniqueContacts.map((c) => c.country).filter(Boolean));
 
-    return NextResponse.json({
-      contacts: mapContacts,
-      totalContacts,
-      locatedContacts: uniqueContacts.length,
-      cities: cities.size,
-      countries: countries.size,
-    } satisfies MapResponse);
+    return NextResponse.json(
+      {
+        contacts: mapContacts,
+        totalContacts,
+        locatedContacts: uniqueContacts.length,
+        cities: cities.size,
+        countries: countries.size,
+      } satisfies MapResponse,
+      { headers: privateCacheHeaders(5 * 60, 30 * 60) },
+    );
   } catch (error) {
     console.error("[GET /api/circles/map]", error);
     return NextResponse.json(

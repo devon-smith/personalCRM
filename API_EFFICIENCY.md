@@ -124,6 +124,7 @@
 - Google Contacts import now runs as one server-side POST from Sources. The browser no longer downloads the full Google Contacts preview and uploads the same contact list back to the API for routine imports.
 - The retired Google Contacts preview GET now fails closed. Direct requests to `/api/gmail/contacts` cannot fetch a 2,000-contact People API preview; contact import remains an explicit POST action.
 - Removed the unused `/api/gmail/discover` HTTP route, which could scan 90 days / 500 Gmail messages if called directly. The underlying library remains available for deliberate maintenance/backfill code paths.
+- The Circles network map now parallelizes its independent DB reads and uses a five-minute private cache/client stale window. Reopening the lazy map avoids immediate repeat contact/membership reads.
 
 ## Next Highest-Impact Efficiency Work
 
