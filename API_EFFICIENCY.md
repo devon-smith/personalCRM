@@ -34,7 +34,7 @@
 - Detailed provider-call telemetry now has a daily retention worker. `PROVIDER_CALL_LOG_RETENTION_DAYS` defaults to 180 days, which preserves the 7/30/90-day Settings usage windows plus debugging headroom.
 - Sources now frames manual Gmail/Calendar actions as "Refresh now", shows recent server-run status beside each service, and refreshes connected source indicators after manual runs.
 - Calendar empty states now use DB-only sync status returned with `/api/calendar`, so the Calendar and home meeting surfaces distinguish disconnected/missing-scope, never-synced, failed-sync, and genuinely-empty states without extra Google calls.
-- Legacy/development surfaces are now hidden from the main UI unless enabled by public deployment flags: `NEXT_PUBLIC_ENABLE_IMESSAGE`. Their direct API routes fail closed with disabled/404 responses when unavailable; retired Activity, Feed, and WhatsApp read/write HTTP surfaces are hard-disabled.
+- Retired messaging/runtime surfaces are hard-disabled: Activity, Feed, WhatsApp, and iMessage no longer expose sync UI or public deployment flags, and their direct API routes fail closed with disabled/404 responses. Generic historical iMessage/SMS rendering remains so old imported rows still display.
 - Reply queue draft review now lazily loads selected-draft provenance from the draft workspace context: exact inbound message source, loaded thread depth, matching voice references, and known missing context.
 - Legacy Source health no longer polls its wide DB-only health report every minute. It now uses a five-minute client stale window, manual refresh, and a short private cache header.
 - Dashboard home no longer renders the dev/admin `SyncAlerts` banner, so normal home visits avoid the extra `/api/health` request and duplicated Google reconnect messaging.
@@ -73,12 +73,13 @@
 - Converted unused legacy HTTP backfill routes into fail-closed stubs so direct requests cannot trigger large source imports or relationship coverage scans. Maintenance scripts remain available for intentional backfills.
 - Converted unused legacy inbox debug/migration routes into fail-closed stubs so direct requests cannot run raw inbox diagnostics or all-interaction chat-id backfills.
 - Converted unused legacy interaction cleanup/dedup routes into fail-closed stubs so direct requests cannot scan or delete historical interaction rows.
-- Converted unused legacy `/api/threads/backfill` into a fail-closed stub. Current Gmail/iMessage sync paths create and link threads directly.
+- Converted unused legacy `/api/threads/backfill` into a fail-closed stub. Current Gmail sync paths create and link threads directly.
 - Converted unused admin/debug and contact-maintenance HTTP routes into fail-closed stubs: admin job inspection, morning-brief preview/manual trigger, legacy duplicate scan, and CSV contact cleanup. Worker/source health and duplicate review now stay on the focused Sources, usage telemetry, and Merge bootstrap flows.
 - Removed the final dashboard inbox Activity/History tab branch and made `/api/activity` fail closed unconditionally. The reply/inbox surfaces no longer carry a dormant activity query, tab state, or post-sync activity invalidation.
 - Removed the retired `NEXT_PUBLIC_ENABLE_ACTIVITY` flag and made extension activity logging fail closed unconditionally. The LinkedIn extension docs no longer advertise profile-view activity logging.
 - Retired the Feed runtime surface: removed the `NEXT_PUBLIC_ENABLE_FEED` flag, made `/feed` and `/api/feed*` fail closed, removed extension feed scanning, and removed the scheduled `feed-aggregate` worker path. Raw life-event extraction remains because dashboard observations still use those signals.
 - Retired the WhatsApp runtime surface: removed the `NEXT_PUBLIC_ENABLE_WHATSAPP` flag, removed the Sources WhatsApp setup card, made `/api/whatsapp/*` fail closed, and removed the WhatsApp voice-corpus embedding pass.
+- Retired the iMessage runtime surface: removed the `NEXT_PUBLIC_ENABLE_IMESSAGE` flag, removed Sources/People/Settings iMessage sync UI, made `/api/imessage*` fail closed, and removed iMessage status/source checks from health and data-health payloads.
 
 ## Next Highest-Impact Efficiency Work
 

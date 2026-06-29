@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { deploymentFeatures } from "@/lib/deployment-features";
 import { getAllGoogleAccessTokens } from "@/lib/gmail/client";
 import { noStoreHeaders, privateCacheHeaders } from "@/lib/http/cache";
-import { checkIMessageAccess } from "@/lib/imessage";
-import { getUserProfile } from "@/lib/user-profile";
 
 /**
  * GET /api/health
@@ -95,33 +92,16 @@ export async function GET(request: Request) {
     }
   }
 
-  // Check iMessage access (only if enabled in user profile)
-  const profile = getUserProfile();
-  const imessageAvailable =
-    deploymentFeatures.imessage && profile.imessageAvailable;
-  const imessageError = imessageAvailable ? checkIMessageAccess() : "Disabled in user profile";
-  const imessageStatus = imessageAvailable
-    ? (imessageError ? "unavailable" : "connected")
-    : "disabled";
-
   // Get sync timestamps
-  const [gmailSync, imessageSyncCount] = await Promise.all([
-    prisma.gmailSyncState.findUnique({
-      where: { userId },
-      select: { lastSyncAt: true, syncEnabled: true },
-    }),
-    deploymentFeatures.imessage
-      ? prisma.iMessageSyncState.count({ where: { userId } })
-      : Promise.resolve(0),
-  ]);
+  const gmailSync = await prisma.gmailSyncState.findUnique({
+    where: { userId },
+    select: { lastSyncAt: true, syncEnabled: true },
+  });
 
   // Count interactions by source prefix
-  const [totalInteractions, imsgCount, gmailCount] =
+  const [totalInteractions, gmailCount] =
     await Promise.all([
       prisma.interaction.count({ where: { userId } }),
-      prisma.interaction.count({
-        where: { userId, sourceId: { startsWith: "imsg" } },
-      }),
       prisma.interaction.count({
         where: {
           userId,
@@ -165,14 +145,8 @@ export async function GET(request: Request) {
         lastSyncAt: gmailSync?.lastSyncAt ?? null,
         syncEnabled: gmailSync?.syncEnabled ?? false,
       },
-      imessage: {
-        status: imessageStatus,
-        error: imessageError,
-        handlesTracked: imessageSyncCount,
-      },
       interactions: {
         total: totalInteractions,
-        imessage: imsgCount,
         gmail: gmailCount,
       },
       contacts: {

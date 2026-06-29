@@ -3,12 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Loader2, ChevronDown, UserPlus, ExternalLink, Mail, Users, Calendar, Sparkles, Check, Smartphone, MessageCircle } from "lucide-react";
+import { RefreshCw, Loader2, ChevronDown, UserPlus, ExternalLink, Mail, Users, Calendar, Sparkles, Check, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import type { DataHealthResponse, DataSource } from "@/app/api/data-health/route";
 import type { DiscoverResult } from "@/app/api/gmail/discover/route";
 import type { CalendarSyncResult } from "@/app/api/calendar/route";
-import type { IMessageSyncResult } from "@/app/api/imessage/route";
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -315,38 +314,12 @@ export function DataHealth() {
     onError: (err) => toast.error(err.message),
   });
 
-  const syncIMessage = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/imessage", { method: "POST" });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "iMessage sync failed");
-      }
-      return res.json() as Promise<IMessageSyncResult>;
-    },
-    onSuccess: (result) => {
-      const parts: string[] = [];
-      if (result.messagesCreated > 0) parts.push(`${result.messagesCreated} messages logged`);
-      if (result.contactsMatched > 0) parts.push(`${result.contactsMatched} contacts matched`);
-      if (parts.length > 0) {
-        toast(`iMessage: ${parts.join(", ")}`);
-      } else {
-        toast(`Scanned ${result.chatsScanned} chats — all already synced`);
-      }
-      queryClient.invalidateQueries({ queryKey: ["data-health"] });
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const isSyncing = syncGmail.isPending || importContacts.isPending || discoverGmail.isPending || importApple.isPending || syncCalendar.isPending || syncIMessage.isPending;
+  const isSyncing = syncGmail.isPending || importContacts.isPending || discoverGmail.isPending || importApple.isPending || syncCalendar.isPending;
 
   function handleSync(key: string) {
     if (key === "gmail") syncGmail.mutate();
     else if (key === "google-contacts") importContacts.mutate();
     else if (key === "google-calendar") syncCalendar.mutate();
-    else if (key === "imessage") syncIMessage.mutate();
   }
 
   function handleSyncAll() {
@@ -363,9 +336,6 @@ export function DataHealth() {
     }
     if (syncable.some((s) => s.key === "google-calendar")) {
       syncCalendar.mutate();
-    }
-    if (syncable.some((s) => s.key === "imessage")) {
-      syncIMessage.mutate();
     }
   }
 
@@ -588,81 +558,6 @@ export function DataHealth() {
         </div>
       </div>
 
-      {/* ── iMessage ── */}
-      <div className="mt-3 rounded-[14px] border border-[#E8EAED] bg-white px-5 py-5">
-        <div className="flex items-start gap-4">
-          <div
-            className="flex shrink-0 items-center justify-center rounded-[12px]"
-            style={{
-              width: 40,
-              height: 40,
-              backgroundColor: syncIMessage.isSuccess ? "#EBF5EE" : "#F0FFF4",
-            }}
-          >
-            {syncIMessage.isSuccess ? (
-              <Check className="h-5 w-5 text-[#4A8C5E]" />
-            ) : (
-              <MessageCircle className="h-5 w-5 text-[#34C759]" />
-            )}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <h3
-              className="text-[14px] font-semibold text-[#1A1A1A]"
-              style={{ letterSpacing: "-0.02em" }}
-            >
-              {syncIMessage.isSuccess
-                ? "iMessage synced"
-                : "iMessage"}
-            </h3>
-
-            {syncIMessage.isSuccess && syncIMessage.data ? (
-              <div className="mt-1.5">
-                <p className="text-[12px] text-[#7B8189]">
-                  {(syncIMessage.data.messagesCreated > 0 || syncIMessage.data.contactsMatched > 0) ? (
-                    <>
-                      {syncIMessage.data.contactsMatched > 0 && (
-                        <>Matched <span className="font-medium text-[#4A8C5E]">{syncIMessage.data.contactsMatched}</span> contacts</>
-                      )}
-                      {syncIMessage.data.contactsMatched > 0 && syncIMessage.data.messagesCreated > 0 && <> &middot; </>}
-                      {syncIMessage.data.messagesCreated > 0 && (
-                        <>Logged <span className="font-medium text-[#6366F1]">{syncIMessage.data.messagesCreated}</span> messages</>
-                      )}
-                    </>
-                  ) : (
-                    <>Scanned {syncIMessage.data.chatsScanned} chats — all already synced.</>
-                  )}
-                </p>
-              </div>
-            ) : (
-              <p className="mt-0.5 text-[12px] leading-relaxed text-[#9BA1A8]">
-                Sync your iMessage and SMS conversations. Matches messages to contacts by phone number.
-              </p>
-            )}
-
-            {!syncIMessage.isSuccess && (
-              <button
-                onClick={() => syncIMessage.mutate()}
-                disabled={syncIMessage.isPending}
-                className="mt-3 inline-flex items-center gap-2 rounded-[10px] bg-[#1A1A1A] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#2D2D2D] disabled:opacity-50"
-              >
-                {syncIMessage.isPending ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Scanning Messages...
-                  </>
-                ) : (
-                  <>
-                    <MessageCircle className="h-3.5 w-3.5" />
-                    Sync iMessages
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
       <div className="mt-5 space-y-1">
         {data.sources.map((source) => (
           <div
@@ -691,8 +586,7 @@ export function DataHealth() {
               isSyncing={
                 (source.key === "gmail" && syncGmail.isPending) ||
                 (source.key === "google-contacts" && importContacts.isPending) ||
-                (source.key === "google-calendar" && syncCalendar.isPending) ||
-                (source.key === "imessage" && syncIMessage.isPending)
+                (source.key === "google-calendar" && syncCalendar.isPending)
               }
               onSync={() => handleSync(source.key)}
               hasGoogleOAuth={data.hasGoogleOAuth}

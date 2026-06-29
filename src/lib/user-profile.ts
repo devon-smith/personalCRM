@@ -19,9 +19,7 @@ export interface UserProfile {
   /** Phrases the user NEVER wants in generated drafts */
   bannedPhrases: string[];
   /** Default channels this deployment syncs (used in auto-sync and health checks) */
-  activeChannels: Array<"gmail" | "linkedin" | "imessage" | "calendar">;
-  /** Whether iMessage/chat.db sync is available (requires Mac with Messages.app) */
-  imessageAvailable: boolean;
+  activeChannels: Array<"gmail" | "linkedin" | "calendar">;
 }
 
 const DEFAULT_PROFILE: UserProfile = {
@@ -40,7 +38,6 @@ const DEFAULT_PROFILE: UserProfile = {
     "Touch base",
   ],
   activeChannels: ["gmail", "calendar"],
-  imessageAvailable: false,
 };
 
 let _profile: UserProfile = { ...DEFAULT_PROFILE };

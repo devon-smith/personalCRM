@@ -11,7 +11,6 @@ import {
   Calendar,
   Users,
   Smartphone,
-  MessageCircle,
   Check,
   ExternalLink,
   Plus,
@@ -20,10 +19,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LinkedInImport } from "@/components/settings/linkedin-import";
-import { deploymentFeatures } from "@/lib/deployment-features";
 import type { DataHealthResponse, GoogleAccountInfo } from "@/app/api/data-health/route";
 import type { CalendarSyncResult } from "@/app/api/calendar/route";
-import type { IMessageSyncResult } from "@/app/api/imessage/route";
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -38,7 +35,6 @@ function formatRelativeTime(iso: string): string {
 
 export default function SourcesPage() {
   const queryClient = useQueryClient();
-  const showIMessage = deploymentFeatures.imessage;
 
   const { data, isLoading } = useQuery<DataHealthResponse>({
     queryKey: ["data-health"],
@@ -123,27 +119,11 @@ export default function SourcesPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const syncIMessage = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/imessage", { method: "POST" });
-      if (!res.ok) throw new Error((await res.json()).error ?? "iMessage sync failed");
-      return res.json() as Promise<IMessageSyncResult>;
-    },
-    onSuccess: (result) => {
-      toast(result.messagesCreated > 0
-        ? `iMessage: ${result.messagesCreated} messages logged`
-        : "All messages already synced");
-      refreshSourceViews();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
   const isSyncing =
     syncGmail.isPending ||
     importContacts.isPending ||
     syncCalendar.isPending ||
-    importApple.isPending ||
-    (showIMessage && syncIMessage.isPending);
+    importApple.isPending;
 
   // Auto-sync after adding a new Google account
   const didAutoSync = useRef(false);
@@ -166,7 +146,6 @@ export default function SourcesPage() {
     importContacts.mutate();
     syncCalendar.mutate();
     importApple.mutate();
-    if (showIMessage) syncIMessage.mutate();
   }
 
   // Calculate data quality score
@@ -293,17 +272,6 @@ export default function SourcesPage() {
           actionLabel="Refresh"
         />
 
-        {showIMessage && (
-          <SourceCard
-            icon={MessageCircle}
-            iconBg="var(--status-success-bg)"
-            iconColor="var(--status-success)"
-            name="iMessage"
-            source={sourceByKey("imessage")}
-            isSyncing={syncIMessage.isPending}
-            onSync={() => syncIMessage.mutate()}
-          />
-        )}
       </div>
 
       {/* ═══ SECTION 4 — Imports ═══ */}

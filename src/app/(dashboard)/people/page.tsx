@@ -13,7 +13,6 @@ import { ContactImportDialog } from "@/components/contacts/contact-import-dialog
 import type { ContactWithCount } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import { Pill, FilterPill } from "@/components/ds";
-import { deploymentFeatures } from "@/lib/deployment-features";
 
 const sourceOptions = [
   { value: "", label: "All sources" },
@@ -22,9 +21,6 @@ const sourceOptions = [
   { value: "GOOGLE_CONTACTS", label: "Google Contacts" },
   { value: "GMAIL_DISCOVER", label: "Gmail" },
   { value: "APPLE_CONTACTS", label: "Apple Contacts" },
-  ...(deploymentFeatures.imessage
-    ? [{ value: "IMESSAGE", label: "iMessage" }]
-    : []),
 ];
 
 const sortOptions = [
