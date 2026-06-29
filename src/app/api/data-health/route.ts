@@ -77,19 +77,39 @@ export async function GET(request: Request) {
     });
   }
 
-  // Check ALL linked Google accounts for tokens and scopes
-  const googleAccounts = await prisma.account.findMany({
-    where: { userId, provider: "google" },
-    select: {
-      id: true,
-      access_token: true,
-      scope: true,
-      id_token: true,
-      needsReconnect: true,
-      lastRefreshAt: true,
-      lastRefreshError: true,
-    },
-  });
+  const [googleAccounts, user, syncState, contactsCursors] = await Promise.all([
+    // Check ALL linked Google accounts for tokens and scopes.
+    prisma.account.findMany({
+      where: { userId, provider: "google" },
+      select: {
+        id: true,
+        access_token: true,
+        scope: true,
+        id_token: true,
+        needsReconnect: true,
+        lastRefreshAt: true,
+        lastRefreshError: true,
+      },
+    }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    }),
+    prisma.gmailSyncState.findUnique({
+      where: { userId },
+      select: {
+        additionalUserEmails: true,
+        contactsImported: true,
+        lastSyncAt: true,
+        syncEnabled: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.contactsSyncCursor.findMany({
+      where: { userId },
+      select: { lastSyncAt: true },
+    }),
+  ]);
 
   const hasGoogleOAuth = googleAccounts.some((a) => !!a.access_token);
 
@@ -106,17 +126,6 @@ export async function GET(request: Request) {
   );
 
   // Build per-account info with email extracted from id_token
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true },
-  });
-  const syncState = await prisma.gmailSyncState.findUnique({
-    where: { userId },
-  });
-  const contactsCursors = await prisma.contactsSyncCursor.findMany({
-    where: { userId },
-    select: { accountId: true, lastSyncAt: true },
-  });
   const latestContactsSync = contactsCursors
     .map((c) => c.lastSyncAt)
     .filter((d): d is Date => d !== null)
