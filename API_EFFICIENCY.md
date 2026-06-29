@@ -130,6 +130,7 @@
 - Circle intelligence now uses the same ten-minute private cache as its client stale window, and the panel no longer refetches on window focus. Reopening Insights avoids repeat Haiku calls for the same circle.
 - Circle stories now avoid the separate membership lookup by filtering recent interactions through contact-circle membership directly, and successful story reads use a short private cache for immediate reopen/reload cases.
 - Removed the unused legacy circle-health HTTP routes and their standalone analytics helper. Active circle warmth counts already ride on `/api/circles`, so direct `/api/circles/health` calls can no longer trigger per-circle multi-query analytics work.
+- Contact journal add/delete now update the open contact panel's React Query cache directly from mutation results instead of invalidating and immediately re-reading `/api/journal`.
 
 ## Next Highest-Impact Efficiency Work
 

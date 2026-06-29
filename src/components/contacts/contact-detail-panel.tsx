@@ -100,8 +100,11 @@ export function ContactDetailPanel({
       if (!res.ok) throw new Error("Failed to save entry");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["journal", contactId] });
+    onSuccess: (entry: JournalEntry) => {
+      queryClient.setQueryData<{ entries: JournalEntry[] }>(
+        ["journal", contactId],
+        (current) => ({ entries: [entry, ...(current?.entries ?? [])] }),
+      );
       setJournalInput("");
       setJournalMood("NEUTRAL");
       toast.success("Journal entry added");
@@ -115,8 +118,13 @@ export function ContactDetailPanel({
       if (!res.ok) throw new Error("Failed to delete");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["journal", contactId] });
+    onSuccess: (_data, deletedId) => {
+      queryClient.setQueryData<{ entries: JournalEntry[] }>(
+        ["journal", contactId],
+        (current) => current
+          ? { entries: current.entries.filter((entry) => entry.id !== deletedId) }
+          : current,
+      );
     },
   });
 
