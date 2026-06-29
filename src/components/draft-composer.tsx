@@ -232,7 +232,7 @@ export function DraftComposer() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Generation failed");
+        throw new Error(err.detail ?? err.error ?? "Generation failed");
       }
 
       const result = (await res.json()) as DraftResult & { draftId?: string };

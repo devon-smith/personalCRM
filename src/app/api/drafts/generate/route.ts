@@ -98,7 +98,10 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("[POST /api/drafts/generate]", error);
     return NextResponse.json(
-      { error: "Failed to generate draft" },
+      {
+        error: "Failed to generate draft",
+        detail: error instanceof Error ? error.message : undefined,
+      },
       { status: 500 },
     );
   }

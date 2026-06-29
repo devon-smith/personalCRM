@@ -51,7 +51,7 @@ function NewWorkspaceRouteContent() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error ?? "Failed to create workspace");
+          throw new Error(err.detail ?? err.error ?? "Failed to create workspace");
         }
         const { id } = (await res.json()) as { id: string };
         if (cancelled) return;

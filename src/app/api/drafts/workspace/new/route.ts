@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateDraft } from "@/lib/draft-generator";
+import { findDraftQualityIssues, generateDraft } from "@/lib/draft-generator";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
 import type { DraftType } from "@/generated/prisma/client";
 import type { WorkspaceVersion } from "@/lib/drafts/workspace-types";
@@ -69,13 +69,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let staleExistingDraftId: string | null = null;
     if (body.inboxItemId) {
       const existing = await prisma.draft.findFirst({
         where: { userId, inboxItemId: body.inboxItemId },
-        select: { id: true },
+        select: { id: true, content: true },
       });
       if (existing) {
-        return NextResponse.json({ id: existing.id, existing: true });
+        const issues = findDraftQualityIssues(
+          { quick: existing.content, detailed: existing.content },
+          { context: "catching_up", replyContext: null },
+        );
+        if (issues.length === 0) {
+          return NextResponse.json({ id: existing.id, existing: true });
+        }
+        staleExistingDraftId = existing.id;
       }
     }
 
@@ -103,24 +111,51 @@ export async function POST(req: NextRequest) {
       source: "initial",
     };
 
-    const draft = await prisma.draft.create({
-      data: {
-        userId,
-        contactId,
-        type: CONTEXT_TO_TYPE[context] ?? "CATCHING_UP",
-        tone,
-        content: result.detailed,
-        subjectLine: result.subjectLine,
-        isWorkspaceDraft: true,
-        threadKey: threadKey ?? undefined,
-        inboxItemId: body.inboxItemId ?? undefined,
-        workspaceVersions: [initialVersion] as unknown as object,
-        refinementChat: [] as unknown as object,
-      },
-      select: { id: true },
-    });
+    const draftData = {
+      userId,
+      contactId,
+      type: CONTEXT_TO_TYPE[context] ?? "CATCHING_UP",
+      tone,
+      content: result.detailed,
+      subjectLine: result.subjectLine,
+      isWorkspaceDraft: true,
+      threadKey: threadKey ?? undefined,
+      inboxItemId: body.inboxItemId ?? undefined,
+      workspaceVersions: [initialVersion] as unknown as object,
+      refinementChat: [] as unknown as object,
+    };
 
-    return NextResponse.json({ id: draft.id, existing: false });
+    const draft = staleExistingDraftId
+      ? await prisma.draft.update({
+          where: { id: staleExistingDraftId },
+          data: {
+            contactId,
+            type: draftData.type,
+            tone,
+            content: result.detailed,
+            subjectLine: result.subjectLine,
+            isWorkspaceDraft: true,
+            threadKey: threadKey ?? undefined,
+            workspaceVersions: [initialVersion] as unknown as object,
+            refinementChat: [] as unknown as object,
+            gmailDraftId: null,
+            gmailThreadId: null,
+            inReplyToMessageId: null,
+            recipientEmail: null,
+            savedToGmailAt: null,
+          },
+          select: { id: true },
+        })
+      : await prisma.draft.create({
+          data: draftData,
+          select: { id: true },
+        });
+
+    return NextResponse.json({
+      id: draft.id,
+      existing: false,
+      regenerated: Boolean(staleExistingDraftId),
+    });
   } catch (error) {
     console.error("[POST /api/drafts/workspace/new]", error);
     return NextResponse.json(
