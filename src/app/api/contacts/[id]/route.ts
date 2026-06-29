@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
 import { contactListSelect } from "@/lib/contact-list-query";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(30, 300);
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -28,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Contact not found" }, { status: 404 });
     }
 
-    return NextResponse.json(contact);
+    return NextResponse.json(contact, { headers: READ_CACHE_HEADERS });
   }
 
   if (replyContextOnly) {
@@ -99,7 +102,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Contact not found" }, { status: 404 });
     }
 
-    return NextResponse.json(contact);
+    return NextResponse.json(contact, { headers: READ_CACHE_HEADERS });
   }
 
   const contact = await prisma.contact.findFirst({
@@ -128,7 +131,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
-  return NextResponse.json(contact);
+  return NextResponse.json(contact, { headers: READ_CACHE_HEADERS });
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
