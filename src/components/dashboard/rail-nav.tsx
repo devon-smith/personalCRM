@@ -16,7 +16,6 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
-import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import type { GoogleSourceStatus } from "@/lib/source-status/google";
@@ -47,24 +46,20 @@ const ITEMS: RailItem[] = [
  * search pill at the top, current-page treatment is a single thin
  * vertical accent line + brighter label.
  */
-export function RailNav({ onOpenSearch }: { onOpenSearch: () => void }) {
+export function RailNav({
+  onOpenSearch,
+  googleStatus,
+}: {
+  onOpenSearch: () => void;
+  googleStatus?: GoogleSourceStatus;
+}) {
   const pathname = usePathname();
   const general = ITEMS.filter((i) => i.group === "general");
   const tools = ITEMS.filter((i) => i.group === "tools");
 
   // Sources now lives inside Settings, so the terracotta reconnect
-  // dot rides the Settings item. This uses a small source-status query,
-  // not the full Settings data-health report.
-  const { data: googleStatus } = useQuery<GoogleSourceStatus>({
-    queryKey: ["source-status", "google"],
-    queryFn: async () => {
-      const res = await fetch("/api/source-status/google");
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  // dot rides the Settings item using the shell's small source-status
+  // payload, not the full Settings data-health report.
   const settingsHasIssue = googleStatus?.needsReconnect ?? false;
 
   return (

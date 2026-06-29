@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { RailNav } from "@/components/dashboard/rail-nav";
 import { RouteTransition } from "@/components/dashboard/route-transition";
 import { CommandPalette } from "@/components/dashboard/command-palette";
@@ -11,6 +12,7 @@ import { DraftComposer } from "@/components/draft-composer";
 import { ReconnectBanner } from "@/components/integrations/reconnect-banner";
 import { DraftComposerProvider, useDraftComposer } from "@/lib/draft-composer-context";
 import { useAutoSync } from "@/lib/hooks/use-auto-sync";
+import type { GoogleSourceStatus } from "@/lib/source-status/google";
 import {
   Search,
   Users,
@@ -31,6 +33,17 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const { openComposer } = useDraftComposer();
   useAutoSync();
+
+  const { data: googleStatus } = useQuery<GoogleSourceStatus>({
+    queryKey: ["source-status", "google"],
+    queryFn: async () => {
+      const res = await fetch("/api/source-status/google");
+      if (!res.ok) throw new Error("Failed to fetch Google source status");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -54,11 +67,11 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
       {/* Persistent left rail — desktop only */}
-      <RailNav onOpenSearch={() => setSearchOpen(true)} />
+      <RailNav onOpenSearch={() => setSearchOpen(true)} googleStatus={googleStatus} />
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <ReconnectBanner />
+        <ReconnectBanner status={googleStatus} />
 
         {/* Mobile-only header: wordmark + search pill. Burger menu was
             retired in M0.x.16 — bottom nav + "More" sheet cover every

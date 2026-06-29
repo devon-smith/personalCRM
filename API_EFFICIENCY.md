@@ -47,6 +47,7 @@
 - Persistent Google/source-status surfaces no longer force refetches on every window focus event. Rail nav, reconnect banner, and legacy sync alerts now rely on normal stale windows, mount loads, and explicit invalidation after sync/reconnect actions.
 - Dashboard assistant observations now ride on `/api/dashboard/bootstrap`, reusing the stale-observation cleanup helper and removing the extra `/api/observations` GET during normal home page loads.
 - Removed the unused legacy `SyncAlerts` component so the old `/api/health` dashboard cleanup UI cannot be accidentally remounted. Source-status rail/banner consumers now share the server response type.
+- Dashboard shell now owns the single Google source-status query and passes the result to the rail and reconnect banner, avoiding duplicate persistent query observers for the same shell status payload.
 
 ## Next Highest-Impact Efficiency Work
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { AlertCircle } from "lucide-react";
 import type { GoogleSourceStatus } from "@/lib/source-status/google";
@@ -11,19 +10,8 @@ import type { GoogleSourceStatus } from "@/lib/source-status/google";
  * shows a small terracotta dot on Settings so the status is visible
  * from anywhere even when the banner isn't on screen.
  */
-export function ReconnectBanner() {
-  const { data } = useQuery<GoogleSourceStatus>({
-    queryKey: ["source-status", "google"],
-    queryFn: async () => {
-      const res = await fetch("/api/source-status/google");
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
-  const broken = data?.accounts.filter((account) => account.needsReconnect) ?? [];
+export function ReconnectBanner({ status }: { status?: GoogleSourceStatus }) {
+  const broken = status?.accounts.filter((account) => account.needsReconnect) ?? [];
   if (broken.length === 0) return null;
 
   const label =
