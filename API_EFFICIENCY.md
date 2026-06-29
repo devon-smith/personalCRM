@@ -177,6 +177,7 @@
 - AI interaction parsing now guards duplicate calls in both manual Log Interaction and Smart Log dialogs. Rapid Parse taps return while parsing is in-flight, and unchanged pasted text reuses the already-parsed fields instead of spending another parse model call.
 - Voice memo transcription now has a handler-level upload guard and computes duration from the recorder's local start timestamp. Rapid Transcribe taps can no longer submit duplicate Whisper uploads, and saved voice-note duration metadata no longer depends on stale React state.
 - Ask streaming now has a synchronous in-flight ref guard before `/api/network-query?stream=1` starts. Rapid Enter/double-tap submits and shortcut seed effects cannot launch overlapping Claude/tool streams while React's `isStreaming` state is still settling.
+- Manual voice reindex now enqueues with a per-user/per-mode Graphile job key and a per-user queue name. Repeated Re-index clicks collapse into the existing pending job, and manual voice indexing jobs for the same user cannot run concurrently against Gmail/Voyage.
 
 ## Next Highest-Impact Efficiency Work
 

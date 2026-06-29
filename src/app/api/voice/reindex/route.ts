@@ -40,10 +40,19 @@ export async function POST(req: Request) {
     return runDryRun(session.user.id);
   }
 
-  const jobId = await enqueue("voice-corpus-index", {
-    userId: session.user.id,
-    rebuild,
-  });
+  const mode = rebuild ? "rebuild" : "incremental";
+  const jobId = await enqueue(
+    "voice-corpus-index",
+    {
+      userId: session.user.id,
+      rebuild,
+    },
+    {
+      queueName: `voice-corpus-index:${session.user.id}`,
+      jobKey: `voice-corpus-index:${session.user.id}:${mode}`,
+      jobKeyMode: "preserve_run_at",
+    },
+  );
   return NextResponse.json({ ok: true, jobId, rebuild });
 }
 
