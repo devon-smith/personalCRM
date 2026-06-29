@@ -87,6 +87,17 @@ export interface CalendarSyncResult {
   contactsMatched: number;
 }
 
+const UPCOMING_EVENTS_CACHE_TTL_MS = 60 * 1000;
+const MAX_UPCOMING_EVENTS_CACHE_ENTRIES = 100;
+
+const upcomingEventsCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    promise: Promise<UpcomingEvent[]>;
+  }
+>();
+
 // ─── Helpers ───
 
 /**
@@ -264,6 +275,48 @@ function getEventEndTime(event: CalendarEvent): Date | null {
 export async function getUpcomingEvents(
   userId: string,
   days: number = 7,
+  options: { cache?: boolean } = {},
+): Promise<UpcomingEvent[]> {
+  if (options.cache === false) {
+    return loadUpcomingEvents(userId, days);
+  }
+
+  const key = `${userId}:${days}`;
+  const now = Date.now();
+  const cached = upcomingEventsCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.promise;
+  }
+
+  const promise = loadUpcomingEvents(userId, days).catch((error) => {
+    if (upcomingEventsCache.get(key)?.promise === promise) {
+      upcomingEventsCache.delete(key);
+    }
+    throw error;
+  });
+  upcomingEventsCache.set(key, {
+    expiresAt: now + UPCOMING_EVENTS_CACHE_TTL_MS,
+    promise,
+  });
+  trimUpcomingEventsCache(now);
+  return promise;
+}
+
+export function clearUpcomingEventsCache(userId?: string): void {
+  if (!userId) {
+    upcomingEventsCache.clear();
+    return;
+  }
+  for (const key of upcomingEventsCache.keys()) {
+    if (key.startsWith(`${userId}:`)) {
+      upcomingEventsCache.delete(key);
+    }
+  }
+}
+
+async function loadUpcomingEvents(
+  userId: string,
+  days: number,
 ): Promise<UpcomingEvent[]> {
   const now = new Date();
   const future = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -442,6 +495,20 @@ export async function getUpcomingEvents(
   }
 
   return upcoming;
+}
+
+function trimUpcomingEventsCache(now: number): void {
+  for (const [key, value] of upcomingEventsCache) {
+    if (value.expiresAt <= now) {
+      upcomingEventsCache.delete(key);
+    }
+  }
+
+  while (upcomingEventsCache.size > MAX_UPCOMING_EVENTS_CACHE_ENTRIES) {
+    const oldestKey = upcomingEventsCache.keys().next().value;
+    if (!oldestKey) break;
+    upcomingEventsCache.delete(oldestKey);
+  }
 }
 
 function cleanCalendarDescription(description: string | undefined): string | null {

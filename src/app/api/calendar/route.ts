@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import {
+  clearUpcomingEventsCache,
   getUpcomingEvents,
   type CalendarSyncResult,
 } from "@/lib/calendar";
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    clearUpcomingEventsCache(session.user.id);
     const result = await runCalendarSyncForUser(session.user.id, trigger, 90);
     return NextResponse.json(result);
   } catch (error) {

@@ -107,6 +107,7 @@
 - Sources page-level refresh now only runs Gmail and Calendar freshness syncs. Broad Google Contacts and Apple Contacts imports remain explicit per-source actions, preventing a routine freshness click from scanning contact providers.
 - The default `/api/data-health` payload no longer computes or returns gap previews. Those optional zero-interaction/unmatched-sender lists are only built through `scope=gaps`, so normal Sources loads skip the extra contact preview and candidate email lookup.
 - Default data-health account/bootstrap reads now run in parallel and select only the `GmailSyncState` fields rendered by Sources. Large sync-state fields such as `unmatchedSenders` and `mutedThreads` stay off normal source-status loads.
+- Live upcoming Calendar reads now use a short per-user in-process cache shared by Home, Calendar, meeting prep, and morning brief calls. Reopening those surfaces within a minute reuses the assembled event/contact context instead of repeating Google Calendar list calls; manual Calendar sync clears that user's cache before refetching.
 
 ## Next Highest-Impact Efficiency Work
 
