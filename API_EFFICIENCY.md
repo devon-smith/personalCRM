@@ -62,6 +62,7 @@
 - Global contact pickers now use lazy, capped contact queries. The draft composer and quick-log picker no longer fetch contacts while closed, and when opened they request 20 rows instead of the default 500.
 - Draft relationship-type inference now uses a longer client stale window plus a private response cache, reducing repeat classifier checks when reopening composer sessions for the same contact.
 - Contact story secondary data now uses longer client stale windows for journal entries and bundled intelligence, avoiding repeat reads when reopening the same contact while preserving mutation invalidations.
+- Contact edit and draft composer preset resolution now use a lightweight `/api/contacts/:id?scope=summary` payload instead of loading interactions, facts, profile, and memory that those flows do not render.
 
 ## Next Highest-Impact Efficiency Work
 

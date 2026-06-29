@@ -15,7 +15,7 @@ import { useDraftComposer } from "@/lib/draft-composer-context";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
 import { RelationshipTypePill } from "@/components/draft/relationship-type-pill";
 import type { RelationshipType } from "@/lib/voice/relationship-classifier";
-import { useContacts, useContact, type ContactWithCount } from "@/lib/hooks/use-contacts";
+import { useContacts, useContactSummary, type ContactWithCount } from "@/lib/hooks/use-contacts";
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import {
   Search,
@@ -166,14 +166,11 @@ export function DraftComposer() {
   // Resolve preset contact — fetch the single contact by ID rather than
   // loading the entire contact list (which can be ~30k rows). The result
   // is derived, not state, so we don't fight the picker's own setState.
-  const { data: presetContact } = useContact(
+  const { data: presetContact } = useContactSummary(
     presetContactId && !selectedContact ? presetContactId : null,
   );
   const resolvedPresetContact: ContactWithCount | null = presetContact
-    ? ({
-        ...presetContact,
-        _count: { interactions: presetContact.interactions?.length ?? 0 },
-      } as unknown as ContactWithCount)
+    ? presetContact
     : null;
   const effectiveContact: ContactWithCount | null =
     selectedContact ?? resolvedPresetContact;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { contactListSelect } from "@/lib/contact-list-query";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -13,6 +14,20 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   }
 
   const { id } = await params;
+  const summaryOnly = _req.nextUrl.searchParams.get("scope") === "summary";
+
+  if (summaryOnly) {
+    const contact = await prisma.contact.findFirst({
+      where: { id, userId: session.user.id },
+      select: contactListSelect,
+    });
+
+    if (!contact) {
+      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(contact);
+  }
 
   const contact = await prisma.contact.findFirst({
     where: { id, userId: session.user.id },

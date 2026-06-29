@@ -82,6 +82,7 @@ export function LinkHandleDialog({
     onSuccess: (_, contactId) => {
       toast.success("Handle linked to contact");
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["contact-summary", contactId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       onLinked?.(contactId);

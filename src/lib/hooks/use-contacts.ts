@@ -66,6 +66,15 @@ export function useContact(id: string | null) {
   });
 }
 
+export function useContactSummary(id: string | null) {
+  return useQuery<ContactWithCount>({
+    queryKey: ["contact-summary", id],
+    queryFn: () => fetchJson(`/api/contacts/${id}?scope=summary`),
+    enabled: !!id,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useCreateContact() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -93,6 +102,7 @@ export function useUpdateContact() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       queryClient.invalidateQueries({ queryKey: ["contact", variables.id] });
+      queryClient.invalidateQueries({ queryKey: ["contact-summary", variables.id] });
     },
   });
 }
@@ -102,8 +112,10 @@ export function useDeleteContact() {
   return useMutation({
     mutationFn: (id: string) =>
       fetchJson(`/api/contacts/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["contact", id] });
+      queryClient.invalidateQueries({ queryKey: ["contact-summary", id] });
     },
   });
 }

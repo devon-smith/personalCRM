@@ -14,7 +14,7 @@ import { X, Plus } from "lucide-react";
 import {
   useCreateContact,
   useUpdateContact,
-  useContact,
+  useContactSummary,
 } from "@/lib/hooks/use-contacts";
 import { toast } from "sonner";
 
@@ -30,7 +30,7 @@ export function ContactFormDialog({
   editId,
 }: ContactFormDialogProps) {
   const isEditing = !!editId;
-  const { data: existing } = useContact(editId ?? null);
+  const { data: existing } = useContactSummary(editId ?? null);
   const createContact = useCreateContact();
   const updateContact = useUpdateContact();
 

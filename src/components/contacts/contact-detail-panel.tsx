@@ -190,6 +190,7 @@ export function ContactDetailPanel({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
+      queryClient.invalidateQueries({ queryKey: ["contact-summary", contactId] });
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
     },
     onError: (err) => toast.error(err.message),
