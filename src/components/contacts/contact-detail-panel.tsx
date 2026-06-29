@@ -11,6 +11,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  patchContactListCaches,
+  shouldInvalidateContactListCaches,
   useContact,
   useDeleteContact,
   useUpdateContact,
@@ -209,7 +211,7 @@ export function ContactDetailPanel({
       }
       return res.json() as Promise<AliasUpdateResult>;
     },
-    onSuccess: (updated) => {
+    onSuccess: (updated, variables) => {
       queryClient.setQueryData<ContactWithDetails>(
         ["contact", contactId],
         (current) => current ? { ...current, ...updated } : current,
@@ -218,7 +220,10 @@ export function ContactDetailPanel({
         ["contact-summary", contactId],
         (current) => current ? { ...current, ...updated } : current,
       );
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      patchContactListCaches(queryClient, updated);
+      if (shouldInvalidateContactListCaches({ id: contactId, ...variables })) {
+        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      }
     },
     onError: (err) => toast.error(err.message),
   });
