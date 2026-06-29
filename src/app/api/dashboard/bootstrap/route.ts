@@ -6,6 +6,10 @@ import {
   getDashboardStats,
   type DashboardStats,
 } from "@/lib/dashboard/stats";
+import {
+  getDashboardObservations,
+  type DashboardObservation,
+} from "@/lib/dashboard/observations";
 import { privateCacheHeaders } from "@/lib/http/cache";
 
 export interface DashboardBootstrapResponse {
@@ -15,6 +19,7 @@ export interface DashboardBootstrapResponse {
     error?: string;
   };
   birthdays: UpcomingBirthday[];
+  observations: DashboardObservation[];
 }
 
 export async function GET() {
@@ -24,7 +29,7 @@ export async function GET() {
   }
 
   const userId = session.user.id;
-  const [stats, calendar, birthdays] = await Promise.all([
+  const [stats, calendar, birthdays, observations] = await Promise.all([
     getDashboardStats(userId),
     getUpcomingEvents(userId, 7)
       .then((events) => ({ events }))
@@ -36,12 +41,14 @@ export async function GET() {
             : "Failed to fetch calendar events",
       })),
     getUpcomingBirthdays(userId, 30),
+    getDashboardObservations(userId),
   ]);
 
   const response: DashboardBootstrapResponse = {
     stats,
     calendar,
     birthdays: [...birthdays],
+    observations,
   };
 
   return NextResponse.json(response, {

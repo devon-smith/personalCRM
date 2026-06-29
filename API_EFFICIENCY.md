@@ -45,6 +45,7 @@
 - Dashboard home no longer polls `/api/dashboard/bootstrap` every five minutes. It now exposes a visible Refresh action, shows the last loaded time, and uses short private stale-while-revalidate cache headers for the combined DB-backed home payload.
 - Removed the unused legacy `UnrespondedThreads` widget and `/api/interactions/unresponded` path, which were the last source of explicit React Query interval polling.
 - Persistent Google/source-status surfaces no longer force refetches on every window focus event. Rail nav, reconnect banner, and legacy sync alerts now rely on normal stale windows, mount loads, and explicit invalidation after sync/reconnect actions.
+- Dashboard assistant observations now ride on `/api/dashboard/bootstrap`, reusing the stale-observation cleanup helper and removing the extra `/api/observations` GET during normal home page loads.
 
 ## Next Highest-Impact Efficiency Work
 

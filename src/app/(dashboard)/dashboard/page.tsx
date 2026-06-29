@@ -116,6 +116,7 @@ export default function DashboardPage() {
   const visibleMeetings = todayMeetings.length > 0 ? todayMeetings : upcomingMeetings.slice(0, 4);
   const meetingSectionLabel = todayMeetings.length > 0 ? "Today" : "Upcoming";
   const birthdays = bootstrap?.birthdays ?? [];
+  const observations = bootstrap?.observations ?? [];
 
   if (isLoading || !stats) {
     return (
@@ -206,7 +207,7 @@ export default function DashboardPage() {
       </section>
 
       <NetworkQueryBox submitTarget="ask-page" />
-      <AssistantObservations />
+      <AssistantObservations initialObservations={observations} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <main className="space-y-4">

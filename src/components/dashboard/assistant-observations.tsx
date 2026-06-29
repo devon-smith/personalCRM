@@ -1,8 +1,10 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sparkles, X } from "lucide-react";
 import Link from "next/link";
+import type { DashboardBootstrapResponse } from "@/app/api/dashboard/bootstrap/route";
 
 /**
  * "Notes from your assistant" — unprompted dashboard observations
@@ -16,26 +18,16 @@ import Link from "next/link";
  *   - Single subtle sparkle icon to mark "from the assistant"
  */
 
-interface Observation {
-  id: string;
-  content: string;
-  contactId: string | null;
-  source: string;
-  createdAt: string;
-}
-
 const VISIBLE_COUNT = 2;
+type Observation = DashboardBootstrapResponse["observations"][number];
 
-export function AssistantObservations() {
+export function AssistantObservations({
+  initialObservations,
+}: {
+  initialObservations: Observation[];
+}) {
   const qc = useQueryClient();
-  const { data } = useQuery<{ observations: Observation[] }>({
-    queryKey: ["observations"],
-    queryFn: async () => {
-      const res = await fetch("/api/observations");
-      if (!res.ok) throw new Error("Failed to load observations");
-      return res.json();
-    },
-  });
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
 
   const dismiss = useMutation({
     mutationFn: async (id: string) => {
@@ -45,26 +37,32 @@ export function AssistantObservations() {
       if (!res.ok) throw new Error("Dismiss failed");
     },
     onMutate: async (id: string) => {
-      // Optimistic: drop it from the list immediately.
-      await qc.cancelQueries({ queryKey: ["observations"] });
-      const prev = qc.getQueryData<{ observations: Observation[] }>([
-        "observations",
-      ]);
-      qc.setQueryData<{ observations: Observation[] }>(
-        ["observations"],
-        (old) =>
-          old
-            ? { observations: old.observations.filter((o) => o.id !== id) }
-            : old,
+      await qc.cancelQueries({ queryKey: ["dashboard"] });
+      const prevHiddenIds = hiddenIds;
+      const prevDashboard =
+        qc.getQueryData<DashboardBootstrapResponse>(["dashboard"]);
+
+      setHiddenIds((current) => new Set(current).add(id));
+      qc.setQueryData<DashboardBootstrapResponse>(
+        ["dashboard"],
+        (old) => old
+          ? {
+              ...old,
+              observations: old.observations.filter((o) => o.id !== id),
+            }
+          : old,
       );
-      return { prev };
+      return { prevHiddenIds, prevDashboard };
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["observations"], ctx.prev);
+      if (ctx?.prevHiddenIds) setHiddenIds(ctx.prevHiddenIds);
+      if (ctx?.prevDashboard) qc.setQueryData(["dashboard"], ctx.prevDashboard);
     },
   });
 
-  const observations = data?.observations.slice(0, VISIBLE_COUNT) ?? [];
+  const observations = initialObservations
+    .filter((o) => !hiddenIds.has(o.id))
+    .slice(0, VISIBLE_COUNT);
   if (observations.length === 0) return null;
 
   return (
