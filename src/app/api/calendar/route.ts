@@ -24,6 +24,10 @@ function calendarConnectionError(status: CalendarSyncStatus): string | null {
   return null;
 }
 
+const READ_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=300",
+};
+
 /** GET — Fetch upcoming calendar events */
 export async function GET() {
   const session = await auth();
@@ -36,13 +40,16 @@ export async function GET() {
   if (connectionError) {
     return NextResponse.json(
       { events: [], syncStatus, error: connectionError },
-      { status: 200 },
+      { status: 200, headers: READ_CACHE_HEADERS },
     );
   }
 
   try {
     const events = await getUpcomingEvents(session.user.id, 7);
-    return NextResponse.json({ events, syncStatus });
+    return NextResponse.json(
+      { events, syncStatus },
+      { headers: READ_CACHE_HEADERS },
+    );
   } catch (error) {
     console.error("Calendar fetch error:", error);
     // Return empty events with error message instead of 500
@@ -55,7 +62,7 @@ export async function GET() {
             ? error.message
             : "Failed to fetch calendar events",
       },
-      { status: 200 },
+      { status: 200, headers: READ_CACHE_HEADERS },
     );
   }
 }

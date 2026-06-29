@@ -181,7 +181,7 @@ export default function CalendarPage() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery<CalendarResponse>({
+  const { data, isLoading, dataUpdatedAt } = useQuery<CalendarResponse>({
     queryKey: ["upcoming-meetings"],
     queryFn: async () => {
       const res = await fetch("/api/calendar");
@@ -189,7 +189,8 @@ export default function CalendarPage() {
       return res.json();
     },
     retry: false,
-    refetchInterval: 5 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const syncCalendar = useMutation({
@@ -235,6 +236,11 @@ export default function CalendarPage() {
             <p className="mt-2 max-w-[720px] text-[13px] leading-5 text-[#6A645A]">
               Upcoming events from Google Calendar with relationship context, open threads, and prep links.
             </p>
+            {dataUpdatedAt > 0 && (
+              <p className="mt-2 text-[12px] text-[#8A8276]">
+                Last loaded {formatTime(new Date(dataUpdatedAt).toISOString())}
+              </p>
+            )}
           </div>
           <button
             type="button"
