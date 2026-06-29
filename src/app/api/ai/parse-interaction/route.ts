@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { parseInteractionText } from "@/lib/ai-parser";
+import {
+  MAX_INTERACTION_PARSE_INPUT_CHARS,
+  normalizeInteractionParseInput,
+  parseInteractionText,
+} from "@/lib/ai-parser";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -9,12 +13,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { text, contactId } = await req.json();
+  const body = (await req.json().catch(() => ({}))) as {
+    text?: unknown;
+    contactId?: unknown;
+  };
+  const text =
+    typeof body.text === "string"
+      ? normalizeInteractionParseInput(body.text)
+      : "";
+  const contactId = typeof body.contactId === "string" ? body.contactId : "";
 
   if (!text || !contactId) {
     return NextResponse.json(
       { error: "text and contactId are required" },
       { status: 400 }
+    );
+  }
+  if (typeof body.text === "string" && body.text.trim().length > MAX_INTERACTION_PARSE_INPUT_CHARS) {
+    return NextResponse.json(
+      {
+        error: `text is too long (max ${MAX_INTERACTION_PARSE_INPUT_CHARS} characters)`,
+      },
+      { status: 400 },
     );
   }
 

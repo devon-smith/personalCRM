@@ -1,5 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+export const INTERACTION_PARSE_MODEL = "claude-haiku-4-5-20251001";
+export const MAX_INTERACTION_PARSE_INPUT_CHARS = 5_000;
+const MAX_INTERACTION_PARSE_PROMPT_CHARS = 2_000;
+const INTERACTION_TYPES = ["EMAIL", "MESSAGE", "MEETING", "CALL", "NOTE"] as const;
+const INTERACTION_DIRECTIONS = ["INBOUND", "OUTBOUND"] as const;
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -16,9 +22,10 @@ export async function parseInteractionText(
   rawText: string,
   contactName: string
 ): Promise<ParsedInteraction> {
+  const inputText = normalizeInteractionParseInput(rawText);
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 400,
+    model: INTERACTION_PARSE_MODEL,
+    max_tokens: 300,
     messages: [
       {
         role: "user",
@@ -27,7 +34,7 @@ The contact's name is: ${contactName}
 
 Text to parse:
 ---
-${rawText.slice(0, 2000)}
+${inputText.slice(0, MAX_INTERACTION_PARSE_PROMPT_CHARS)}
 ---
 
 Determine:
@@ -56,13 +63,7 @@ Return as JSON:
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
-      return {
-        type: parsed.type ?? "NOTE",
-        direction: parsed.direction ?? "INBOUND",
-        subject: parsed.subject ?? "Parsed interaction",
-        summary: parsed.summary ?? rawText.slice(0, 200),
-        occurredAt: parsed.occurredAt ?? null,
-      };
+      return coerceParsedInteraction(parsed, inputText);
     }
   } catch {
     // fallback
@@ -72,7 +73,46 @@ Return as JSON:
     type: "NOTE",
     direction: "INBOUND",
     subject: "Parsed interaction",
-    summary: rawText.slice(0, 200),
+    summary: inputText.slice(0, 200),
     occurredAt: null,
   };
+}
+
+export function normalizeInteractionParseInput(rawText: string): string {
+  return rawText.trim().slice(0, MAX_INTERACTION_PARSE_INPUT_CHARS);
+}
+
+export function coerceParsedInteraction(
+  value: unknown,
+  fallbackText: string,
+): ParsedInteraction {
+  const parsed = isRecord(value) ? value : {};
+  const type = INTERACTION_TYPES.includes(parsed.type as ParsedInteraction["type"])
+    ? (parsed.type as ParsedInteraction["type"])
+    : "NOTE";
+  const direction = INTERACTION_DIRECTIONS.includes(
+    parsed.direction as ParsedInteraction["direction"],
+  )
+    ? (parsed.direction as ParsedInteraction["direction"])
+    : "INBOUND";
+  return {
+    type,
+    direction,
+    subject:
+      typeof parsed.subject === "string" && parsed.subject.trim()
+        ? parsed.subject.trim().slice(0, 60)
+        : "Parsed interaction",
+    summary:
+      typeof parsed.summary === "string" && parsed.summary.trim()
+        ? parsed.summary.trim()
+        : fallbackText.slice(0, 200),
+    occurredAt:
+      typeof parsed.occurredAt === "string" && parsed.occurredAt.trim()
+        ? parsed.occurredAt.trim()
+        : null,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

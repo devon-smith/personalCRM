@@ -118,6 +118,7 @@
 - Ask memory lookup tools now expand `ContactMemory.openThreads` and `theyMentioned` in Postgres and return only unresolved/matching rows. They no longer load every memory JSON blob into the app process before filtering.
 - Contact "Prep" summaries are now local DB summaries built from selected profile, memory, and five recent interaction fields. The route no longer loads the full contact payload or spends a Sonnet call for a short inline relationship summary.
 - Removed the unused follow-up draft modal, `/api/ai/follow-up` route, and route-only `generateFollowUp` Anthropic helper. The active reply workflow now stays on the richer draft workspace and avoids an orphan direct Sonnet endpoint.
+- Interaction smart-paste parsing now uses Haiku instead of Sonnet, rejects oversized paste bodies before provider calls, and normalizes model output through bounded type/subject fallbacks.
 
 ## Next Highest-Impact Efficiency Work
 
