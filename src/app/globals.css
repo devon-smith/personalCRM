@@ -124,7 +124,7 @@
   --status-info: #6E839C;
   --status-info-bg: #E4E9EE;
 
-  /* Warmth colors (kept for circle-health UI compatibility) */
+  /* Warmth colors */
   --warmth-good: #6B8A6E;
   --warmth-good-bg: #E4EBE3;
   --warmth-mid: #B08B3F;

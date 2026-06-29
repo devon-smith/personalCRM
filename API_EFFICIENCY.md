@@ -129,6 +129,7 @@
 - The main Circles payload now uses an explicit Prisma select and short private cache. The page no longer returns unused circle metadata such as user IDs, timestamps, and Google group internals on every load.
 - Circle intelligence now uses the same ten-minute private cache as its client stale window, and the panel no longer refetches on window focus. Reopening Insights avoids repeat Haiku calls for the same circle.
 - Circle stories now avoid the separate membership lookup by filtering recent interactions through contact-circle membership directly, and successful story reads use a short private cache for immediate reopen/reload cases.
+- Removed the unused legacy circle-health HTTP routes and their standalone analytics helper. Active circle warmth counts already ride on `/api/circles`, so direct `/api/circles/health` calls can no longer trigger per-circle multi-query analytics work.
 
 ## Next Highest-Impact Efficiency Work
 
