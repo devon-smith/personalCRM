@@ -197,21 +197,6 @@ interface ActivityItem {
   contactCompany: string | null;
 }
 
-interface MessageActionItem {
-  id: string;
-  status: string;
-  title: string;
-  classification: string;
-  urgency: string;
-  reasoning: string;
-  channel: string | null;
-  preview: string | null;
-  contactId: string | null;
-  contactName: string | null;
-  occurredAt: string | null;
-  extractedAt: string;
-}
-
 // ─── Helpers ─────────────────────────────────────────────────
 
 function ChannelIcon({ channel, size = 14 }: { channel: string; size?: number }) {
@@ -296,14 +281,6 @@ const SNOOZE_OPTIONS = [
   { label: "Next week", hours: 168 },
 ] as const;
 
-// ─── Classification styles ──────────────────────────────────
-
-const urgencyColors: Record<string, { bg: string; text: string }> = {
-  high: { bg: "rgba(220,38,38,0.08)", text: "#DC2626" },
-  medium: { bg: "rgba(217,119,6,0.08)", text: "#D97706" },
-  low: { bg: "rgba(107,114,128,0.06)", text: "#6B7280" },
-};
-
 // ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
@@ -361,22 +338,21 @@ export function Inbox() {
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      await Promise.all([
-        fetch("/api/gmail/sync", { method: "POST" }),
-      ]);
-      await Promise.all([
-        fetch("/api/message-actions", { method: "POST" }),
-        fetch("/api/gmail/extract-actions", { method: "POST" }),
-      ]);
+      const syncRes = await fetch("/api/gmail/sync", { method: "POST" });
+      if (!syncRes.ok) throw new Error("Gmail sync failed");
+
+      const extractRes = await fetch("/api/gmail/extract-actions", { method: "POST" });
+      if (!extractRes.ok) throw new Error("Action scan failed");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       queryClient.invalidateQueries({ queryKey: ["activity"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["message-actions"] });
       toast("Synced and scanned for new items");
     },
-    onError: () => toast.error("Sync failed"),
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Sync failed");
+    },
   });
 
   const resolveMutation = useMutation({
@@ -2041,239 +2017,6 @@ function SnoozeDropdown({
         ))}
       </div>
     </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ACTION ITEMS CARD (standalone, separate from inbox)
-// ═══════════════════════════════════════════════════════════════
-
-export function ActionItemsCard() {
-  const queryClient = useQueryClient();
-
-  const { data, isLoading } = useQuery<{ items: MessageActionItem[] }>({
-    queryKey: ["message-actions"],
-    queryFn: async () => {
-      const res = await fetch("/api/message-actions");
-      if (!res.ok) return { items: [] };
-      return res.json();
-    },
-  });
-
-  const mutation = useMutation({
-    mutationFn: async (args: { id: string; status: "DONE" | "DISMISSED" }) => {
-      const res = await fetch("/api/message-actions", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(args),
-      });
-      if (!res.ok) throw new Error("Failed");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["message-actions"] });
-    },
-  });
-
-  const items = data?.items ?? [];
-
-  if (!isLoading && items.length === 0) return null;
-
-  return (
-    <div
-      className="crm-card overflow-hidden"
-      style={{ backgroundColor: "#F1ECDE" }}
-    >
-      <div className="px-6 pt-5 pb-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3
-              className="text-[15px] font-semibold"
-              style={{ color: "var(--text-primary)", letterSpacing: "-0.02em" }}
-            >
-              Action items
-            </h3>
-            {items.length > 0 && (
-              <span
-                className="rounded-md px-1.5 py-0.5 text-[10px] font-bold leading-none"
-                style={{
-                  backgroundColor: "rgba(220,38,38,0.08)",
-                  color: "#DC2626",
-                }}
-              >
-                {items.length}
-              </span>
-            )}
-          </div>
-          <span
-            className="text-[11px]"
-            style={{ color: "var(--text-tertiary)", letterSpacing: "-0.01em" }}
-          >
-            Things you need to do
-          </span>
-        </div>
-      </div>
-      <div className="px-6 pt-3 pb-5">
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-8">
-            <Loader2
-              className="h-4 w-4 animate-spin"
-              style={{ color: "var(--text-tertiary)" }}
-            />
-            <span
-              className="text-[13px]"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              Loading...
-            </span>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {items.map((item) => (
-              <ActionItemRow
-                key={item.id}
-                item={item}
-                onDone={() => mutation.mutate({ id: item.id, status: "DONE" })}
-                onDismiss={() =>
-                  mutation.mutate({ id: item.id, status: "DISMISSED" })
-                }
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Action Item Row ─────────────────────────────────────────
-
-function ActionItemRow({
-  item,
-  onDone,
-  onDismiss,
-}: {
-  item: MessageActionItem;
-  onDone: () => void;
-  onDismiss: () => void;
-}) {
-  const urgColors = urgencyColors[item.urgency] ?? urgencyColors.medium;
-  const isInvitation = item.classification === "invitation";
-
-  return (
-    <div
-      className="group flex items-start gap-3 rounded-xl px-3 py-3 transition-colors"
-      style={{ transitionDuration: "var(--duration-fast)" }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "#F5F6F8";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = "";
-      }}
-    >
-      {/* Checkbox */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDone();
-        }}
-        className="shrink-0 mt-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] transition-colors"
-        style={{
-          borderColor: "#D1D5DB",
-          backgroundColor: "transparent",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = "#059669";
-          e.currentTarget.style.backgroundColor = "rgba(5,150,105,0.06)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = "#D1D5DB";
-          e.currentTarget.style.backgroundColor = "transparent";
-        }}
-        title="Mark done"
-      >
-        <Check
-          className="h-3 w-3 opacity-0 group-hover:opacity-40 transition-opacity"
-          style={{ color: "#059669" }}
-        />
-      </button>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p
-            className="text-[13px] font-medium truncate"
-            style={{ color: "#1A1A1A", letterSpacing: "-0.01em" }}
-          >
-            {item.title}
-          </p>
-          <span
-            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
-            style={{ backgroundColor: urgColors.bg, color: urgColors.text }}
-          >
-            {item.urgency}
-          </span>
-          {isInvitation && (
-            <span
-              className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
-              style={{
-                backgroundColor: "rgba(124,58,237,0.08)",
-                color: "#7C3AED",
-              }}
-            >
-              Invitation
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 mt-1">
-          {item.contactName && (
-            <span className="text-[12px] font-medium" style={{ color: "#4A4E54" }}>
-              {item.contactName}
-            </span>
-          )}
-          {item.preview && (
-            <span
-              className="text-[12px] truncate"
-              style={{ color: "#9BA1A8", letterSpacing: "-0.01em" }}
-            >
-              &middot; &ldquo;{truncateMessage(item.preview, 80)}&rdquo;
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 mt-0.5">
-          {item.occurredAt && (
-            <span className="text-[11px]" style={{ color: "#B5BAC0" }}>
-              {formatDistanceToNow(new Date(item.occurredAt))}
-            </span>
-          )}
-          {item.channel && (
-            <span className="flex items-center gap-1" style={{ color: "#B5BAC0" }}>
-              <span className="text-[11px]">&middot;</span>
-              <ChannelIcon channel={item.channel} size={11} />
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Dismiss button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDismiss();
-        }}
-        className="shrink-0 mt-0.5 rounded-lg p-1.5 opacity-0 group-hover:opacity-100 transition-all"
-        style={{ color: "#B5BAC0" }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "#F5F6F8";
-          e.currentTarget.style.color = "#1A1A1A";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "";
-          e.currentTarget.style.color = "#B5BAC0";
-        }}
-        title="Dismiss"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
   );
 }
 

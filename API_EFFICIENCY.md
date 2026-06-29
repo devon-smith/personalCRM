@@ -49,10 +49,12 @@
 - Removed the unused legacy `SyncAlerts` component so the old `/api/health` dashboard cleanup UI cannot be accidentally remounted. Source-status rail/banner consumers now share the server response type.
 - Dashboard shell now owns the single Google source-status query and passes the result to the rail and reconnect banner, avoiding duplicate persistent query observers for the same shell status payload.
 - Removed unused legacy dashboard widget components that each carried standalone fetches for action items, drafts, changelog, scheduling, Calendar, birthdays, and suggestions. The current home surface stays on `/api/dashboard/bootstrap`, while explicit pages keep their manual/intentional request paths.
+- Inbox "Sync Gmail" no longer runs the legacy `/api/message-actions` AI classifier or invalidates its query. The unused action-items card was removed from the inbox bundle, leaving Gmail sync plus the current Gmail action extractor as the explicit manual path; manual sync now surfaces a real failure if either remaining POST fails.
 
 ## Next Highest-Impact Efficiency Work
 
 - Use production telemetry to tune sync budgets for the one-user deployment and promote per-user budgets only if this becomes multi-user.
+- Decide whether the now-unmounted `/api/message-actions` route and `src/lib/message-actions.ts` should stay as a debug/admin endpoint or be removed after confirming no production worker relies on it.
 - Add provider-call aggregation if production `ProviderCallLog` volume is high enough that row-level retention alone is not sufficient.
 
 ## Product Polish Before App Finalization
