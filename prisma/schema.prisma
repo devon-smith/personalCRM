@@ -989,6 +989,10 @@ model Draft {
   /// passed at create time.
   threadKey         String?
   isWorkspaceDraft  Boolean @default(false)
+  /// Stable hash of the manual generation request that created this
+  /// draft. Used only for short-window reuse; not unique because users
+  /// may intentionally regenerate later.
+  generationFingerprint String?
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -996,6 +1000,7 @@ model Draft {
   @@index([userId, status])
   @@index([contactId])
   @@index([gmailDraftId])
+  @@index([userId, generationFingerprint, createdAt(sort: Desc)])
 }
 
 // ─── Gmail Sync State ────────────────────────────────────────

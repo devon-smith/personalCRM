@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { findDraftQualityIssues, generateDraft } from "@/lib/draft-generator";
+import {
+  buildDraftGenerationFingerprint,
+  DRAFT_GENERATION_REUSE_MS,
+} from "@/lib/drafts/generation-fingerprint";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
 import type { DraftType } from "@/generated/prisma/client";
 import type { WorkspaceVersion } from "@/lib/drafts/workspace-types";
@@ -90,6 +94,29 @@ export async function POST(req: NextRequest) {
     const tone: DraftTone = body.tone ?? "warm";
     const context: DraftContext =
       body.context ?? (threadKey ? "reply_email" : "catching_up");
+    const generationFingerprint = buildDraftGenerationFingerprint({
+      surface: "workspace",
+      contactId,
+      tone,
+      context,
+      threadKey,
+    });
+
+    if (!body.inboxItemId) {
+      const reusableDraft = await prisma.draft.findFirst({
+        where: {
+          userId,
+          generationFingerprint,
+          status: "DRAFT",
+          createdAt: { gte: new Date(Date.now() - DRAFT_GENERATION_REUSE_MS) },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (reusableDraft) {
+        return NextResponse.json({ id: reusableDraft.id, existing: true });
+      }
+    }
 
     // Generate v1 using the existing pipeline. Inline rather than
     // queued — Jennifer's waiting on this page render and there's
@@ -122,6 +149,7 @@ export async function POST(req: NextRequest) {
       isWorkspaceDraft: true,
       threadKey: threadKey ?? undefined,
       inboxItemId: body.inboxItemId ?? undefined,
+      generationFingerprint,
       workspaceVersions: [initialVersion] as unknown as object,
       refinementChat: [] as unknown as object,
     };
@@ -137,6 +165,7 @@ export async function POST(req: NextRequest) {
             subjectLine: result.subjectLine,
             isWorkspaceDraft: true,
             threadKey: threadKey ?? undefined,
+            generationFingerprint,
             workspaceVersions: [initialVersion] as unknown as object,
             refinementChat: [] as unknown as object,
             gmailDraftId: null,

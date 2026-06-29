@@ -21,10 +21,10 @@
 - Contacts and Google source status no longer poll every minute. They use longer stale windows and rely on focused invalidations from mutations/sync events.
 - DB-only status/read endpoints now return private short-lived cache headers: birthdays, usage, Google source status, data-health, and default health. Live provider health checks stay uncached.
 - Production now defaults to worker-mode sync. The browser fallback only runs in production when `NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true`, or in local dev unless force-disabled.
+- Manual draft generation now stores a short-window request fingerprint and reuses recent identical drafts instead of calling Anthropic again on repeat clicks, refresh loops, or duplicate composer submissions.
 
 ## Next Highest-Impact Efficiency Work
 
-- Persist AI generation fingerprints for expensive prompts. If the same reply draft context and voice refs are unchanged, reuse or offer regenerate instead of calling the model again automatically.
 - Add budget/rate telemetry per provider from `AIGenerationLog`: daily Anthropic tokens, Voyage embedding calls, Gmail sync calls, and Google Calendar calls.
 - Add sync-run visibility for cron/manual/webhook collisions: started at, completed at, source, duration, and provider calls made.
 

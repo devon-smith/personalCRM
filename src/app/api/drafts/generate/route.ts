@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { logAIGeneration } from "@/lib/ai-generation-log";
+import { getAnthropicSonnetModel } from "@/lib/anthropic-models";
 import { generateDraft } from "@/lib/draft-generator";
+import {
+  buildDraftGenerationFingerprint,
+  DRAFT_GENERATION_REUSE_MS,
+} from "@/lib/drafts/generation-fingerprint";
 import { prisma } from "@/lib/prisma";
 import type { DraftTone, DraftContext } from "@/lib/draft-composer-context";
 import type { DraftType } from "@/generated/prisma/client";
@@ -11,6 +17,7 @@ import {
 
 const VALID_TONES: readonly string[] = ["casual", "warm", "professional", "congratulatory", "checking_in"];
 const VALID_CONTEXTS: readonly string[] = ["reply_email", "catching_up", "congratulate", "ask", "follow_up"];
+const DRAFT_MODEL = getAnthropicSonnetModel();
 
 const CONTEXT_TO_TYPE: Record<string, DraftType> = {
   reply_email: "REPLY_EMAIL",
@@ -69,6 +76,59 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const selectedVariant = variant === "quick" ? "quick" : "detailed";
+    const generationFingerprint = buildDraftGenerationFingerprint({
+      surface: "composer",
+      contactId,
+      tone,
+      context,
+      contextDetail,
+      threadSubject,
+      threadSnippet,
+      threadKey,
+      variant: selectedVariant,
+      relationshipTypeOverride,
+    });
+    const reuseSince = new Date(Date.now() - DRAFT_GENERATION_REUSE_MS);
+    const reusableDraft = await prisma.draft.findFirst({
+      where: {
+        userId: session.user.id,
+        generationFingerprint,
+        status: "DRAFT",
+        createdAt: { gte: reuseSince },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        contactId: true,
+        content: true,
+        subjectLine: true,
+      },
+    });
+
+    if (reusableDraft) {
+      await logAIGeneration({
+        userId: session.user.id,
+        feature: "draft",
+        model: DRAFT_MODEL,
+        inputRefs: [`draft:${reusableDraft.id}`, `contact:${reusableDraft.contactId}`],
+        outputId: reusableDraft.id,
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheHit: true,
+        latencyMs: 0,
+      });
+
+      return NextResponse.json({
+        quick: reusableDraft.content,
+        detailed: reusableDraft.content,
+        subjectLine: reusableDraft.subjectLine,
+        resolvedContactId: reusableDraft.contactId,
+        draftId: reusableDraft.id,
+        reused: true,
+      });
+    }
+
     const result = await generateDraft({
       contactId,
       userId: session.user.id,
@@ -82,7 +142,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Persist the selected variant (default to detailed) as a Draft record
-    const selectedContent = variant === "quick" ? result.quick : result.detailed;
+    const selectedContent = selectedVariant === "quick" ? result.quick : result.detailed;
     const resolvedContactId = result.resolvedContactId ?? contactId;
     const draft = await prisma.draft.create({
       data: {
@@ -92,6 +152,8 @@ export async function POST(req: NextRequest) {
         tone,
         content: selectedContent,
         subjectLine: result.subjectLine,
+        threadKey: threadKey || undefined,
+        generationFingerprint,
       },
     });
 
