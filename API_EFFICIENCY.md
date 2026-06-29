@@ -131,6 +131,7 @@
 - Circle stories now avoid the separate membership lookup by filtering recent interactions through contact-circle membership directly, and successful story reads use a short private cache for immediate reopen/reload cases.
 - Removed the unused legacy circle-health HTTP routes and their standalone analytics helper. Active circle warmth counts already ride on `/api/circles`, so direct `/api/circles/health` calls can no longer trigger per-circle multi-query analytics work.
 - Contact journal add/delete now update the open contact panel's React Query cache directly from mutation results instead of invalidating and immediately re-reading `/api/journal`.
+- Contact momentum queries now canonicalize requested contact IDs and use five-minute private response caching, so re-sorting the same People list does not spend a duplicate `/api/momentum` read for identical sparkline data.
 
 ## Next Highest-Impact Efficiency Work
 

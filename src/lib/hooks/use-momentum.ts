@@ -8,17 +8,18 @@ interface MomentumResponse {
 }
 
 export function useMomentum(contactIds: readonly string[]) {
-  const idsParam = contactIds.join(",");
+  const normalizedIds = [...new Set(contactIds)].sort();
+  const idsParam = normalizedIds.join(",");
 
   return useQuery<MomentumResponse>({
     queryKey: ["momentum", idsParam],
     queryFn: async () => {
-      if (contactIds.length === 0) return { momentum: [] };
+      if (normalizedIds.length === 0) return { momentum: [] };
       const res = await fetch(`/api/momentum?contactIds=${encodeURIComponent(idsParam)}`);
       if (!res.ok) return { momentum: [] };
       return res.json();
     },
-    enabled: contactIds.length > 0,
+    enabled: normalizedIds.length > 0,
     staleTime: 5 * 60 * 1000, // 5 min cache
   });
 }
