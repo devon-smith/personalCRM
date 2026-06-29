@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { applyOverrides, type LearnedProfile, type VoiceOverrides } from "@/lib/voice/profile";
+import { type VoiceOverrides } from "@/lib/voice/profile";
 
 /**
- * GET /api/voice/profile
- *
- * Returns the learned voice fingerprint with manual overrides applied,
- * ready to render in the /voice page. Empty `learned` + empty
- * `overrides` is returned when no indexing pass has run yet — caller
- * shows the empty-state CTA.
- *
  * PATCH /api/voice/profile
  *
  * Updates manual overrides. Body shape:
@@ -19,38 +12,7 @@ import { applyOverrides, type LearnedProfile, type VoiceOverrides } from "@/lib/
  * true` is set.
  */
 
-const EMPTY_LEARNED: LearnedProfile = {
-  byRelationship: {} as LearnedProfile["byRelationship"],
-  neverSays: [],
-  overallCount: 0,
-  generatedAt: 0,
-};
 const EMPTY_OVERRIDES: VoiceOverrides = { removedPhrases: [], assertions: {} };
-
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const profile = await prisma.voiceProfile.findUnique({
-    where: { userId: session.user.id },
-  });
-
-  const learned =
-    (profile?.learned as unknown as LearnedProfile | null) ?? EMPTY_LEARNED;
-  const overrides =
-    (profile?.overrides as unknown as VoiceOverrides | null) ?? EMPTY_OVERRIDES;
-  const merged = applyOverrides(learned, overrides);
-
-  return NextResponse.json({
-    learned: merged,
-    overrides,
-    indexedEmailCount: profile?.indexedEmailCount ?? 0,
-    lastIndexedAt: profile?.lastIndexedAt?.toISOString() ?? null,
-    userInstructions: profile?.userInstructions ?? null,
-  });
-}
 
 interface PatchBody {
   removedPhrases?: string[];

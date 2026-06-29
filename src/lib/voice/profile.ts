@@ -83,7 +83,7 @@ const MIN_SIGNATURE_COUNT = 5; // phrase appears in ≥5 emails to count
 /**
  * Compute the learned profile from VoiceExample rows and persist it
  * onto VoiceProfile.learned. Called by the worker at the end of each
- * indexing pass, and on-demand from the /api/voice/profile route.
+ * indexing pass. Read surfaces use /api/voice/bootstrap.
  */
 export async function aggregateVoiceProfile(
   prisma: PrismaClient,
