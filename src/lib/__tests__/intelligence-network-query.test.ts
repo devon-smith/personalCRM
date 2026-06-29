@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseFinalAnswer,
+  clampToolLimit,
   NETWORK_QUERY_TOOL_COUNT,
 } from "@/lib/intelligence/network-query";
 
@@ -174,5 +175,23 @@ describe("tool registry", () => {
     // If this number changes, double-check the system prompt still
     // describes the right tools to Claude.
     expect(NETWORK_QUERY_TOOL_COUNT).toBe(9);
+  });
+});
+
+describe("clampToolLimit", () => {
+  it("uses the fallback when the model omits or sends invalid limits", () => {
+    expect(clampToolLimit(undefined, 10, 20)).toBe(10);
+    expect(clampToolLimit(Number.NaN, 10, 20)).toBe(10);
+    expect(clampToolLimit("not-a-number", 10, 20)).toBe(10);
+  });
+
+  it("floors fractions and keeps limits inside 1..max", () => {
+    expect(clampToolLimit(0, 10, 20)).toBe(1);
+    expect(clampToolLimit(4.9, 10, 20)).toBe(4);
+    expect(clampToolLimit(999, 10, 20)).toBe(20);
+  });
+
+  it("accepts numeric strings from loose tool inputs", () => {
+    expect(clampToolLimit("12", 10, 20)).toBe(12);
   });
 });

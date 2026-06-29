@@ -40,6 +40,12 @@ import { searchContacts as fuzzyContactSearch } from "@/lib/search/contacts";
 export const NETWORK_QUERY_MODEL = "claude-sonnet-4-5";
 const MAX_ITERATIONS = 8;
 const MAX_TOKENS = 2500;
+const DEFAULT_CONTACT_SEARCH_LIMIT = 20;
+const DEFAULT_TOPIC_SEARCH_LIMIT = 15;
+const DEFAULT_NEIGHBOR_LIMIT = 15;
+const DEFAULT_INTERACTION_LIMIT = 10;
+const DEFAULT_OPEN_THREAD_LIMIT = 20;
+const DEFAULT_PERSONAL_MENTION_LIMIT = 15;
 
 export interface RunNetworkQueryParams {
   prisma: PrismaClient;
@@ -144,13 +150,21 @@ const TOOLS: RegisteredTool[] = [
         },
         limit: {
           type: "number",
-          description: "Max results, default 20",
+          description: "Max results, default 20, capped at 20",
         },
       },
       required: ["query"],
     },
     execute: async (input, ctx) => {
-      const { query, limit = 20 } = input as { query: string; limit?: number };
+      const { query, limit: requestedLimit } = input as {
+        query: string;
+        limit?: number;
+      };
+      const limit = clampToolLimit(
+        requestedLimit,
+        DEFAULT_CONTACT_SEARCH_LIMIT,
+        20,
+      );
       const hits = await fuzzyContactSearch(ctx.userId, query, limit, {
         includeSemantic: false,
       });
@@ -178,12 +192,23 @@ const TOOLS: RegisteredTool[] = [
           type: "string",
           description: "Topic or domain to search for",
         },
-        limit: { type: "number", description: "Max results, default 15" },
+        limit: {
+          type: "number",
+          description: "Max results, default 15, capped at 15",
+        },
       },
       required: ["topic"],
     },
     execute: async (input, ctx) => {
-      const { topic, limit = 15 } = input as { topic: string; limit?: number };
+      const { topic, limit: requestedLimit } = input as {
+        topic: string;
+        limit?: number;
+      };
+      const limit = clampToolLimit(
+        requestedLimit,
+        DEFAULT_TOPIC_SEARCH_LIMIT,
+        15,
+      );
       // Reuses the existing fuzzy + semantic search hybrid. When
       // VOYAGE_API_KEY isn't set this falls back to text matching.
       const hits = await fuzzyContactSearch(ctx.userId, topic, limit, {
@@ -274,16 +299,24 @@ const TOOLS: RegisteredTool[] = [
           description:
             "Restrict to specific edge types: mutual_thread (shared conversation), same_org (same company/email-domain), mentioned (one named the other in an email body), introduced_by_user (user initiated a thread connecting them). Omit for all.",
         },
-        limit: { type: "number", description: "Max neighbors, default 15" },
+        limit: {
+          type: "number",
+          description: "Max neighbors, default 15, capped at 20",
+        },
       },
       required: ["contactId"],
     },
     execute: async (input, ctx) => {
-      const { contactId, edgeTypes, limit = 15 } = input as {
+      const { contactId, edgeTypes, limit: requestedLimit } = input as {
         contactId: string;
         edgeTypes?: string[];
         limit?: number;
       };
+      const limit = clampToolLimit(
+        requestedLimit,
+        DEFAULT_NEIGHBOR_LIMIT,
+        20,
+      );
       const neighbors = await findNeighbors({
         prisma: ctx.prisma,
         userId: ctx.userId,
@@ -313,15 +346,23 @@ const TOOLS: RegisteredTool[] = [
       type: "object",
       properties: {
         contactId: { type: "string", description: "The contact's ID" },
-        limit: { type: "number", description: "Max interactions, default 10" },
+        limit: {
+          type: "number",
+          description: "Max interactions, default 10, capped at 15",
+        },
       },
       required: ["contactId"],
     },
     execute: async (input, ctx) => {
-      const { contactId, limit = 10 } = input as {
+      const { contactId, limit: requestedLimit } = input as {
         contactId: string;
         limit?: number;
       };
+      const limit = clampToolLimit(
+        requestedLimit,
+        DEFAULT_INTERACTION_LIMIT,
+        15,
+      );
       const interactions = await ctx.prisma.interaction.findMany({
         where: { contactId, userId: ctx.userId },
         orderBy: { occurredAt: "desc" },
@@ -403,14 +444,22 @@ const TOOLS: RegisteredTool[] = [
           description:
             "Optional — restrict to one contact. Omit to scan globally.",
         },
-        limit: { type: "number", description: "Max threads, default 20" },
+        limit: {
+          type: "number",
+          description: "Max threads, default 20, capped at 25",
+        },
       },
     },
     execute: async (input, ctx) => {
-      const { contactId, limit = 20 } = input as {
+      const { contactId, limit: requestedLimit } = input as {
         contactId?: string;
         limit?: number;
       };
+      const limit = clampToolLimit(
+        requestedLimit,
+        DEFAULT_OPEN_THREAD_LIMIT,
+        25,
+      );
       const memories = await ctx.prisma.contactMemory.findMany({
         where: contactId
           ? { contactId, contact: { userId: ctx.userId } }
@@ -463,12 +512,23 @@ const TOOLS: RegisteredTool[] = [
           type: "string",
           description: "What to search for — keyword or short phrase",
         },
-        limit: { type: "number", description: "Max results, default 15" },
+        limit: {
+          type: "number",
+          description: "Max results, default 15, capped at 20",
+        },
       },
       required: ["query"],
     },
     execute: async (input, ctx) => {
-      const { query, limit = 15 } = input as { query: string; limit?: number };
+      const { query, limit: requestedLimit } = input as {
+        query: string;
+        limit?: number;
+      };
+      const limit = clampToolLimit(
+        requestedLimit,
+        DEFAULT_PERSONAL_MENTION_LIMIT,
+        20,
+      );
       const memories = await ctx.prisma.contactMemory.findMany({
         where: { contact: { userId: ctx.userId } },
         select: {
@@ -1007,6 +1067,21 @@ function stripJsonFrom(text: string): string {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) return text;
   return text.replace(match[0], "");
+}
+
+export function clampToolLimit(
+  value: unknown,
+  fallback: number,
+  max: number,
+): number {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value)
+        : fallback;
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(numeric)));
 }
 
 /** Exported for unit testing — internal registry size. */
