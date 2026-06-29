@@ -53,6 +53,7 @@ This is the final punch list for calling the API-efficiency and polish pass done
 
 ## Jennifer Data Cleanup
 
+- Run the read-only audit first: `npm run data:audit:jennifer`. Use `-- --strict` in CI/deploy checks if high-risk findings should fail the command.
 - Start from a production DB seeded only with Jennifer's Google account and intended test contacts, or run a deletion/audit pass before launch.
 - Remove Devon/dev imported contacts, iMessage/SMS/WhatsApp historical rows, test inbox items, test drafts, and old sync state unless explicitly needed for audit.
 - Verify `User.email`, connected `Account.providerAccountId`, `GmailSyncState.additionalUserEmails`, and Calendar sync state all belong to Jennifer.
