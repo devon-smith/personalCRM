@@ -34,7 +34,7 @@
 - Detailed provider-call telemetry now has a daily retention worker. `PROVIDER_CALL_LOG_RETENTION_DAYS` defaults to 180 days, which preserves the 7/30/90-day Settings usage windows plus debugging headroom.
 - Sources now frames manual Gmail/Calendar actions as "Refresh now", shows recent server-run status beside each service, and refreshes connected source indicators after manual runs.
 - Calendar empty states now use DB-only sync status returned with `/api/calendar`, so the Calendar and home meeting surfaces distinguish disconnected/missing-scope, never-synced, failed-sync, and genuinely-empty states without extra Google calls.
-- Retired messaging/runtime surfaces are hard-disabled: Activity, Feed, WhatsApp, and iMessage no longer expose sync UI or public deployment flags, and their direct API routes fail closed with disabled/404 responses. Generic historical iMessage/SMS rendering remains so old imported rows still display.
+- Retired messaging/runtime surfaces are hard-disabled: Activity, Feed, WhatsApp, and iMessage no longer expose sync UI or public deployment flags, and their direct API route files have been removed so requests fall through to framework 404s. Generic historical iMessage/SMS rendering remains so old imported rows still display.
 - Reply queue draft review now lazily loads selected-draft provenance from the draft workspace context: exact inbound message source, loaded thread depth, matching voice references, and known missing context.
 - Legacy Source health no longer polls its wide DB-only health report every minute. It now uses a five-minute client stale window, manual refresh, and a short private cache header.
 - Dashboard home no longer renders the dev/admin `SyncAlerts` banner, so normal home visits avoid the extra `/api/health` request and duplicated Google reconnect messaging.
@@ -82,6 +82,7 @@
 - Retired the iMessage runtime surface: removed the `NEXT_PUBLIC_ENABLE_IMESSAGE` flag, removed Sources/People/Settings iMessage sync UI, made `/api/imessage*` fail closed, and removed iMessage status/source checks from health and data-health payloads.
 - Removed the unused Mac `chat.db` reader, iMessage sync package, and iMessage backfill branch after verifying no active app, worker, script, or test reference remained. Gmail remains the only maintained message-ingestion backfill path.
 - Browser fallback sync now uses a short cross-tab localStorage lock, skips work while the tab is hidden, and only invalidates inbox/dashboard caches when a fallback Gmail run actually processes new mail.
+- Removed the tracked fail-closed legacy route stubs and retired WhatsApp sidecar projects so production no longer advertises inert Feed, Activity, WhatsApp, iMessage, backfill, cleanup, debug, or retired suggestion endpoints.
 
 ## Next Highest-Impact Efficiency Work
 
@@ -90,4 +91,4 @@
 
 ## Product Polish Before App Finalization
 
-- Decide after launch whether disabled legacy routes should stay flag-gated for admin/debug use or be removed permanently.
+- Revisit historical WhatsApp/iMessage schema fields only after production data retention requirements are clear; runtime/API support is intentionally removed.

@@ -16,9 +16,8 @@ model User {
   emailVerified         DateTime?
   image                 String?
   onboardingCompletedAt DateTime?
-  // M0.x.3: rail-nav dot indicator and "what's new since I last
-  // looked" affordances on the /feed page reference this. POST
-  // /api/feed/visit updates it on each visit.
+  // Retired feed visit state. Kept for historical data compatibility;
+  // no active runtime reads or writes it.
   lastFeedVisitAt       DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt

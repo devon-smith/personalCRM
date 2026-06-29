@@ -43,10 +43,9 @@ next-env.d.ts
 
 /src/generated/prisma
 
-# whatsapp sidecar
-whatsapp-sidecar/auth-state/*
-!whatsapp-sidecar/auth-state/.gitkeep
-whatsapp-sidecar/node_modules
+# retired WhatsApp sidecar local leftovers
+whatsapp-sidecar/
+whatsapp-sidecar-openwa/
 
 # Capacitor Android project is still generated locally when needed.
 /android
