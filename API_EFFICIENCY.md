@@ -94,6 +94,7 @@
 - Removed the unused Mac `chat.db` reader, iMessage sync package, and iMessage backfill branch after verifying no active app, worker, script, or test reference remained. Gmail remains the only maintained message-ingestion backfill path.
 - Browser fallback sync now uses a short cross-tab localStorage lock, skips work while the tab is hidden, never auto-runs Contacts/Calendar provider calls, and only invalidates inbox/dashboard caches when a fallback Gmail run actually processes new mail.
 - Removed the tracked fail-closed legacy route stubs and retired WhatsApp sidecar projects so production no longer advertises inert Feed, Activity, WhatsApp, iMessage, backfill, cleanup, debug, or retired suggestion endpoints.
+- Production builds no longer fetch Instrument Serif from Google Fonts at build time; display typography uses a local system-serif variable, and the web-bundled worker queue client resolves its DB helper as source during Next builds.
 
 ## Next Highest-Impact Efficiency Work
 

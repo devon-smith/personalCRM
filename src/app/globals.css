@@ -42,6 +42,10 @@
 :root {
   /* ─── Design System v2.0 — Intelly-grade neutral palette ─── */
 
+  /* Keep production builds deterministic by avoiding build-time Google
+     Fonts fetches. */
+  --font-instrument-serif: Georgia, "Times New Roman", serif;
+
   /* Canvas (warm off-white linen) */
   --background: #FAF8F5;
 

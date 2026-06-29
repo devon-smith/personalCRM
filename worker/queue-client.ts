@@ -16,7 +16,7 @@
 import { Pool } from "pg";
 import { makeWorkerUtils } from "graphile-worker";
 import type { WorkerUtils } from "graphile-worker";
-import { getWorkerDatabaseUrl } from "./db.js";
+import { getWorkerDatabaseUrl } from "./db";
 
 let cachedUtils: WorkerUtils | null = null;
 
