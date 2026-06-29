@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Link2, Phone, Mail, Search, X } from "lucide-react";
 import { toast } from "sonner";
+import { useDebounce } from "@/lib/hooks/use-debounce";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -25,6 +26,14 @@ interface LinkHandleDialogProps {
   onLinked?: (contactId: string) => void;
 }
 
+interface ContactSearchHit {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  role: string | null;
+}
+
 // ─── Component ──────────────────────────────────────────────
 
 export function LinkHandleDialog({
@@ -36,6 +45,7 @@ export function LinkHandleDialog({
 }: LinkHandleDialogProps) {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 200);
   const isEmail = handle.includes("@");
 
   // Fetch suggestions
@@ -54,18 +64,18 @@ export function LinkHandleDialog({
   });
 
   // Search contacts
-  const { data: searchResults } = useQuery<
-    Array<{ id: string; name: string; company: string | null; email: string | null; phone: string | null }>
-  >({
-    queryKey: ["contacts-search", searchTerm],
+  const { data: searchResults } = useQuery<ContactSearchHit[]>({
+    queryKey: ["contacts-search", debouncedSearchTerm],
     queryFn: async () => {
       const res = await fetch(
-        `/api/contacts?search=${encodeURIComponent(searchTerm)}&limit=5`,
+        `/api/search/contacts?q=${encodeURIComponent(debouncedSearchTerm)}&limit=5&semantic=0`,
       );
       if (!res.ok) throw new Error("Search failed");
-      return res.json();
+      const data = (await res.json()) as { hits: ContactSearchHit[] };
+      return data.hits;
     },
-    enabled: searchTerm.length >= 2,
+    enabled: debouncedSearchTerm.trim().length >= 2,
+    staleTime: 30_000,
   });
 
   // Link mutation
@@ -167,7 +177,7 @@ export function LinkHandleDialog({
                       <ContactRow
                         key={contact.id}
                         name={contact.name}
-                        detail={contact.company ?? contact.email ?? contact.phone}
+                        detail={contact.company ?? contact.email}
                         reason="Manual search"
                         isLinking={
                           linkMutation.isPending &&

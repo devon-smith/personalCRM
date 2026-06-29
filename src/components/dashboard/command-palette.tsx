@@ -78,7 +78,7 @@ export function CommandPalette({
     queryKey: ["contact-search", debouncedQuery],
     queryFn: async () => {
       const res = await fetch(
-        `/api/search/contacts?q=${encodeURIComponent(debouncedQuery)}`,
+        `/api/search/contacts?q=${encodeURIComponent(debouncedQuery)}&semantic=0`,
       );
       if (!res.ok) throw new Error("Search failed");
       return res.json();

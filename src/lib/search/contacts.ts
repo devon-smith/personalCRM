@@ -12,8 +12,16 @@ export interface ContactSearchHit {
   avatarUrl: string | null;
   /** 0..1, higher is more relevant. Lets the UI render a confidence dot. */
   score: number;
-  /** Which signal contributed most: "exact_email" | "name" | "company" | "semantic" */
+  /** Which signal contributed most: "exact_email" | "name" | "company" | "role" | "semantic" */
   matchReason: string;
+}
+
+export interface ContactSearchOptions {
+  /**
+   * Enables the Voyage-backed semantic layer. Disable this for
+   * keystroke-driven typeahead so typing never spends provider calls.
+   */
+  includeSemantic?: boolean;
 }
 
 const DEFAULT_LIMIT = 12;
@@ -32,6 +40,7 @@ const SEMANTIC_WEIGHT = 0.85;
  *   1. Exact email match (case-insensitive) — always rank 1
  *   2. Trigram similarity on name (Postgres `%` operator + similarity())
  *   3. Trigram similarity on company
+ *   4. Trigram similarity on role/title
  *
  * Results are deduplicated by contact id, ranked by score descending,
  * and truncated to `limit`. All queries run in parallel.
@@ -43,9 +52,11 @@ export async function searchContacts(
   userId: string,
   query: string,
   limit: number = DEFAULT_LIMIT,
+  options: ContactSearchOptions = {},
 ): Promise<ContactSearchHit[]> {
   const q = query.trim();
   if (!q) return [];
+  const includeSemantic = options.includeSemantic ?? true;
 
   // Postgres similarity threshold.
   const threshold =
@@ -72,13 +83,22 @@ export async function searchContacts(
   // Embed the query for semantic search. Wrapped so a Voyage failure
   // doesn't break trigram search — the lexical layer still works
   // standalone, and Voyage flakes can happen.
-  const semanticPromise = semanticSearch(userId, q, limit).catch((err) => {
-    console.error("[searchContacts] semantic layer failed:", err);
-    return [] as RawHit[];
-  });
+  const semanticPromise = includeSemantic
+    ? semanticSearch(userId, q, limit).catch((err) => {
+        console.error("[searchContacts] semantic layer failed:", err);
+        return [] as RawHit[];
+      })
+    : Promise.resolve([] as RawHit[]);
 
   // Run all matchers in parallel.
-  const [exactEmail, nameMatches, companyMatches, emailNameFallback, semanticMatches] = await Promise.all([
+  const [
+    exactEmail,
+    nameMatches,
+    companyMatches,
+    roleMatches,
+    emailNameFallback,
+    semanticMatches,
+  ] = await Promise.all([
     // 1. Email match. Exact match wins at score 1.0; substring contain
     // match (the query appears anywhere in the email) gets 0.9 — covers
     // typing "marc.beban" expecting to land on marc.beban@gmail.com when
@@ -165,7 +185,34 @@ export async function searchContacts(
       LIMIT ${limit}
     `),
 
-    // 4. Email-as-name fallback: when query contains @ and didn't
+    // 4. Trigram fuzzy role/title match. Scored slightly below company
+    // because job titles are broader and can be noisier, but this keeps
+    // DB-only typeahead useful for "faculty", "CEO", "investor", etc.
+    prisma.$queryRaw<RawHit[]>(Prisma.sql`
+      SELECT c.id, c.name, c.email, c.company, c.role, c.tier::text AS tier,
+             EXTRACT(EPOCH FROM c."lastInteraction") * 1000 AS "lastInteractionTs",
+             c."avatarUrl",
+             (MAX(GREATEST(
+               similarity(c.role, v),
+               word_similarity(v, c.role)
+             )) * 0.55)::float8 AS score,
+             'role' AS reason
+      FROM "Contact" c
+      CROSS JOIN UNNEST(${nameVariants}::text[]) AS v
+      WHERE c."userId" = ${userId}
+        AND c."isNoise" = FALSE
+        AND c.role IS NOT NULL
+      GROUP BY c.id, c.name, c.email, c.company, c.role, c.tier,
+               c."avatarUrl", c."lastInteraction"
+      HAVING MAX(GREATEST(
+               similarity(c.role, v),
+               word_similarity(v, c.role)
+             )) >= ${threshold}
+      ORDER BY score DESC
+      LIMIT ${limit}
+    `),
+
+    // 5. Email-as-name fallback: when query contains @ and didn't
     // hit any direct email match, try the trigram matcher with the
     // email's local-part (e.g. "marc.beban@x.com" → search "marc beban"
     // as a name). Drops by 0.7x so a real name match still wins.
@@ -196,7 +243,14 @@ export async function searchContacts(
 
   // Merge + dedupe by id, keeping the highest-scoring reason per contact.
   const byId = new Map<string, RawHit>();
-  for (const row of [...exactEmail, ...nameMatches, ...companyMatches, ...emailNameFallback, ...semanticMatches]) {
+  for (const row of [
+    ...exactEmail,
+    ...nameMatches,
+    ...companyMatches,
+    ...roleMatches,
+    ...emailNameFallback,
+    ...semanticMatches,
+  ]) {
     const existing = byId.get(row.id);
     if (!existing || row.score > existing.score) {
       byId.set(row.id, row);

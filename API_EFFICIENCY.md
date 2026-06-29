@@ -112,6 +112,7 @@
 - External research cache misses now dedupe in-flight fetches per cache key, so simultaneous meeting prep/public-research requests share one OpenAlex/Crossref/Brave/Anthropic call and one cache write instead of stampeding providers.
 - Persistent Google source-status reads no longer select OAuth access tokens or ID tokens. The shell reconnect banner uses stored user/additional emails plus account IDs, while the detailed Sources page remains the explicit place for richer account metadata.
 - Sources/data-health account reads also avoid OAuth access tokens and ID tokens. Source capabilities are derived from active non-reconnect account rows plus saved scopes, and reconnecting accounts are no longer treated as syncable.
+- Contact typeahead surfaces now explicitly disable semantic embeddings. The command palette and link-handle picker use `semantic=0`, and the link-handle picker uses the capped search endpoint instead of the full contact-list payload with circles, counts, notes, and timestamps.
 
 ## Next Highest-Impact Efficiency Work
 

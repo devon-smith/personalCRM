@@ -151,7 +151,9 @@ const TOOLS: RegisteredTool[] = [
     },
     execute: async (input, ctx) => {
       const { query, limit = 20 } = input as { query: string; limit?: number };
-      const hits = await fuzzyContactSearch(ctx.userId, query, limit);
+      const hits = await fuzzyContactSearch(ctx.userId, query, limit, {
+        includeSemantic: false,
+      });
       return {
         data: hits.map((h) => ({
           contactId: h.id,
@@ -184,7 +186,9 @@ const TOOLS: RegisteredTool[] = [
       const { topic, limit = 15 } = input as { topic: string; limit?: number };
       // Reuses the existing fuzzy + semantic search hybrid. When
       // VOYAGE_API_KEY isn't set this falls back to text matching.
-      const hits = await fuzzyContactSearch(ctx.userId, topic, limit);
+      const hits = await fuzzyContactSearch(ctx.userId, topic, limit, {
+        includeSemantic: true,
+      });
       return {
         data: hits.map((h) => ({
           contactId: h.id,

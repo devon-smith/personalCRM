@@ -3,11 +3,13 @@ import { auth } from "@/lib/auth";
 import { searchContacts } from "@/lib/search/contacts";
 
 /**
- * GET /api/search/contacts?q=...&limit=...
+ * GET /api/search/contacts?q=...&limit=...&semantic=0
  *
  * Layered fuzzy search across name, email, and company. Returns up to
  * `limit` hits ranked by combined similarity score. Empty query returns
  * an empty array (the caller should not fire requests for empty input).
+ * Pass semantic=0 for keystroke-driven typeahead so typing does not
+ * spend embedding provider calls.
  */
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -18,13 +20,15 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q") ?? "";
   const limitParam = req.nextUrl.searchParams.get("limit");
   const limit = limitParam ? Math.min(50, Math.max(1, parseInt(limitParam, 10) || 12)) : 12;
+  const semanticParam = req.nextUrl.searchParams.get("semantic");
+  const includeSemantic = semanticParam !== "0" && semanticParam !== "false";
 
   if (!q.trim()) {
     return NextResponse.json({ hits: [] });
   }
 
   try {
-    const hits = await searchContacts(session.user.id, q, limit);
+    const hits = await searchContacts(session.user.id, q, limit, { includeSemantic });
     return NextResponse.json({ hits });
   } catch (err) {
     console.error("[/api/search/contacts] error:", err);
