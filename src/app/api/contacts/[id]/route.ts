@@ -14,12 +14,85 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   }
 
   const { id } = await params;
-  const summaryOnly = _req.nextUrl.searchParams.get("scope") === "summary";
+  const scope = _req.nextUrl.searchParams.get("scope");
+  const summaryOnly = scope === "summary";
+  const replyContextOnly = scope === "reply-context";
 
   if (summaryOnly) {
     const contact = await prisma.contact.findFirst({
       where: { id, userId: session.user.id },
       select: contactListSelect,
+    });
+
+    if (!contact) {
+      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(contact);
+  }
+
+  if (replyContextOnly) {
+    const contact = await prisma.contact.findFirst({
+      where: { id, userId: session.user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        company: true,
+        role: true,
+        tier: true,
+        lastInteraction: true,
+        circles: {
+          take: 1,
+          select: {
+            circle: { select: { id: true, name: true, color: true } },
+          },
+        },
+        interactions: {
+          orderBy: { occurredAt: "desc" },
+          take: 5,
+          select: {
+            id: true,
+            type: true,
+            channel: true,
+            subject: true,
+            summary: true,
+            occurredAt: true,
+          },
+        },
+        personFacts: {
+          where: { dismissedAt: null },
+          orderBy: [{ confirmedByUser: "desc" }, { observedAt: "desc" }],
+          take: 8,
+          select: {
+            id: true,
+            type: true,
+            value: true,
+            confidence: true,
+            sourceSystem: true,
+            observedAt: true,
+            confirmedByUser: true,
+          },
+        },
+        profile: {
+          select: {
+            expertiseAreas: true,
+            relationshipStage: true,
+            communicationStyle: true,
+            geographicContext: true,
+            personalitySignals: true,
+          },
+        },
+        memory: {
+          select: {
+            discussedTopics: true,
+            theyMentioned: true,
+            openThreads: true,
+            personalContext: true,
+            recurringThemes: true,
+          },
+        },
+      },
     });
 
     if (!contact) {

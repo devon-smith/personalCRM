@@ -276,11 +276,11 @@ export function ReplyQueueConsole() {
     (dataHealth?.googleAccounts.filter((account) => account.needsReconnect).length ?? 0) > 0;
 
   const { data: contact } = useQuery<ContactDetail | null>({
-    queryKey: ["contact", selected?.contactId],
+    queryKey: ["contact", selected?.contactId, "reply-context"],
     enabled: !!selected?.contactId,
     queryFn: async () => {
       if (!selected?.contactId) return null;
-      const res = await fetch(`/api/contacts/${selected.contactId}`);
+      const res = await fetch(`/api/contacts/${selected.contactId}?scope=reply-context`);
       if (!res.ok) return null;
       return res.json();
     },
