@@ -192,6 +192,7 @@ export function NetworkQueryBox({
   const savedCount = savedQueriesData?.count ?? 0;
 
   const abortRef = useRef<AbortController | null>(null);
+  const streamInFlightRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Rotate placeholder every 4s when input is empty + unfocused.
@@ -234,7 +235,15 @@ export function NetworkQueryBox({
       suppressVisible?: boolean;
     } = {},
   ) => {
-    if (!q.trim() || isStreaming) return;
+    const trimmed = q.trim();
+    const effectiveParent =
+      opts.parentOverride !== undefined
+        ? opts.parentOverride
+        : parentQueryId ?? null;
+    const streamKey = `${effectiveParent ?? "root"}:${trimmed}`;
+
+    if (!trimmed || isStreaming || streamInFlightRef.current) return;
+    streamInFlightRef.current = streamKey;
 
     setResult(null);
     setError(null);
@@ -242,23 +251,19 @@ export function NetworkQueryBox({
     setStreamingText("");
     setShowTrace(false);
     setIsStarred(false);
-    if (!opts.suppressVisible) setQuery(q.trim());
-    setSubmittedQuery(q.trim());
+    if (!opts.suppressVisible) setQuery(trimmed);
+    setSubmittedQuery(trimmed);
     setIsStreaming(true);
 
     const controller = new AbortController();
     abortRef.current = controller;
-    const effectiveParent =
-      opts.parentOverride !== undefined
-        ? opts.parentOverride
-        : parentQueryId ?? null;
 
     try {
       const res = await fetch("/api/network-query?stream=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query: q.trim(),
+          query: trimmed,
           parentQueryId: effectiveParent ?? undefined,
         }),
         signal: controller.signal,
@@ -293,6 +298,9 @@ export function NetworkQueryBox({
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
+      if (streamInFlightRef.current === streamKey) {
+        streamInFlightRef.current = null;
+      }
     }
 
     function handleSseFrame(frame: string) {
@@ -351,7 +359,7 @@ export function NetworkQueryBox({
             const createdAt = new Date().toISOString();
             const savedQuery = {
               id: savedQueryId,
-              query: q.trim(),
+              query: trimmed,
               title: completed.title,
               answer: completed.answer,
               evidence: {

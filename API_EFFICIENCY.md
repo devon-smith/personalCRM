@@ -176,6 +176,7 @@
 - Quick draft composer preset-contact lookups are now disabled while the modal is closed, and relationship-type overrides reset on every open. Hidden composer state no longer keeps focused contact-summary reads alive or leaks a prior override into the next generation request.
 - AI interaction parsing now guards duplicate calls in both manual Log Interaction and Smart Log dialogs. Rapid Parse taps return while parsing is in-flight, and unchanged pasted text reuses the already-parsed fields instead of spending another parse model call.
 - Voice memo transcription now has a handler-level upload guard and computes duration from the recorder's local start timestamp. Rapid Transcribe taps can no longer submit duplicate Whisper uploads, and saved voice-note duration metadata no longer depends on stale React state.
+- Ask streaming now has a synchronous in-flight ref guard before `/api/network-query?stream=1` starts. Rapid Enter/double-tap submits and shortcut seed effects cannot launch overlapping Claude/tool streams while React's `isStreaming` state is still settling.
 
 ## Next Highest-Impact Efficiency Work
 
