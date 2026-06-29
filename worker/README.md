@@ -63,11 +63,10 @@ The cron entries in `worker/index.ts` cover the periodic case;
 
 ## Browser sync fallback
 
-The worker now owns production Gmail and Calendar freshness through
+The worker now owns Gmail and Calendar freshness through
 `gmail-sync`, `calendar-sync`, push webhook enqueues, and cron
-fallbacks. The browser-side `useAutoSync` hook remains useful in local
-dev and can be explicitly re-enabled in production with
-`NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true`, but production defaults to
-worker-mode so open tabs do not create extra provider polling.
+fallbacks. The browser-side `useAutoSync` hook is opt-in in every
+environment with `NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true`, so open tabs do
+not create extra provider polling by default.
 
 Google Contacts import is still user-triggered from the Sources UI.

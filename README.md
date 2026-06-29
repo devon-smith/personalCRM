@@ -144,11 +144,11 @@ functions are request-scoped; the Graphile Worker is the process that
 owns Gmail sync, Calendar sync, draft prepopulation, memory synthesis,
 and scheduled jobs.
 
-Production builds default to worker-mode sync: the browser-side
-`useAutoSync` fallback does not run unless
-`NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true` is set. Leave that unset once
-the worker is deployed. This prevents one Gmail/Calendar poller per
-open browser tab.
+The browser-side `useAutoSync` fallback is opt-in in every environment:
+it does not run unless `NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true` is set.
+Leave that unset once the worker is deployed, and use the explicit
+Sources refresh actions for local/manual syncs. This prevents one
+Gmail/Calendar poller per open browser tab.
 
 Minimum production env checklist:
 

@@ -113,9 +113,8 @@ const crontab = `
 # Nightly at 04:33 UTC: detect OpenAlex affiliation changes for tracked
 # researcher contacts.
 33 4 * * * openalex-affiliation-diff
-# Every 3 minutes: incremental Gmail sync (server-side counterpart to
-# the browser useAutoSync poll; once useAutoSync is retired, this is
-# the only Gmail-sync trigger).
+# Every 3 minutes: incremental Gmail sync. Browser fallback sync is
+# opt-in, so this worker cron is the default periodic Gmail trigger.
 */3 * * * * gmail-sync
 # Every 30 minutes: Calendar sync.
 */30 * * * * calendar-sync

@@ -61,22 +61,16 @@ function getBrowserSyncMode(): SyncRuntimeStatus["browserSync"] {
     };
   }
 
-  if (process.env.NODE_ENV === "production") {
-    if (process.env.NEXT_PUBLIC_ENABLE_BROWSER_SYNC === "true") {
-      return {
-        mode: "enabled",
-        reason: "Production override is enabled.",
-      };
-    }
+  if (process.env.NEXT_PUBLIC_ENABLE_BROWSER_SYNC === "true") {
     return {
-      mode: "disabled",
-      reason: "Production defaults to worker-mode sync.",
+      mode: "enabled",
+      reason: "Explicitly enabled by NEXT_PUBLIC_ENABLE_BROWSER_SYNC.",
     };
   }
 
   return {
-    mode: "enabled",
-    reason: "Local development Gmail fallback is enabled.",
+    mode: "disabled",
+    reason: "Browser fallback is opt-in; worker/manual sync own freshness.",
   };
 }
 

@@ -8,20 +8,19 @@ const BROWSER_SYNC_LOCK_KEY = "personal-crm:browser-sync-lock";
 const BROWSER_SYNC_LOCK_TTL_MS = 2 * 60 * 1000;
 
 /**
- * Local dev keeps browser fallback sync on for convenience. Production
- * defaults to worker-mode because the Graphile Worker owns Gmail and
- * Calendar freshness without one poller per open tab.
+ * Browser fallback sync is opt-in in every environment. The Graphile
+ * Worker owns Gmail and Calendar freshness; local/dev can still enable
+ * this as a temporary fallback while the worker is offline.
  *
  * Public env vars because this hook runs client-side:
- * - NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true opts production back into the
- *   fallback while the worker is being brought online.
+ * - NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true enables the fallback while the
+ *   worker is being brought online or intentionally left offline.
  * - NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true force-disables the hook in
  *   any environment.
  */
 const BROWSER_SYNC_DISABLED =
   process.env.NEXT_PUBLIC_DISABLE_BROWSER_SYNC === "true" ||
-  (process.env.NODE_ENV === "production" &&
-    process.env.NEXT_PUBLIC_ENABLE_BROWSER_SYNC !== "true");
+  process.env.NEXT_PUBLIC_ENABLE_BROWSER_SYNC !== "true";
 
 /**
  * Automatically syncs Gmail as a stale browser fallback.
@@ -30,9 +29,8 @@ const BROWSER_SYNC_DISABLED =
  *
  * All syncs are idempotent and deduplicate. Backs off after consecutive failures.
  *
- * No-op in production by default, or when
- * NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true — server-side worker handles
- * everything in that mode.
+ * No-op unless NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true and not force-disabled.
+ * Server-side worker handles everything in the default mode.
  */
 export function useAutoSync() {
   const queryClient = useQueryClient();
@@ -93,7 +91,7 @@ export function useAutoSync() {
   }, [queryClient]);
 
   useEffect(() => {
-    // Bail entirely when the server-side worker is the source of truth.
+    // Bail entirely unless browser fallback was explicitly enabled.
     // Avoids redundant requests + lets the user keep tabs open without
     // a per-tab sync timer racing the worker.
     if (BROWSER_SYNC_DISABLED) return;
