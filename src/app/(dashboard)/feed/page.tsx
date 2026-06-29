@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { useDraftComposer } from "@/lib/draft-composer-context";
+import { deploymentFeatures } from "@/lib/deployment-features";
 
 /**
  * /feed — ambient awareness of what's going on in the network.
@@ -61,6 +62,11 @@ const FILTERS: Array<{ id: FilterType; label: string }> = [
 ];
 
 export default function FeedPage() {
+  if (!deploymentFeatures.feed) return <FeedDisabled />;
+  return <FeedPageContent />;
+}
+
+function FeedPageContent() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterType>("all");
   const [highlightedOnly, setHighlightedOnly] = useState(false);
@@ -173,6 +179,32 @@ export default function FeedPage() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function FeedDisabled() {
+  return (
+    <div className="mx-auto w-full max-w-2xl px-4 py-16 text-center sm:px-6">
+      <div
+        className="mx-auto flex h-12 w-12 items-center justify-center rounded-full"
+        style={{ backgroundColor: "var(--surface-sunken)" }}
+      >
+        <Sparkles className="h-5 w-5" style={{ color: "var(--text-tertiary)" }} />
+      </div>
+      <h1 className="mt-4 ds-display-md" style={{ color: "var(--text-primary)" }}>
+        Feed is disabled
+      </h1>
+      <p className="mx-auto mt-2 max-w-md text-[13px] leading-5" style={{ color: "var(--text-tertiary)" }}>
+        This deployment keeps the main CRM focused on Gmail, Calendar, Replies, Ask, and meeting prep.
+      </p>
+      <Link
+        href="/dashboard"
+        className="mt-5 inline-flex rounded-[8px] px-4 py-2 text-[13px] font-semibold"
+        style={{ backgroundColor: "var(--accent-color)", color: "var(--text-inverse)" }}
+      >
+        Back to Home
+      </Link>
     </div>
   );
 }

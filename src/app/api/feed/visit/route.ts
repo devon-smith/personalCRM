@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -9,6 +10,10 @@ import { prisma } from "@/lib/prisma";
  * on mount so the rail-nav dot indicator clears.
  */
 export async function POST() {
+  if (!deploymentFeatures.feed) {
+    return NextResponse.json({ error: "Feed is disabled" }, { status: 404 });
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,6 +32,10 @@ export async function POST() {
  * created since the user's last /feed visit. Powers the rail-nav dot.
  */
 export async function GET() {
+  if (!deploymentFeatures.feed) {
+    return NextResponse.json({ error: "Feed is disabled" }, { status: 404 });
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

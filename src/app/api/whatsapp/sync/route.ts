@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { authExtension } from "@/lib/extension-auth";
 import { prisma } from "@/lib/prisma";
 import { autoResolveOnOutbound } from "@/lib/auto-resolve";
@@ -77,6 +78,13 @@ async function findContact(
  */
 export async function POST(request: Request) {
   try {
+    if (!deploymentFeatures.whatsapp) {
+      return NextResponse.json(
+        { error: "WhatsApp sync is disabled" },
+        { status: 404 },
+      );
+    }
+
     const authResult = await authExtension(request);
     if (authResult instanceof NextResponse) return authResult;
     const userId = authResult.userId;

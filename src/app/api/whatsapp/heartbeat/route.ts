@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { authExtension } from "@/lib/extension-auth";
 import { prisma } from "@/lib/prisma";
 
@@ -13,6 +14,13 @@ interface HeartbeatBody {
  */
 export async function POST(request: Request) {
   try {
+    if (!deploymentFeatures.whatsapp) {
+      return NextResponse.json(
+        { error: "WhatsApp sync is disabled" },
+        { status: 404 },
+      );
+    }
+
     const authResult = await authExtension(request);
     if (authResult instanceof NextResponse) return authResult;
     const userId = authResult.userId;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 import { getConversations, getMessagesForHandle } from "@/lib/imessage";
 import { normalizePhone } from "@/lib/name-utils";
@@ -11,6 +12,13 @@ import { normalizePhone } from "@/lib/name-utils";
  * Use to verify: chat.db access, handle→contact matching, message direction detection.
  */
 export async function GET(request: Request) {
+  if (!deploymentFeatures.imessage) {
+    return NextResponse.json(
+      { error: "iMessage debug is disabled" },
+      { status: 404 },
+    );
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authExtension } from "@/lib/extension-auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 
 interface FeedItem {
@@ -17,6 +18,10 @@ interface FeedItem {
  * Creates interactions for posts, and updates contact records for job changes.
  */
 export async function POST(request: Request) {
+  if (!deploymentFeatures.feed) {
+    return NextResponse.json({ error: "Feed intelligence is disabled" }, { status: 404 });
+  }
+
   try {
     const authResult = await authExtension(request);
     if (authResult instanceof NextResponse) return authResult;

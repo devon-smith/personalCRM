@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -11,6 +12,10 @@ import { prisma } from "@/lib/prisma";
  * paginate via "?before=<isoDate>" for "Load earlier".
  */
 export async function GET(req: Request) {
+  if (!deploymentFeatures.feed) {
+    return NextResponse.json({ error: "Feed is disabled" }, { status: 404 });
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

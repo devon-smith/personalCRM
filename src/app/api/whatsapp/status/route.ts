@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -8,6 +9,17 @@ import { prisma } from "@/lib/prisma";
  */
 export async function GET() {
   try {
+    if (!deploymentFeatures.whatsapp) {
+      return NextResponse.json({
+        status: "disabled",
+        disabled: true,
+        connected: false,
+        messagesSynced: 0,
+        contactsMatched: 0,
+        unmatchedChats: [],
+      });
+    }
+
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

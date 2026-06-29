@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -13,6 +14,10 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },
 ) {
+  if (!deploymentFeatures.feed) {
+    return NextResponse.json({ error: "Feed is disabled" }, { status: 404 });
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

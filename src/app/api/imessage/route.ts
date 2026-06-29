@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { getConversations } from "@/lib/imessage";
 import { syncIMessages } from "@/lib/imessage-sync";
 import { getUserProfile } from "@/lib/user-profile";
@@ -10,6 +11,15 @@ export type { IMessageSyncResult } from "@/lib/imessage-sync";
 // ─── GET — Preview iMessage conversations ────────────────────
 
 export async function GET() {
+  if (!deploymentFeatures.imessage) {
+    return NextResponse.json({
+      conversations: [],
+      total: 0,
+      disabled: true,
+      error: "iMessage sync is disabled for this deployment.",
+    });
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -46,6 +56,20 @@ export async function GET() {
 // ─── POST — Sync iMessages as Interactions ───────────────────
 
 export async function POST(request: Request) {
+  if (!deploymentFeatures.imessage) {
+    return NextResponse.json({
+      chatsScanned: 0,
+      chatsMerged: 0,
+      messagesCreated: 0,
+      messagesSkipped: 0,
+      chatIdsCorrected: 0,
+      contactsMatched: 0,
+      unmatchedChats: 0,
+      errors: ["iMessage sync is disabled for this deployment."],
+      disabled: true,
+    });
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

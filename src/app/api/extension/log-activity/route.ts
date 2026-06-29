@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { authExtension } from "@/lib/extension-auth";
 import { prisma } from "@/lib/prisma";
 
@@ -20,6 +21,13 @@ const ACTIVITY_SUMMARIES: Record<string, string> = {
  */
 export async function POST(request: Request) {
   try {
+    if (!deploymentFeatures.activity) {
+      return NextResponse.json(
+        { error: "Activity logging is disabled" },
+        { status: 404 },
+      );
+    }
+
     const authResult = await authExtension(request);
     if (authResult instanceof NextResponse) return authResult;
     const userId = authResult.userId;

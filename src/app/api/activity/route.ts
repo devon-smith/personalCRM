@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { deploymentFeatures } from "@/lib/deployment-features";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
+  if (!deploymentFeatures.activity) {
+    return NextResponse.json({ error: "Activity is disabled" }, { status: 404 });
+  }
+
   try {
     const session = await auth();
     if (!session?.user?.id) {
