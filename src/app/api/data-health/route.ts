@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
+import {
+  getSyncRuntimeStatus,
+  type SyncRuntimeStatus,
+} from "@/lib/sync/runtime-status";
 import { getUserProfile } from "@/lib/user-profile";
 
 export interface GoogleAccountInfo {
@@ -50,6 +54,7 @@ export interface DataHealthResponse {
   zeroInteractionContacts: ZeroInteractionContact[];
   unmatchedSenders: UnmatchedSender[];
   hasGoogleOAuth: boolean;
+  syncRuntime: SyncRuntimeStatus;
 }
 
 export async function GET() {
@@ -156,6 +161,7 @@ export async function GET() {
     appleContactCount,
     lastAppleSync,
     linkedinContactCount,
+    syncRuntime,
   ] = await Promise.all([
     prisma.contact.count({ where: { userId } }),
 
@@ -219,6 +225,8 @@ export async function GET() {
     prisma.contact.count({
       where: { userId, source: "LINKEDIN" },
     }),
+
+    getSyncRuntimeStatus(prisma),
   ]);
 
   // ─── Data Sources ───
@@ -329,6 +337,7 @@ export async function GET() {
       zeroInteractionContacts: contactsWithZeroInteractions,
       unmatchedSenders: unmatchedSenders.slice(0, 10),
       hasGoogleOAuth,
+      syncRuntime,
     } satisfies DataHealthResponse,
     { headers: privateCacheHeaders(60, 5 * 60) },
   );

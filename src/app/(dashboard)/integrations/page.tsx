@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   RefreshCw,
   Loader2,
+  ServerCog,
   Mail,
   Calendar,
   Users,
@@ -202,8 +203,10 @@ export default function SourcesPage() {
         </button>
       </div>
 
+      <SyncRuntimeCard data={data} />
+
       {/* ═══ SECTION 1 — Google Accounts ═══ */}
-      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "40ms" }}>
+      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "80ms" }}>
         <h2 className="ds-heading-sm">Google Accounts</h2>
 
         {data.googleAccounts.length > 0 ? (
@@ -260,7 +263,7 @@ export default function SourcesPage() {
       </div>
 
       {/* ═══ SECTION 2 — Local Sources ═══ */}
-      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "80ms" }}>
+      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "120ms" }}>
         <h2 className="ds-heading-sm">Local Sources</h2>
 
         {/* Apple Contacts */}
@@ -288,13 +291,13 @@ export default function SourcesPage() {
       </div>
 
       {/* ═══ SECTION 3 — Messaging ═══ */}
-      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "100ms" }}>
+      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "140ms" }}>
         <h2 className="ds-heading-sm">Messaging</h2>
         <WhatsAppSync />
       </div>
 
       {/* ═══ SECTION 4 — Imports ═══ */}
-      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "120ms" }}>
+      <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "160ms" }}>
         <h2 className="ds-heading-sm">Imports</h2>
 
         {/* LinkedIn */}
@@ -317,7 +320,7 @@ export default function SourcesPage() {
       </div>
 
       {/* ═══ SECTION 4 — Data Health ═══ */}
-      <div className="crm-animate-enter mt-10" style={{ animationDelay: "160ms" }}>
+      <div className="crm-animate-enter mt-10" style={{ animationDelay: "200ms" }}>
         <div className="flex items-center justify-between">
           <h2 className="ds-heading-sm">Data Health</h2>
           <div className="flex items-center gap-2">
@@ -354,6 +357,116 @@ export default function SourcesPage() {
       </div>
     </div>
   );
+}
+
+function SyncRuntimeCard({ data }: { data: DataHealthResponse }) {
+  const gmail = data.sources.find((source) => source.key === "gmail");
+  const calendar = data.sources.find((source) => source.key === "google-calendar");
+  const runtime = data.syncRuntime;
+  const workerTone =
+    runtime.worker.status === "healthy"
+      ? {
+          label: "Worker active",
+          color: "var(--status-success)",
+          bg: "var(--status-success-bg)",
+        }
+      : runtime.worker.status === "stale"
+        ? {
+            label: "Worker stale",
+            color: "var(--status-warning, #A16207)",
+            bg: "var(--status-warning-bg, #FEF3C7)",
+          }
+        : {
+            label: "Worker not configured",
+            color: "var(--text-tertiary)",
+            bg: "var(--surface-sunken)",
+          };
+
+  return (
+    <div
+      className="crm-animate-enter mt-5 rounded-[14px] p-5"
+      style={{
+        border: "1px solid var(--border)",
+        backgroundColor: "var(--surface)",
+        animationDelay: "40ms",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]"
+          style={{ backgroundColor: workerTone.bg }}
+        >
+          <ServerCog className="h-5 w-5" style={{ color: workerTone.color }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="ds-heading-sm">Sync runtime</h2>
+            <span
+              className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+              style={{ color: workerTone.color, backgroundColor: workerTone.bg }}
+            >
+              {workerTone.label}
+            </span>
+          </div>
+          <p className="mt-1 text-[12px] leading-5" style={{ color: "var(--text-tertiary)" }}>
+            Browser fallback is {runtime.browserSync.mode}. {runtime.browserSync.reason}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <RuntimeMetric
+          label="Gmail"
+          value={gmail?.lastSync ? formatRelativeTime(gmail.lastSync) : "Never synced"}
+          detail={cronDetail(runtime, "gmail-sync")}
+        />
+        <RuntimeMetric
+          label="Calendar"
+          value={calendar?.lastSync ? formatRelativeTime(calendar.lastSync) : "Never synced"}
+          detail={cronDetail(runtime, "calendar-sync")}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RuntimeMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div
+      className="rounded-[10px] border px-3 py-2"
+      style={{
+        borderColor: "var(--border-subtle)",
+        backgroundColor: "var(--surface-sunken)",
+      }}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-tertiary)" }}>
+        {label} freshness
+      </div>
+      <div className="mt-0.5 text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>
+        {value}
+      </div>
+      <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+        {detail}
+      </div>
+    </div>
+  );
+}
+
+function cronDetail(
+  runtime: DataHealthResponse["syncRuntime"],
+  task: "gmail-sync" | "calendar-sync",
+): string {
+  const cron = runtime.worker.crons.find((candidate) => candidate.task === task);
+  if (!cron?.lastExecution) return `Worker has not recorded ${task}.`;
+  return `Worker ran ${formatRelativeTime(cron.lastExecution)} · every ${cron.cadenceMinutes}m`;
 }
 
 // ─── Google Account Card with expandable services ───

@@ -22,6 +22,7 @@
 - DB-only status/read endpoints now return private short-lived cache headers: birthdays, usage, Google source status, data-health, and default health. Live provider health checks stay uncached.
 - Production now defaults to worker-mode sync. The browser fallback only runs in production when `NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true`, or in local dev unless force-disabled.
 - Manual draft generation now stores a short-window request fingerprint and reuses recent identical drafts instead of calling Anthropic again on repeat clicks, refresh loops, or duplicate composer submissions.
+- Sources now surfaces sync runtime health from the existing data-health payload: worker status, browser fallback mode, and Gmail/Calendar freshness.
 
 ## Next Highest-Impact Efficiency Work
 
@@ -30,7 +31,6 @@
 
 ## Product Polish Before App Finalization
 
-- Show sync freshness clearly in Sources: last Gmail sync, last Calendar sync, worker status, and whether browser fallback is active.
 - Add draft audit copy in the reply modal: exact inbound message used, thread messages loaded, voice references used, and known missing context.
 - Add meeting brief loading states that distinguish "calendar has no events" from "calendar has not synced."
 - Add a user-facing "Refresh now" control for Gmail/Calendar that explains it may take a moment, rather than relying on background polling.
