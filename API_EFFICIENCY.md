@@ -155,6 +155,7 @@
 - Link-handle phone saves no longer scan retired iMessage sync state or bulk-rematch SMS/iMessage interactions. The active flow still stores the handle on the selected contact, while avoiding stale runtime work after iMessage ingestion was retired.
 - Removed the unused link-handle dialog and `/api/contacts/link-handle` route. With message ingestion retired, there is no active UI path for unmatched handles, so direct calls can no longer scan the full contact list for suggestions.
 - Reply queue inbox reads now filter at the DB layer to maintained channels only (`email`, `gmail`, `linkedin`). Historical text/WhatsApp/iMessage InboxItem rows can remain for audit data, but they no longer affect reply counts, queue queries, or visible reply surfaces.
+- Contact detail edits that do not affect list membership or sorting, such as notes, "how we met", LinkedIn URL, phone, role, and location fields, now patch visible contact-list caches without refetching `/api/contacts`. Name/email/company/tier/tag edits still refresh filtered lists.
 
 ## Next Highest-Impact Efficiency Work
 

@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import type { Contact, Interaction } from "@/generated/prisma/client";
 import type { ContactListItem } from "@/lib/contact-list-query";
 
@@ -8,6 +13,16 @@ export type ContactWithDetails = Contact & {
   interactions: Interaction[];
   circles: { circle: { id: string; name: string; color: string } }[];
 };
+
+const CONTACT_LIST_INVALIDATING_FIELDS = new Set<keyof Contact>([
+  "name",
+  "email",
+  "additionalEmails",
+  "company",
+  "tier",
+  "source",
+  "tags",
+]);
 
 interface ContactFilters {
   search?: string;
@@ -106,7 +121,10 @@ export function useUpdateContact() {
         ["contact-summary", variables.id],
         (current) => current ? { ...current, ...contact } : current,
       );
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      patchContactListCaches(queryClient, contact);
+      if (shouldInvalidateContactListCaches(variables)) {
+        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      }
     },
   });
 }
@@ -122,4 +140,27 @@ export function useDeleteContact() {
       queryClient.removeQueries({ queryKey: ["contact-summary", id], exact: true });
     },
   });
+}
+
+export function patchContactListCaches(
+  queryClient: QueryClient,
+  contact: Partial<Contact> & { id: string },
+) {
+  queryClient.setQueriesData<ContactWithCount[]>(
+    { queryKey: ["contacts"] },
+    (current) => current
+      ? current.map((item) =>
+          item.id === contact.id ? { ...item, ...contact } : item,
+        )
+      : current,
+  );
+}
+
+export function shouldInvalidateContactListCaches(
+  update: Partial<Contact> & { id: string },
+) {
+  return Object.keys(update).some((key) =>
+    key !== "id" &&
+    CONTACT_LIST_INVALIDATING_FIELDS.has(key as keyof Contact),
+  );
 }
