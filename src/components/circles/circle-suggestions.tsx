@@ -30,6 +30,15 @@ interface SuggestionsResponse {
   suggestions: CircleSuggestion[];
 }
 
+function removeSuggestion(
+  current: SuggestionsResponse | undefined,
+  suggestionId: string,
+): SuggestionsResponse | undefined {
+  return current
+    ? { suggestions: current.suggestions.filter((s) => s.id !== suggestionId) }
+    : current;
+}
+
 export function CircleSuggestions() {
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
@@ -104,11 +113,14 @@ export function CircleSuggestions() {
       await assignContacts(circle.id, contactIds);
       return { circleName: suggestion.name, count: contactIds.length };
     },
-    onSuccess: ({ circleName, count }) => {
+    onSuccess: ({ circleName, count }, { suggestion }) => {
       toast.success(`Created "${circleName}" with ${count} contacts`);
+      queryClient.setQueryData<SuggestionsResponse>(
+        ["circle-suggestions"],
+        (current) => removeSuggestion(current, suggestion.id),
+      );
       queryClient.invalidateQueries({ queryKey: ["circles"] });
       queryClient.invalidateQueries({ queryKey: ["contacts", "people-bootstrap"] });
-      queryClient.invalidateQueries({ queryKey: ["circle-suggestions"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -122,15 +134,19 @@ export function CircleSuggestions() {
       circleId: string;
       contactIds: readonly string[];
       circleName: string;
+      suggestionId: string;
     }) => {
       await assignContacts(circleId, contactIds);
       return { circleName, count: contactIds.length };
     },
-    onSuccess: ({ circleName, count }) => {
+    onSuccess: ({ circleName, count }, { suggestionId }) => {
       toast.success(`Added ${count} contacts to "${circleName}"`);
+      queryClient.setQueryData<SuggestionsResponse>(
+        ["circle-suggestions"],
+        (current) => removeSuggestion(current, suggestionId),
+      );
       queryClient.invalidateQueries({ queryKey: ["circles"] });
       queryClient.invalidateQueries({ queryKey: ["contacts", "people-bootstrap"] });
-      queryClient.invalidateQueries({ queryKey: ["circle-suggestions"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -335,6 +351,7 @@ export function CircleSuggestions() {
                             circleId: suggestion.existingCircle!.id,
                             contactIds: activeIds,
                             circleName: suggestion.existingCircle!.name,
+                            suggestionId: suggestion.id,
                           })
                         }
                       >
