@@ -128,6 +128,7 @@
 - The Circles network map now parallelizes its independent DB reads and uses a five-minute private cache/client stale window. Reopening the lazy map avoids immediate repeat contact/membership reads.
 - The main Circles payload now uses an explicit Prisma select and short private cache. The page no longer returns unused circle metadata such as user IDs, timestamps, and Google group internals on every load.
 - Circle intelligence now uses the same ten-minute private cache as its client stale window, and the panel no longer refetches on window focus. Reopening Insights avoids repeat Haiku calls for the same circle.
+- Circle stories now avoid the separate membership lookup by filtering recent interactions through contact-circle membership directly, and successful story reads use a short private cache for immediate reopen/reload cases.
 
 ## Next Highest-Impact Efficiency Work
 

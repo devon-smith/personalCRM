@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(60, 5 * 60);
 
 export interface CircleStory {
   readonly id: string;
@@ -77,22 +80,6 @@ export async function GET(
       return NextResponse.json({ error: "Circle not found" }, { status: 404 });
     }
 
-    // Get contact IDs in this circle
-    const memberships = await prisma.contactCircle.findMany({
-      where: { circleId: id },
-      select: { contactId: true },
-    });
-
-    const contactIds = memberships.map((m) => m.contactId);
-
-    if (contactIds.length === 0) {
-      return NextResponse.json({
-        circleName: circle.name,
-        circleColor: circle.color,
-        stories: [],
-      } satisfies CircleStoriesResponse);
-    }
-
     // Fetch last 14 days of interactions for these contacts
     const fourteenDaysAgo = new Date();
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
@@ -100,8 +87,11 @@ export async function GET(
     const interactions = await prisma.interaction.findMany({
       where: {
         userId: session.user.id,
-        contactId: { in: contactIds },
         occurredAt: { gte: fourteenDaysAgo },
+        contact: {
+          userId: session.user.id,
+          circles: { some: { circleId: id } },
+        },
       },
       orderBy: { occurredAt: "desc" },
       take: 30,
@@ -138,7 +128,7 @@ export async function GET(
       circleName: circle.name,
       circleColor: circle.color,
       stories,
-    } satisfies CircleStoriesResponse);
+    } satisfies CircleStoriesResponse, { headers: READ_CACHE_HEADERS });
   } catch (error) {
     console.error("[GET /api/circles/[id]/stories]", error);
     return NextResponse.json(
