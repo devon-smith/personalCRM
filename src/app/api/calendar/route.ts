@@ -3,9 +3,10 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   getUpcomingEvents,
-  syncCalendarEvents,
   type CalendarSyncResult,
 } from "@/lib/calendar";
+import { runCalendarSyncForUser } from "@/lib/sync/google-sync-runs";
+import { parseSyncTrigger } from "@/lib/sync/run-telemetry";
 
 export type { CalendarSyncResult };
 
@@ -73,17 +74,18 @@ export async function GET() {
 }
 
 /** POST — Sync past 90 days of calendar events as MEETING interactions */
-export async function POST() {
+export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const trigger = parseSyncTrigger(new URL(request.url).searchParams.get("trigger") ?? "manual");
 
   const scopeCheck = await checkCalendarScope(session.user.id);
   if (scopeCheck) return scopeCheck;
 
   try {
-    const result = await syncCalendarEvents(session.user.id, 90);
+    const result = await runCalendarSyncForUser(session.user.id, trigger, 90);
     return NextResponse.json(result);
   } catch (error) {
     console.error("Calendar sync error:", error);

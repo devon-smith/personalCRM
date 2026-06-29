@@ -426,6 +426,70 @@ function SyncRuntimeCard({ data }: { data: DataHealthResponse }) {
           detail={cronDetail(runtime, "calendar-sync")}
         />
       </div>
+
+      <div className="mt-4">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-tertiary)" }}>
+          Recent runs
+        </div>
+        {runtime.recentRuns.length === 0 ? (
+          <p className="mt-2 text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+            No sync-run telemetry yet. Runs will appear after the migration is deployed and the next sync completes.
+          </p>
+        ) : (
+          <div className="mt-2 space-y-1.5">
+            {runtime.recentRuns.slice(0, 4).map((run) => (
+              <SyncRunRow key={run.id} run={run} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SyncRunRow({
+  run,
+}: {
+  run: DataHealthResponse["syncRuntime"]["recentRuns"][number];
+}) {
+  const isError = run.status === "error";
+  const statusColor = isError
+    ? "var(--accent-coral)"
+    : run.status === "success"
+      ? "var(--status-success)"
+      : "var(--text-tertiary)";
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border px-3 py-2 text-[12px]"
+      style={{
+        borderColor: "var(--border-subtle)",
+        backgroundColor: "var(--surface-sunken)",
+      }}
+    >
+      <div className="min-w-0">
+        <span className="font-medium capitalize" style={{ color: "var(--text-primary)" }}>
+          {run.source}
+        </span>
+        <span style={{ color: "var(--text-tertiary)" }}>
+          {" "}
+          · {formatTrigger(run.trigger)} · {formatRelativeTime(run.startedAt)}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 tabular-nums">
+        <span style={{ color: "var(--text-tertiary)" }}>
+          {formatDuration(run.durationMs)}
+          {typeof run.itemsProcessed === "number" ? ` · ${run.itemsProcessed} item${run.itemsProcessed === 1 ? "" : "s"}` : ""}
+        </span>
+        <span className="font-medium capitalize" style={{ color: statusColor }}>
+          {run.status}
+        </span>
+      </div>
+      {run.error && (
+        <p className="basis-full truncate text-[11px]" style={{ color: "var(--accent-coral)" }}>
+          {run.error}
+        </p>
+      )}
     </div>
   );
 }
@@ -467,6 +531,17 @@ function cronDetail(
   const cron = runtime.worker.crons.find((candidate) => candidate.task === task);
   if (!cron?.lastExecution) return `Worker has not recorded ${task}.`;
   return `Worker ran ${formatRelativeTime(cron.lastExecution)} · every ${cron.cadenceMinutes}m`;
+}
+
+function formatTrigger(trigger: string): string {
+  return trigger.replace(/_/g, " ");
+}
+
+function formatDuration(durationMs: number | null): string {
+  if (durationMs == null) return "running";
+  if (durationMs < 1000) return `${durationMs}ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1)}s`;
+  return `${Math.round(durationMs / 60_000)}m`;
 }
 
 // ─── Google Account Card with expandable services ───

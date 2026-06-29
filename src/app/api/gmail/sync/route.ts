@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { initialGmailSync, incrementalGmailSync } from "@/lib/gmail/sync";
+import { runGmailSyncForUser } from "@/lib/sync/google-sync-runs";
+import { parseSyncTrigger } from "@/lib/sync/run-telemetry";
 
 /** GET — Check sync status */
 export async function GET() {
@@ -32,11 +33,12 @@ export async function GET() {
 }
 
 /** POST — Trigger a sync */
-export async function POST() {
+export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const trigger = parseSyncTrigger(new URL(request.url).searchParams.get("trigger") ?? "manual");
 
   // Check if Google account exists before attempting sync
   const googleAccount = await prisma.account.findFirst({
@@ -52,17 +54,7 @@ export async function POST() {
   }
 
   try {
-    const syncState = await prisma.gmailSyncState.findUnique({
-      where: { userId: session.user.id },
-    });
-
-    let result;
-    if (syncState?.historyId) {
-      result = await incrementalGmailSync(session.user.id);
-    } else {
-      result = await initialGmailSync(session.user.id);
-    }
-
+    const result = await runGmailSyncForUser(session.user.id, trigger);
     return NextResponse.json(result);
   } catch (error) {
     console.error("Gmail sync error:", error);

@@ -226,7 +226,7 @@ export async function GET() {
       where: { userId, source: "LINKEDIN" },
     }),
 
-    getSyncRuntimeStatus(prisma),
+    getSyncRuntimeStatus(prisma, userId),
   ]);
 
   // ─── Data Sources ───

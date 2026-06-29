@@ -10,6 +10,18 @@ export interface WorkerCronStatus {
   stale: boolean;
 }
 
+export interface RecentSyncRunStatus {
+  id: string;
+  source: string;
+  trigger: string;
+  status: string;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  itemsProcessed: number | null;
+  error: string | null;
+}
+
 export interface SyncRuntimeStatus {
   browserSync: {
     mode: BrowserSyncMode;
@@ -19,6 +31,7 @@ export interface SyncRuntimeStatus {
     status: WorkerRuntimeStatus;
     crons: WorkerCronStatus[];
   };
+  recentRuns: RecentSyncRunStatus[];
 }
 
 const CRON_CADENCE_MINUTES: Record<WorkerCronStatus["task"], number> = {
@@ -30,10 +43,13 @@ const STALE_MULTIPLIER = 3;
 
 export async function getSyncRuntimeStatus(
   prisma: PrismaClient,
+  userId?: string,
 ): Promise<SyncRuntimeStatus> {
-  const browserSync = getBrowserSyncMode();
-  const worker = await getWorkerStatus(prisma);
-  return { browserSync, worker };
+  const [worker, recentRuns] = await Promise.all([
+    getWorkerStatus(prisma),
+    userId ? getRecentSyncRuns(prisma, userId) : Promise.resolve([]),
+  ]);
+  return { browserSync: getBrowserSyncMode(), worker, recentRuns };
 }
 
 function getBrowserSyncMode(): SyncRuntimeStatus["browserSync"] {
@@ -61,6 +77,44 @@ function getBrowserSyncMode(): SyncRuntimeStatus["browserSync"] {
     mode: "enabled",
     reason: "Local development fallback is enabled.",
   };
+}
+
+async function getRecentSyncRuns(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<RecentSyncRunStatus[]> {
+  try {
+    const runs = await prisma.syncRun.findMany({
+      where: { userId },
+      orderBy: { startedAt: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        source: true,
+        trigger: true,
+        status: true,
+        startedAt: true,
+        finishedAt: true,
+        durationMs: true,
+        itemsProcessed: true,
+        error: true,
+      },
+    });
+
+    return runs.map((run) => ({
+      id: run.id,
+      source: run.source,
+      trigger: run.trigger,
+      status: run.status,
+      startedAt: run.startedAt.toISOString(),
+      finishedAt: run.finishedAt?.toISOString() ?? null,
+      durationMs: run.durationMs,
+      itemsProcessed: run.itemsProcessed,
+      error: run.error,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function getWorkerStatus(

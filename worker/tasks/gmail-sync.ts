@@ -10,9 +10,17 @@
 import type { Task } from "graphile-worker";
 import { PrismaClient } from "../../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { incrementalGmailSync } from "../../src/lib/gmail/sync";
+import { runGmailSyncForUser } from "../../src/lib/sync/google-sync-runs";
+import { parseSyncTrigger } from "../../src/lib/sync/run-telemetry";
 
-const gmailSync: Task = async (_payload, helpers) => {
+interface GmailSyncPayload {
+  triggeredBy?: string;
+  userId?: string;
+}
+
+const gmailSync: Task = async (rawPayload, helpers) => {
+  const payload = (rawPayload ?? {}) as GmailSyncPayload;
+  const trigger = parseSyncTrigger(payload.triggeredBy);
   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
   const prisma = new PrismaClient({ adapter });
 
@@ -20,7 +28,10 @@ const gmailSync: Task = async (_payload, helpers) => {
     // Single-user app for now; if multi-user is added later, walk all
     // users with a connected Google account.
     const users = await prisma.user.findMany({
-      where: { accounts: { some: { provider: "google" } } },
+      where: {
+        ...(payload.userId ? { id: payload.userId } : {}),
+        accounts: { some: { provider: "google" } },
+      },
       select: { id: true, email: true },
     });
 
@@ -33,7 +44,7 @@ const gmailSync: Task = async (_payload, helpers) => {
     let failures = 0;
     for (const u of users) {
       try {
-        const r = await incrementalGmailSync(u.id);
+        const r = await runGmailSyncForUser(u.id, trigger);
         totalProcessed += r.processed;
         if (r.processed > 0) {
           helpers.logger.info(`  ${u.email}: ${r.processed} new emails`);

@@ -6,15 +6,26 @@
 import type { Task } from "graphile-worker";
 import { PrismaClient } from "../../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { syncCalendarEvents } from "../../src/lib/calendar";
+import { runCalendarSyncForUser } from "../../src/lib/sync/google-sync-runs";
+import { parseSyncTrigger } from "../../src/lib/sync/run-telemetry";
 
-const calendarSync: Task = async (_payload, helpers) => {
+interface CalendarSyncPayload {
+  triggeredBy?: string;
+  userId?: string;
+}
+
+const calendarSync: Task = async (rawPayload, helpers) => {
+  const payload = (rawPayload ?? {}) as CalendarSyncPayload;
+  const trigger = parseSyncTrigger(payload.triggeredBy);
   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
   const prisma = new PrismaClient({ adapter });
 
   try {
     const users = await prisma.user.findMany({
-      where: { accounts: { some: { provider: "google" } } },
+      where: {
+        ...(payload.userId ? { id: payload.userId } : {}),
+        accounts: { some: { provider: "google" } },
+      },
       select: { id: true, email: true },
     });
 
@@ -27,7 +38,7 @@ const calendarSync: Task = async (_payload, helpers) => {
     let failures = 0;
     for (const u of users) {
       try {
-        const r = await syncCalendarEvents(u.id, 90);
+        const r = await runCalendarSyncForUser(u.id, trigger, 90);
         totalLogged += r.interactionsLogged ?? 0;
         if ((r.interactionsLogged ?? 0) > 0) {
           helpers.logger.info(

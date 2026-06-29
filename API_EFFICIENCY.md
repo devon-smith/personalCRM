@@ -24,11 +24,12 @@
 - Manual draft generation now stores a short-window request fingerprint and reuses recent identical drafts instead of calling Anthropic again on repeat clicks, refresh loops, or duplicate composer submissions.
 - Sources now surfaces sync runtime health from the existing data-health payload: worker status, browser fallback mode, and Gmail/Calendar freshness.
 - API usage now rolls up existing `AIGenerationLog` rows by provider and by day, so Settings can show Anthropic/Voyage/OpenAI spend trends without making any provider calls.
+- Gmail/Calendar syncs now write durable `SyncRun` telemetry across cron, webhook, manual, and browser-fallback triggers. Webhook worker jobs honor their `userId` payload, so a single mailbox notification no longer scans every connected user.
 
 ## Next Highest-Impact Efficiency Work
 
-- Add provider-call telemetry outside `AIGenerationLog`: Gmail sync requests, Google Calendar requests, embedding batch counts, worker trigger source, and per-run duration.
-- Add sync-run visibility for cron/manual/webhook collisions: started at, completed at, source, duration, and provider calls made.
+- Add provider-call telemetry outside `AIGenerationLog`: Gmail API request counts, Google Calendar request counts, embedding batch counts, and request-level error/rate-limit categories.
+- Add a small sync-run retention policy once production volume is known, for example keep 30-90 days of successful runs and all recent failures.
 
 ## Product Polish Before App Finalization
 

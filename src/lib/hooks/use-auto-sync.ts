@@ -54,7 +54,9 @@ export function useAutoSync() {
         return;
       }
 
-      const res = await fetch("/api/gmail/sync", { method: "POST" });
+      const res = await fetch("/api/gmail/sync?trigger=browser_fallback", {
+        method: "POST",
+      });
 
       if (!res.ok) {
         failureCountRef.current += 1;
@@ -109,7 +111,7 @@ export function useAutoSync() {
         .catch(() => {}),
 
       // Google Calendar
-      fetch("/api/calendar", { method: "POST" }).catch(() => {}),
+      fetch("/api/calendar?trigger=browser_fallback", { method: "POST" }).catch(() => {}),
     ];
 
     await Promise.allSettled(syncs);
