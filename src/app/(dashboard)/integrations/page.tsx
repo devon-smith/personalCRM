@@ -22,6 +22,8 @@ import { LinkedInImport } from "@/components/settings/linkedin-import";
 import type { DataHealthResponse, GoogleAccountInfo } from "@/app/api/data-health/route";
 import type { CalendarSyncResult } from "@/app/api/calendar/route";
 
+const DATA_HEALTH_STALE_MS = 5 * 60 * 1000;
+
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60000);
@@ -43,6 +45,8 @@ export default function SourcesPage() {
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
+    staleTime: DATA_HEALTH_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 
   const refreshSourceViews = () => {
@@ -60,7 +64,9 @@ export default function SourcesPage() {
     onSuccess: (result) => {
       toast(`Gmail refreshed ${result.processed} emails`);
       refreshSourceViews();
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      if (Number(result.processed ?? 0) > 0) {
+        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      }
     },
     onError: (err) => toast.error(err.message),
   });
