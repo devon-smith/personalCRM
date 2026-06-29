@@ -37,6 +37,7 @@ export type CircleSummary = Omit<CircleWithContacts, "contacts" | "health">;
 type CircleMetadataPatch = Partial<CircleSummary> & { id: string };
 
 interface PeopleBootstrapCircleCache {
+  contacts?: unknown[];
   circles: { id: string; name: string; color: string }[];
 }
 
@@ -107,6 +108,48 @@ export function patchCircleMetadataCaches(
   );
 }
 
+export function removeCircleFromCaches(
+  queryClient: QueryClient,
+  circleId: string,
+) {
+  queryClient.setQueriesData<CircleWithContacts[]>(
+    { queryKey: ["circles"], exact: true },
+    (current) => current
+      ? current.filter((circle) => circle.id !== circleId)
+      : current,
+  );
+
+  queryClient.setQueriesData<CircleSummary[]>(
+    { queryKey: ["circles", "summary"], exact: true },
+    (current) => current
+      ? current.filter((circle) => circle.id !== circleId)
+      : current,
+  );
+
+  const peopleBootstrapQueries = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: ["contacts", "people-bootstrap"] });
+
+  for (const query of peopleBootstrapQueries) {
+    const filters = query.queryKey[2] as { circle?: string } | undefined;
+    queryClient.setQueryData<PeopleBootstrapCircleCache>(
+      query.queryKey,
+      (current) => {
+        if (!current?.circles) return current;
+        return {
+          ...current,
+          contacts: filters?.circle === circleId ? [] : current.contacts,
+          circles: current.circles.filter((circle) => circle.id !== circleId),
+        };
+      },
+    );
+  }
+
+  queryClient.removeQueries({ queryKey: ["circle-intelligence", circleId], exact: true });
+  queryClient.removeQueries({ queryKey: ["circle-stories", circleId], exact: true });
+  queryClient.invalidateQueries({ queryKey: ["circles-map"] });
+}
+
 export function useCircles() {
   return useQuery<CircleWithContacts[]>({
     queryKey: ["circles"],
@@ -167,8 +210,8 @@ export function useDeleteCircle() {
   return useMutation({
     mutationFn: (id: string) =>
       fetchJson(`/api/circles/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      invalidateCircleCaches(queryClient);
+    onSuccess: (_result, id) => {
+      removeCircleFromCaches(queryClient, id);
     },
   });
 }

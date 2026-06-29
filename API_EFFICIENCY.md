@@ -166,6 +166,7 @@
 - LinkedIn review queue reads now use a short private cache/client stale window, and resolve/bulk-resolve actions prune the cached review response locally with updated category counts instead of refetching the queue. Dismiss-only actions also skip contact-list invalidation because no contact row changes.
 - Merge duplicate review actions now prune the cached merge bootstrap payload locally when the resolved duplicate group keys are known. Single-group and exact-match auto-merges still refresh contact lists because rows are materially changed, but they no longer refetch duplicate groups just to remove groups the UI already resolved.
 - Contact typeahead search now returns short private cache headers. Repeating the same command-palette query or future semantic contact search within the window reuses the authenticated search response instead of rerunning the layered contact search immediately.
+- Circle deletes now remove the deleted circle from cached circle lists, People filter options, deleted-circle People results, and circle-specific intelligence/story caches locally. Deleting a circle no longer immediately refetches the full circles and People bootstrap payloads just to remove a known id.
 
 ## Next Highest-Impact Efficiency Work
 

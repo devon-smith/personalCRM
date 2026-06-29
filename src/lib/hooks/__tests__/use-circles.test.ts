@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
   patchCircleMetadataCaches,
+  removeCircleFromCaches,
   type CircleSummary,
   type CircleWithContacts,
 } from "@/lib/hooks/use-circles";
@@ -89,6 +90,74 @@ describe("circle cache helpers", () => {
       name: "Research Partners",
       color: "#B5613F",
     });
+  });
+
+  it("removes deleted circles from cached circle and People filter data", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData<CircleWithContacts[]>(
+      ["circles"],
+      [
+        circleWithContacts("c1", "Research", 1),
+        circleWithContacts("c2", "Faculty", 0),
+      ],
+    );
+    queryClient.setQueryData<CircleSummary[]>(
+      ["circles", "summary"],
+      [
+        circleSummary("c1", "Research", 1),
+        circleSummary("c2", "Faculty", 0),
+      ],
+    );
+    queryClient.setQueryData(
+      ["contacts", "people-bootstrap", { sort: "name" }],
+      {
+        contacts: [{ id: "contact-c1" }],
+        totalPendingDuplicates: 0,
+        circles: [
+          { id: "c1", name: "Research", color: "#6B8A6E" },
+          { id: "c2", name: "Faculty", color: "#4B5563" },
+        ],
+      },
+    );
+    queryClient.setQueryData(
+      ["contacts", "people-bootstrap", { circle: "c1", sort: "name" }],
+      {
+        contacts: [{ id: "contact-c1" }],
+        totalPendingDuplicates: 0,
+        circles: [
+          { id: "c1", name: "Research", color: "#6B8A6E" },
+          { id: "c2", name: "Faculty", color: "#4B5563" },
+        ],
+      },
+    );
+    queryClient.setQueryData(["circle-intelligence", "c1"], { summary: "old" });
+    queryClient.setQueryData(["circle-stories", "c1"], { stories: [] });
+
+    removeCircleFromCaches(queryClient, "c1");
+
+    expect(
+      queryClient.getQueryData<CircleWithContacts[]>(["circles"])?.map((c) => c.id),
+    ).toEqual(["c2"]);
+    expect(
+      queryClient.getQueryData<CircleSummary[]>(["circles", "summary"])?.map((c) => c.id),
+    ).toEqual(["c2"]);
+
+    const unfilteredPeople = queryClient.getQueryData<{
+      contacts: { id: string }[];
+      circles: { id: string }[];
+    }>(["contacts", "people-bootstrap", { sort: "name" }]);
+    expect(unfilteredPeople?.contacts).toEqual([{ id: "contact-c1" }]);
+    expect(unfilteredPeople?.circles.map((circle) => circle.id)).toEqual(["c2"]);
+
+    const deletedCirclePeople = queryClient.getQueryData<{
+      contacts: { id: string }[];
+      circles: { id: string }[];
+    }>(["contacts", "people-bootstrap", { circle: "c1", sort: "name" }]);
+    expect(deletedCirclePeople?.contacts).toEqual([]);
+    expect(deletedCirclePeople?.circles.map((circle) => circle.id)).toEqual(["c2"]);
+
+    expect(queryClient.getQueryData(["circle-intelligence", "c1"])).toBeUndefined();
+    expect(queryClient.getQueryData(["circle-stories", "c1"])).toBeUndefined();
   });
 });
 
