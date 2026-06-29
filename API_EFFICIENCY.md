@@ -134,6 +134,7 @@
 - Contact momentum queries now canonicalize requested contact IDs and use five-minute private response caching, so re-sorting the same People list does not spend a duplicate `/api/momentum` read for identical sparkline data.
 - Removed the unused contact conversations route. The active contact Story feed already uses interactions bundled with the contact detail payload, so direct `/api/contacts/:id/conversations` calls can no longer fetch and group broad per-channel interaction windows.
 - Removed the unused stale-outbound interaction route and its raw SQL helper. Reply-priority/noise utilities remain, but direct `/api/interactions/stale-outbound` calls can no longer scan latest outbound emails across contacts.
+- Removed the unused manual user-email management route. Additional Google account emails are still captured by the OAuth callback and read by Gmail/Calendar sync, but direct `/api/user-emails` calls can no longer mutate sync-direction aliases.
 
 ## Next Highest-Impact Efficiency Work
 
