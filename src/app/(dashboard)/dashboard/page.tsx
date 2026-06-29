@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   Clock3,
   Gift,
+  Loader2,
+  RefreshCw,
   Search,
   Sparkles,
   Users,
@@ -81,7 +83,13 @@ function compactLabel(value: number, label: string): string {
 export default function DashboardPage() {
   const { data: session } = useSession();
 
-  const { data: bootstrap, isLoading } = useQuery<DashboardBootstrapResponse>({
+  const {
+    data: bootstrap,
+    isLoading,
+    isFetching,
+    dataUpdatedAt,
+    refetch,
+  } = useQuery<DashboardBootstrapResponse>({
     queryKey: ["dashboard"],
     queryFn: async () => {
       const res = await fetch("/api/dashboard/bootstrap");
@@ -89,7 +97,7 @@ export default function DashboardPage() {
       return res.json();
     },
     staleTime: 60_000,
-    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
@@ -163,6 +171,26 @@ export default function DashboardPage() {
             <p className="mt-2 max-w-[650px] text-[13px] leading-5 text-[#6A645A]">
               Your replies, relationships, and meeting prep are gathered into one working surface.
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void refetch()}
+                disabled={isFetching && !isLoading}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#E2D9CB] bg-[#FAF8F5] px-2.5 text-[11.5px] font-semibold text-[#6F685D] transition hover:border-[#D8CBB9] hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isFetching && !isLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Refresh
+              </button>
+              {dataUpdatedAt > 0 && (
+                <span className="text-[11.5px] text-[#8A8276]">
+                  Updated {formatDistanceToNow(new Date(dataUpdatedAt))}
+                </span>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[520px]">
             <HomeStat label="Need reply" value={stats.recentInteractions.length.toString()} color="#B5613F" />

@@ -6,6 +6,7 @@ import {
   getDashboardStats,
   type DashboardStats,
 } from "@/lib/dashboard/stats";
+import { privateCacheHeaders } from "@/lib/http/cache";
 
 export interface DashboardBootstrapResponse {
   stats: DashboardStats;
@@ -44,8 +45,6 @@ export async function GET() {
   };
 
   return NextResponse.json(response, {
-    headers: {
-      "Cache-Control": "private, max-age=30",
-    },
+    headers: privateCacheHeaders(30, 300),
   });
 }
