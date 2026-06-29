@@ -25,6 +25,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { useContacts } from "@/lib/hooks/use-contacts";
+import { useDebounce } from "@/lib/hooks/use-debounce";
 import type { DuplicateGroup } from "@/lib/contact-duplicates";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { NicknameMatches } from "@/components/settings/nickname-matches";
@@ -586,12 +587,10 @@ interface SimpleContact {
 }
 
 function ContactSearchPicker({
-  contacts,
   excludeId,
   placeholder,
   onSelect,
 }: {
-  contacts: SimpleContact[];
   excludeId?: string;
   placeholder: string;
   onSelect: (contact: SimpleContact) => void;
@@ -599,20 +598,28 @@ function ContactSearchPicker({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const debouncedQuery = useDebounce(query.trim(), 200);
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return [];
-    const q = query.toLowerCase();
-    return contacts
-      .filter(
-        (c) =>
-          c.id !== excludeId &&
-          (c.name.toLowerCase().includes(q) ||
-            c.email?.toLowerCase().includes(q) ||
-            c.company?.toLowerCase().includes(q)),
-      )
-      .slice(0, 8);
-  }, [contacts, excludeId, query]);
+  const searchEnabled = open && debouncedQuery.length >= 2;
+  const { data: searchResults, isFetching } = useContacts(
+    { search: debouncedQuery, limit: 10 },
+    { enabled: searchEnabled },
+  );
+
+  const filtered: SimpleContact[] = useMemo(
+    () =>
+      (searchResults ?? [])
+        .filter((contact) => contact.id !== excludeId)
+        .slice(0, 8)
+        .map((contact) => ({
+          id: contact.id,
+          name: contact.name,
+          email: contact.email,
+          company: contact.company,
+          avatarUrl: contact.avatarUrl,
+        })),
+    [excludeId, searchResults],
+  );
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
@@ -692,6 +699,20 @@ function ContactSearchPicker({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {open && searchEnabled && isFetching && filtered.length === 0 && (
+        <div
+          className="absolute left-0 right-0 top-full z-10 mt-1 rounded-[10px] px-3 py-2 text-[12px]"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            boxShadow: "var(--shadow-md)",
+            color: "var(--text-tertiary)",
+          }}
+        >
+          Searching...
         </div>
       )}
     </div>
@@ -785,21 +806,8 @@ function ManualMerge() {
 
 function ManualMergeExpanded({ onCollapse }: { onCollapse: () => void }) {
   const queryClient = useQueryClient();
-  const { data: contactsData } = useContacts();
   const [sourceContact, setSourceContact] = useState<SimpleContact | null>(null);
   const [targetContact, setTargetContact] = useState<SimpleContact | null>(null);
-
-  const contacts: SimpleContact[] = useMemo(
-    () =>
-      (contactsData ?? []).map((contact) => ({
-        id: contact.id,
-        name: contact.name,
-        email: contact.email,
-        company: contact.company,
-        avatarUrl: contact.avatarUrl,
-      })),
-    [contactsData],
-  );
 
   const mergeMutation = useMutation({
     mutationFn: async ({ primaryId, mergeIds }: { primaryId: string; mergeIds: string[] }) => {
@@ -875,7 +883,6 @@ function ManualMergeExpanded({ onCollapse }: { onCollapse: () => void }) {
           />
         ) : (
           <ContactSearchPicker
-            contacts={contacts}
             excludeId={targetContact?.id}
             placeholder="Search for contact to merge away..."
             onSelect={setSourceContact}
@@ -896,7 +903,6 @@ function ManualMergeExpanded({ onCollapse }: { onCollapse: () => void }) {
           />
         ) : (
           <ContactSearchPicker
-            contacts={contacts}
             excludeId={sourceContact?.id}
             placeholder="Search for contact to keep..."
             onSelect={setTargetContact}

@@ -64,6 +64,7 @@
 - Contact story secondary data now uses longer client stale windows for journal entries and bundled intelligence, avoiding repeat reads when reopening the same contact while preserving mutation invalidations.
 - Contact edit and draft composer preset resolution now use a lightweight `/api/contacts/:id?scope=summary` payload instead of loading interactions, facts, profile, and memory that those flows do not render.
 - LinkedIn circle assignment now uses `/api/circles?scope=summary` for selector options instead of loading every contact in every circle just to populate a dropdown.
+- Manual merge contact pickers now run debounced, capped server-side contact searches instead of fetching the default contact list when the manual merge panel opens.
 
 ## Next Highest-Impact Efficiency Work
 
