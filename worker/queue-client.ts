@@ -37,6 +37,8 @@ export async function enqueue(
     runAt?: Date;
     queueName?: string;
     maxAttempts?: number;
+    jobKey?: string;
+    jobKeyMode?: "replace" | "preserve_run_at";
   } = {},
 ): Promise<string> {
   const utils = await getUtils();

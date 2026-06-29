@@ -74,10 +74,20 @@ export async function POST(
     return NextResponse.json({ ok: true });
   }
 
-  // Enqueue a dedicated job. Worker dedups via queue concurrency so
-  // multiple webhooks fired close together don't double-sync.
+  // Enqueue one pending sync per user. Gmail can burst many push
+  // notifications for the same mailbox; a stable jobKey collapses
+  // those into the same queued job instead of stacking duplicate API
+  // syncs. preserve_run_at keeps an already-queued near-term run near.
   try {
-    await enqueue("gmail-sync", { triggeredBy: "webhook", userId });
+    await enqueue(
+      "gmail-sync",
+      { triggeredBy: "webhook", userId },
+      {
+        jobKey: `gmail-sync:webhook:${userId}`,
+        jobKeyMode: "preserve_run_at",
+        queueName: `gmail-sync:${userId}`,
+      },
+    );
   } catch (err) {
     // Best-effort: even if the enqueue fails, the cron-scheduled
     // gmail-sync will pick up the new historyId on its next run.

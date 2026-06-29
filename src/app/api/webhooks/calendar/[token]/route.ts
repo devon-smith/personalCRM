@@ -54,7 +54,15 @@ export async function POST(
   }
 
   try {
-    await enqueue("calendar-sync", { triggeredBy: "webhook", userId: channel.userId });
+    await enqueue(
+      "calendar-sync",
+      { triggeredBy: "webhook", userId: channel.userId },
+      {
+        jobKey: `calendar-sync:webhook:${channel.userId}`,
+        jobKeyMode: "preserve_run_at",
+        queueName: `calendar-sync:${channel.userId}`,
+      },
+    );
   } catch (err) {
     console.error("[webhook/calendar] enqueue failed:", err);
   }

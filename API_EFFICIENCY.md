@@ -14,15 +14,16 @@
 - Browser Gmail sync is now a stale fallback instead of a fixed 2-minute poll. It checks the local sync state first and skips the Gmail API when the worker/browser synced recently.
 - Browser contacts/calendar auto-sync now has a 6-hour local cooldown. Manual sync buttons still force a sync.
 - `/api/health` is DB-only by default. It no longer spends a Gmail profile API call on normal dashboard loads. Use `/api/health?live=1` only when debugging token reachability.
+- Gmail and Calendar webhook-triggered worker jobs now use stable per-user Graphile job keys, so rapid push-notification bursts collapse into one pending sync per source/user instead of stacking duplicate jobs.
 
 ## Next Highest-Impact Efficiency Work
 
 - Make worker mode the production default after deployment: set `NEXT_PUBLIC_DISABLE_BROWSER_SYNC=true` once the worker is reliably running.
-- Add job de-dupe keys for webhook-triggered `gmail-sync` and `calendar-sync` so multiple push events collapse into one pending job per user.
 - Add a single `/api/dashboard/bootstrap` endpoint for home/reply queue chrome data: data health, counts, calendar summary, and birthdays. This would reduce initial mobile page load fan-out.
 - Add response caching headers for DB-only status endpoints where safe, especially `data-health`, `birthdays`, and usage/status reads.
 - Persist AI generation fingerprints for expensive prompts. If the same reply draft context and voice refs are unchanged, reuse or offer regenerate instead of calling the model again automatically.
 - Add budget/rate telemetry per provider from `AIGenerationLog`: daily Anthropic tokens, Voyage embedding calls, Gmail sync calls, and Google Calendar calls.
+- Add sync-run visibility for cron/manual/webhook collisions: started at, completed at, source, duration, and provider calls made.
 
 ## Product Polish Before App Finalization
 
