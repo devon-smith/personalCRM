@@ -25,7 +25,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { useContacts } from "@/lib/hooks/use-contacts";
-import type { DuplicateGroup } from "@/app/api/contacts/duplicates/route";
+import type { DuplicateGroup } from "@/lib/contact-duplicates";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { NicknameMatches } from "@/components/settings/nickname-matches";
 
@@ -58,31 +58,29 @@ interface DuplicatesResponse {
   totalDuplicates: number;
 }
 
+interface MergeBootstrapResponse {
+  duplicates: DuplicatesResponse;
+  linkedInReview: { totalPending: number };
+}
+
 export default function MergePage() {
   const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [selectedPrimary, setSelectedPrimary] = useState<Record<string, string>>({});
   const [mergedGroups, setMergedGroups] = useState<Set<string>>(new Set());
 
-  // Check for LinkedIn review items
-  const { data: linkedInReview } = useQuery<{ totalPending: number }>({
-    queryKey: ["linkedin-review-count"],
+  const { data: bootstrap, isLoading } = useQuery<MergeBootstrapResponse>({
+    queryKey: ["duplicates", "merge-bootstrap"],
     queryFn: async () => {
-      const res = await fetch("/api/import/linkedin/review");
-      if (!res.ok) return { totalPending: 0 };
-      const data = await res.json();
-      return { totalPending: data.totalPending ?? 0 };
-    },
-  });
-
-  const { data, isLoading } = useQuery<DuplicatesResponse>({
-    queryKey: ["duplicates"],
-    queryFn: async () => {
-      const res = await fetch("/api/contacts/duplicates");
-      if (!res.ok) throw new Error("Failed to fetch duplicates");
+      const res = await fetch("/api/merge/bootstrap");
+      if (!res.ok) throw new Error("Failed to load merge data");
       return res.json();
     },
+    staleTime: 60 * 1000,
   });
+
+  const data = bootstrap?.duplicates;
+  const linkedInReview = bootstrap?.linkedInReview;
 
   const mergeMutation = useMutation({
     mutationFn: async ({ primaryId, mergeIds }: { primaryId: string; mergeIds: string[] }) => {
@@ -748,20 +746,57 @@ function SelectedContactCard({
 }
 
 function ManualMerge() {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!expanded) {
+    return (
+      <button
+        className="flex w-full items-center gap-3 rounded-[14px] px-5 py-4 transition-colors"
+        style={{
+          backgroundColor: "var(--surface)",
+          border: "1px solid var(--border)",
+          transitionDuration: "var(--duration-fast)",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--surface)"; }}
+        onClick={() => setExpanded(true)}
+      >
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+          style={{ backgroundColor: "var(--surface-sunken)" }}
+        >
+          <Merge className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
+        </div>
+        <div className="flex-1 min-w-0 text-left">
+          <p className="ds-body-sm font-medium" style={{ color: "var(--text-primary)" }}>
+            Manual Merge
+          </p>
+          <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+            Pick two contacts to merge into one
+          </p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+      </button>
+    );
+  }
+
+  return <ManualMergeExpanded onCollapse={() => setExpanded(false)} />;
+}
+
+function ManualMergeExpanded({ onCollapse }: { onCollapse: () => void }) {
   const queryClient = useQueryClient();
   const { data: contactsData } = useContacts();
   const [sourceContact, setSourceContact] = useState<SimpleContact | null>(null);
   const [targetContact, setTargetContact] = useState<SimpleContact | null>(null);
-  const [expanded, setExpanded] = useState(false);
 
   const contacts: SimpleContact[] = useMemo(
     () =>
-      (contactsData ?? []).map((c) => ({
-        id: c.id,
-        name: c.name,
-        email: c.email,
-        company: c.company,
-        avatarUrl: c.avatarUrl,
+      (contactsData ?? []).map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        email: contact.email,
+        company: contact.company,
+        avatarUrl: contact.avatarUrl,
       })),
     [contactsData],
   );
@@ -797,38 +832,6 @@ function ManualMerge() {
     });
   }
 
-  if (!expanded) {
-    return (
-      <button
-        className="flex w-full items-center gap-3 rounded-[14px] px-5 py-4 transition-colors"
-        style={{
-          backgroundColor: "var(--surface)",
-          border: "1px solid var(--border)",
-          transitionDuration: "var(--duration-fast)",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-sunken)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--surface)"; }}
-        onClick={() => setExpanded(true)}
-      >
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-          style={{ backgroundColor: "var(--surface-sunken)" }}
-        >
-          <Merge className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
-        </div>
-        <div className="flex-1 min-w-0 text-left">
-          <p className="ds-body-sm font-medium" style={{ color: "var(--text-primary)" }}>
-            Manual Merge
-          </p>
-          <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-            Pick two contacts to merge into one
-          </p>
-        </div>
-        <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--text-tertiary)" }} />
-      </button>
-    );
-  }
-
   return (
     <div
       className="rounded-[14px] overflow-hidden"
@@ -851,7 +854,7 @@ function ManualMerge() {
           </p>
         </div>
         <button
-          onClick={() => { setExpanded(false); setSourceContact(null); setTargetContact(null); }}
+          onClick={onCollapse}
           className="shrink-0 rounded-[6px] p-1 transition-colors"
           style={{ color: "var(--text-tertiary)", transitionDuration: "var(--duration-fast)" }}
           onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; }}
@@ -928,7 +931,8 @@ function ManualMerge() {
 }
 
 function GapsSuggestions() {
-  const { data } = useQuery<{
+  const [showGaps, setShowGaps] = useState(false);
+  const { data, isLoading } = useQuery<{
     unmatchedSenders: { email: string; count: number }[];
     zeroInteractionContacts: { id: string; name: string; email: string | null; company: string | null }[];
   }>({
@@ -938,13 +942,11 @@ function GapsSuggestions() {
       if (!res.ok) return { unmatchedSenders: [], zeroInteractionContacts: [] };
       return res.json();
     },
+    enabled: showGaps,
   });
 
-  const [showGaps, setShowGaps] = useState(false);
-
-  if (!data) return null;
-  const total = data.unmatchedSenders.length + data.zeroInteractionContacts.length;
-  if (total === 0) return null;
+  const total =
+    data ? data.unmatchedSenders.length + data.zeroInteractionContacts.length : null;
 
   return (
     <div className="mt-2">
@@ -956,9 +958,11 @@ function GapsSuggestions() {
           Gaps & Suggestions
         </h2>
         <div className="flex items-center gap-2">
-          <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
-            {total}
-          </span>
+          {total !== null && total > 0 && (
+            <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+              {total}
+            </span>
+          )}
           <ChevronDown
             className="h-4 w-4 text-gray-400 transition-transform"
             style={{ transform: showGaps ? "rotate(180deg)" : "rotate(0)" }}
@@ -968,7 +972,18 @@ function GapsSuggestions() {
 
       {showGaps && (
         <div className="mt-3 space-y-4 rounded-2xl border border-gray-200 bg-white px-5 py-4">
-          {data.unmatchedSenders.length > 0 && (
+          {isLoading && (
+            <div className="flex items-center gap-2 text-[12px] text-gray-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading suggestions...
+            </div>
+          )}
+          {data && total === 0 && (
+            <p className="text-[12px] text-gray-400">
+              No data gaps found.
+            </p>
+          )}
+          {data && data.unmatchedSenders.length > 0 && (
             <div>
               <p className="text-[12px] font-medium text-gray-600">
                 People you might know ({data.unmatchedSenders.length})
@@ -999,7 +1014,7 @@ function GapsSuggestions() {
             </div>
           )}
 
-          {data.zeroInteractionContacts.length > 0 && (
+          {data && data.zeroInteractionContacts.length > 0 && (
             <div>
               <p className="text-[12px] font-medium text-gray-600">
                 Contacts with no interactions ({data.zeroInteractionContacts.length})

@@ -56,6 +56,7 @@
 - Voice settings now loads profile, corpus stats, and reference-material summaries through one DB-backed `/api/voice/bootstrap` request with a short private cache, replacing three page-load requests while leaving upload/delete/reindex mutations on their focused endpoints.
 - The Voice reference library now reuses `/api/voice/bootstrap` for learned response tables plus reference rows, replacing its separate profile and reference-list reads with one initial request.
 - People now loads filtered contacts, lightweight circle filter options, and duplicate-review count through one DB-backed `/api/people/bootstrap` request, replacing the page-load fan-out to `/api/contacts`, heavyweight `/api/circles`, and `/api/sightings`.
+- Merge duplicates now loads duplicate groups and the LinkedIn pending count through one `/api/merge/bootstrap` request. Manual merge contact search and data-health gaps are intent-driven, so the default merge page no longer pulls the full contacts list or data-health report.
 
 ## Next Highest-Impact Efficiency Work
 

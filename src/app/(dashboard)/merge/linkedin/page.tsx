@@ -82,6 +82,7 @@ export default function LinkedInReviewPage() {
     onSuccess: (_data, variables) => {
       setResolvedIds((prev) => new Set([...prev, variables.sightingId]));
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["duplicates"] });
 
       const actionLabels: Record<string, string> = {
         link: "Linked to contact",
@@ -121,6 +122,7 @@ export default function LinkedInReviewPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       queryClient.invalidateQueries({ queryKey: ["linkedin-review"] });
+      queryClient.invalidateQueries({ queryKey: ["duplicates"] });
       toast.success(`Resolved ${resolvedItemIds.length} items`);
     },
     onError: (err) => toast.error(err.message),

@@ -192,6 +192,7 @@ export function NicknameMatches() {
       toast("Contacts merged");
       queryClient.invalidateQueries({ queryKey: ["nickname-matches"] });
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["duplicates"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
     onError: (err) => toast.error(err.message),
