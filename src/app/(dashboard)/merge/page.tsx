@@ -942,9 +942,9 @@ function GapsSuggestions() {
     unmatchedSenders: { email: string; count: number }[];
     zeroInteractionContacts: { id: string; name: string; email: string | null; company: string | null }[];
   }>({
-    queryKey: ["data-health"],
+    queryKey: ["data-health", "gaps"],
     queryFn: async () => {
-      const res = await fetch("/api/data-health");
+      const res = await fetch("/api/data-health?scope=gaps");
       if (!res.ok) return { unmatchedSenders: [], zeroInteractionContacts: [] };
       return res.json();
     },

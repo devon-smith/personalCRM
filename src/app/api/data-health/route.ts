@@ -56,13 +56,26 @@ export interface DataHealthResponse {
   syncRuntime: SyncRuntimeStatus;
 }
 
-export async function GET() {
+export interface DataHealthGapsResponse {
+  zeroInteractionContacts: ZeroInteractionContact[];
+  unmatchedSenders: UnmatchedSender[];
+}
+
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const userId = session.user.id;
+  const scope = new URL(request.url).searchParams.get("scope");
+
+  if (scope === "gaps") {
+    const gaps = await getDataHealthGaps(userId);
+    return NextResponse.json(gaps, {
+      headers: privateCacheHeaders(60, 5 * 60),
+    });
+  }
 
   // Check ALL linked Google accounts for tokens and scopes
   const googleAccounts = await prisma.account.findMany({
@@ -150,6 +163,7 @@ export async function GET() {
     contactsWithEmail,
     contactsWithPhone,
     contactsWithPhoto,
+    contactsWithZeroInteractionCount,
     contactsWithZeroInteractions,
     emailInteractionCount,
     meetingInteractionCount,
@@ -175,6 +189,10 @@ export async function GET() {
 
     prisma.contact.count({
       where: { userId, avatarUrl: { not: null } },
+    }),
+
+    prisma.contact.count({
+      where: { userId, interactions: { none: {} } },
     }),
 
     prisma.contact.findMany({
@@ -288,18 +306,15 @@ export async function GET() {
     { label: "contacts have email addresses", current: contactsWithEmail, total: totalContacts, key: "email" },
     { label: "contacts have phone numbers", current: contactsWithPhone, total: totalContacts, key: "phone" },
     { label: "contacts have photos", current: contactsWithPhoto, total: totalContacts, key: "photo" },
-    { label: "contacts have interactions", current: totalContacts - contactsWithZeroInteractions.length, total: totalContacts, key: "interactions" },
+    { label: "contacts have interactions", current: totalContacts - contactsWithZeroInteractionCount, total: totalContacts, key: "interactions" },
   ];
 
   // ─── Gap Analysis ───
 
-  const rawSenders = (syncState?.unmatchedSenders ?? []) as Array<{ email: string; count: number }>;
-  const allContactEmails = await prisma.contact.findMany({
-    where: { userId, email: { not: null } },
-    select: { email: true },
+  const { unmatchedSenders } = await getDataHealthGaps(userId, {
+    syncState,
+    zeroInteractionContacts: contactsWithZeroInteractions,
   });
-  const knownEmails = new Set(allContactEmails.map((c) => c.email!.toLowerCase()));
-  const unmatchedSenders = rawSenders.filter((s) => !knownEmails.has(s.email.toLowerCase()));
 
   return NextResponse.json(
     {
@@ -313,4 +328,63 @@ export async function GET() {
     } satisfies DataHealthResponse,
     { headers: privateCacheHeaders(60, 5 * 60) },
   );
+}
+
+async function getDataHealthGaps(
+  userId: string,
+  prefetched?: {
+    syncState?: { unmatchedSenders: unknown } | null;
+    zeroInteractionContacts?: ZeroInteractionContact[];
+  },
+): Promise<DataHealthGapsResponse> {
+  const [syncState, zeroInteractionContacts] = await Promise.all([
+    prefetched && "syncState" in prefetched
+      ? Promise.resolve(prefetched.syncState)
+      : prisma.gmailSyncState.findUnique({
+          where: { userId },
+          select: { unmatchedSenders: true },
+        }),
+    prefetched?.zeroInteractionContacts
+      ? Promise.resolve(prefetched.zeroInteractionContacts)
+      : prisma.contact.findMany({
+          where: { userId, interactions: { none: {} } },
+          select: { id: true, name: true, email: true, company: true },
+          orderBy: { name: "asc" },
+          take: 30,
+        }),
+  ]);
+
+  const rawSenders = (syncState?.unmatchedSenders ?? []) as Array<{
+    email: string;
+    count: number;
+  }>;
+  if (rawSenders.length === 0) {
+    return { zeroInteractionContacts, unmatchedSenders: [] };
+  }
+
+  const candidateEmails = Array.from(
+    new Set(rawSenders.map((sender) => sender.email.toLowerCase())),
+  );
+  const matchingContacts = await prisma.contact.findMany({
+    where: {
+      userId,
+      OR: candidateEmails.map((email) => ({
+        email: { equals: email, mode: "insensitive" },
+      })),
+    },
+    select: { email: true },
+  });
+  const knownEmails = new Set(
+    matchingContacts
+      .map((contact) => contact.email?.toLowerCase())
+      .filter((email): email is string => !!email),
+  );
+  const unmatchedSenders = rawSenders.filter(
+    (sender) => !knownEmails.has(sender.email.toLowerCase()),
+  );
+
+  return {
+    zeroInteractionContacts,
+    unmatchedSenders: unmatchedSenders.slice(0, 10),
+  };
 }

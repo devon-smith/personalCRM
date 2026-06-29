@@ -103,6 +103,7 @@
 - Redirect-only aliases (`/`, `/home`, `/queries`, `/source-health`) now live in `next.config.ts` instead of App Router pages, preserving stale links while removing four static app routes from the production graph.
 - Removed the unused `/api/observations` GET route. Dashboard observations are already bundled in `/api/dashboard/bootstrap`; the focused dismiss route remains for the visible observation cards.
 - Removed orphan AI endpoints `/api/ai/relationship-health` and `/api/ai/suggest-tags`, plus their route-only Anthropic helper code. Historical `RelationshipInsight` rows remain readable by the extension, but the app no longer exposes unused direct AI compute paths.
+- Merge gaps now use `/api/data-health?scope=gaps`, avoiding the full Sources/data-health payload when the user expands that optional section. The full data-health coverage score now counts all zero-interaction contacts instead of using the capped preview list.
 
 ## Next Highest-Impact Efficiency Work
 
