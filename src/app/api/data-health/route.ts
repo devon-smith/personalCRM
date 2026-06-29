@@ -164,7 +164,6 @@ export async function GET(request: Request) {
     contactsWithPhone,
     contactsWithPhoto,
     contactsWithZeroInteractionCount,
-    contactsWithZeroInteractions,
     emailInteractionCount,
     meetingInteractionCount,
     lastCalendarSync,
@@ -193,13 +192,6 @@ export async function GET(request: Request) {
 
     prisma.contact.count({
       where: { userId, interactions: { none: {} } },
-    }),
-
-    prisma.contact.findMany({
-      where: { userId, interactions: { none: {} } },
-      select: { id: true, name: true, email: true, company: true },
-      orderBy: { name: "asc" },
-      take: 30,
     }),
 
     prisma.interaction.count({
@@ -309,20 +301,13 @@ export async function GET(request: Request) {
     { label: "contacts have interactions", current: totalContacts - contactsWithZeroInteractionCount, total: totalContacts, key: "interactions" },
   ];
 
-  // ─── Gap Analysis ───
-
-  const { unmatchedSenders } = await getDataHealthGaps(userId, {
-    syncState,
-    zeroInteractionContacts: contactsWithZeroInteractions,
-  });
-
   return NextResponse.json(
     {
       sources,
       googleAccounts: accountInfos,
       coverage,
-      zeroInteractionContacts: contactsWithZeroInteractions,
-      unmatchedSenders: unmatchedSenders.slice(0, 10),
+      zeroInteractionContacts: [],
+      unmatchedSenders: [],
       hasGoogleOAuth,
       syncRuntime,
     } satisfies DataHealthResponse,
