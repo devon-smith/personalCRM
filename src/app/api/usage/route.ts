@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { privateCacheHeaders } from "@/lib/http/cache";
 import { estimateCost, featureLabel, priceFor } from "@/lib/pricing";
+import { readSyncBudget, type SyncBudget } from "@/lib/usage/sync-budget";
 
 /**
  * GET /api/usage — aggregated API token spend (M0.x.14).
@@ -151,12 +152,6 @@ export interface UsageResponse {
     }>;
   };
 }
-
-const SYNC_BUDGET = {
-  providerCallsPerDay: 40,
-  browserFallbackCallsPerDay: 4,
-  errorRatePercent: 10,
-};
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -427,7 +422,7 @@ export async function GET(request: Request) {
     }),
     { calls: 0, in: 0, out: 0, cost: 0 },
   );
-  const sync = buildSyncUsage(syncRows, days);
+  const sync = buildSyncUsage(syncRows, days, readSyncBudget());
 
   const response: UsageResponse = {
     windowDays: days,
@@ -626,6 +621,7 @@ function buildSyncUsage(
     items_processed: bigint | null;
   }>,
   days: number,
+  syncBudget: SyncBudget,
 ): UsageResponse["sync"] {
   const sourceMap = new Map<
     string,
@@ -643,9 +639,9 @@ function buildSyncUsage(
   >();
   const statusMap = new Map<string, number>();
   const errorMap = new Map<string, number>();
-  const windowProviderCallLimit = SYNC_BUDGET.providerCallsPerDay * days;
+  const windowProviderCallLimit = syncBudget.providerCallsPerDay * days;
   const windowBrowserFallbackCallLimit =
-    SYNC_BUDGET.browserFallbackCallsPerDay * days;
+    syncBudget.browserFallbackCallsPerDay * days;
 
   let totalRuns = 0;
   let totalProviderCalls = 0;
@@ -736,7 +732,7 @@ function buildSyncUsage(
     });
   }
 
-  if (errorRuns > 0 && errorRatePercent >= SYNC_BUDGET.errorRatePercent) {
+  if (errorRuns > 0 && errorRatePercent >= syncBudget.errorRatePercent) {
     budgetAlerts.push({
       id: "sync-error-rate",
       severity: "warning",
@@ -744,7 +740,7 @@ function buildSyncUsage(
       message:
         "A rising error rate usually means auth churn, provider rate limits, or network instability. Resolve this before adding more automatic sync frequency.",
       actual: errorRatePercent,
-      limit: SYNC_BUDGET.errorRatePercent,
+      limit: syncBudget.errorRatePercent,
       unit: "%",
     });
   }
@@ -770,9 +766,9 @@ function buildSyncUsage(
     errorRuns,
     runningRuns,
     budget: {
-      providerCallsPerDay: SYNC_BUDGET.providerCallsPerDay,
-      browserFallbackCallsPerDay: SYNC_BUDGET.browserFallbackCallsPerDay,
-      errorRatePercent: SYNC_BUDGET.errorRatePercent,
+      providerCallsPerDay: syncBudget.providerCallsPerDay,
+      browserFallbackCallsPerDay: syncBudget.browserFallbackCallsPerDay,
+      errorRatePercent: syncBudget.errorRatePercent,
       windowProviderCallLimit,
       windowBrowserFallbackCallLimit,
     },
