@@ -261,6 +261,23 @@ function markInboxItemNoReply(
   };
 }
 
+function updateDraftInBootstrap(
+  data: ReplyQueueBootstrapData | undefined,
+  draftId: string,
+  patch: Partial<Draft>,
+): ReplyQueueBootstrapData | undefined {
+  if (!data) return data;
+  let changed = false;
+  const drafts = data.drafts.drafts.map((draft) => {
+    if (draft.id !== draftId) return draft;
+    changed = true;
+    return { ...draft, ...patch };
+  });
+  return changed
+    ? { ...data, drafts: { ...data.drafts, drafts } }
+    : data;
+}
+
 const STATUS_STYLES = {
   review: { text: "#8A5A36", bg: "#F3E6D8", label: "Needs review" },
   ready: { text: "#5E6B47", bg: "#EDF0EC", label: "Ready to save" },
@@ -462,8 +479,13 @@ export function ReplyQueueConsole() {
       if (!res.ok) throw new Error("Failed to update draft");
       return res.json();
     },
-    onSuccess: () => {
-      invalidateWorkflow();
+    onSuccess: (_data, variables) => {
+      queryClient.setQueriesData<ReplyQueueBootstrapData>(
+        { queryKey: ["reply-queue-bootstrap"] },
+        (current) => updateDraftInBootstrap(current, variables.id, {
+          content: variables.content.trim(),
+        }),
+      );
       toast.success("Draft updated");
     },
     onError: (err) => toast.error(err.message),
@@ -478,10 +500,20 @@ export function ReplyQueueConsole() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Failed to save Gmail draft");
-      return body as { deepLinkUrl?: string };
+      return body as {
+        gmailDraftId: string;
+        gmailThreadId?: string | null;
+        deepLinkUrl?: string;
+      };
     },
-    onSuccess: (data) => {
-      invalidateWorkflow();
+    onSuccess: (data, id) => {
+      queryClient.setQueriesData<ReplyQueueBootstrapData>(
+        { queryKey: ["reply-queue-bootstrap"] },
+        (current) => updateDraftInBootstrap(current, id, {
+          gmailDraftId: data.gmailDraftId,
+          savedToGmailAt: new Date().toISOString(),
+        }),
+      );
       toast.success("Saved to Gmail drafts");
       if (data.deepLinkUrl) window.open(data.deepLinkUrl, "_blank", "noopener,noreferrer");
     },

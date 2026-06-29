@@ -146,6 +146,7 @@
 - Ask history star/delete actions now update saved-query list, detail, and count caches directly. Starring no longer refetches an unchanged count, and deleting no longer refetches the list just to remove one row.
 - Completed Ask answers now seed saved-query history/detail/count caches from the stream result itself, and follow-ups append into the open thread cache. New answers no longer refetch saved-query lists just to show the row that was already returned by the API.
 - Reply Queue resolve and "no reply needed" actions now remove or update the acted-on inbox item in local reply/inbox caches with rollback on failure. Successful actions still refresh dashboard aggregates, but no longer refetch the full queue just to drop one row.
+- Reply Queue draft edit and save-to-Gmail actions now patch the cached draft row locally. Editing copy or saving a Gmail draft no longer refetches the full queue, inbox list, dashboard, and draft audit just to update draft metadata.
 
 ## Next Highest-Impact Efficiency Work
 
