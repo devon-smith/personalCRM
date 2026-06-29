@@ -52,6 +52,22 @@ export interface UsageResponse {
     tokensOut: number;
     estimatedCostUsd: number;
   }>;
+  byProvider: Array<{
+    provider: string;
+    label: string;
+    modelCount: number;
+    callCount: number;
+    tokensIn: number;
+    tokensOut: number;
+    estimatedCostUsd: number;
+  }>;
+  byDay: Array<{
+    date: string;
+    callCount: number;
+    tokensIn: number;
+    tokensOut: number;
+    estimatedCostUsd: number;
+  }>;
 }
 
 export async function GET(request: Request) {
@@ -67,15 +83,39 @@ export async function GET(request: Request) {
   const windowEnd = new Date();
   const windowStart = new Date(windowEnd.getTime() - days * 24 * 60 * 60 * 1000);
 
-  const rows = await prisma.aIGenerationLog.groupBy({
-    by: ["feature", "model"],
-    where: {
-      userId: session.user.id,
-      createdAt: { gte: windowStart, lte: windowEnd },
-    },
-    _count: { _all: true },
-    _sum: { tokensIn: true, tokensOut: true },
-  });
+  const [rows, dailyRows] = await Promise.all([
+    prisma.aIGenerationLog.groupBy({
+      by: ["feature", "model"],
+      where: {
+        userId: session.user.id,
+        createdAt: { gte: windowStart, lte: windowEnd },
+      },
+      _count: { _all: true },
+      _sum: { tokensIn: true, tokensOut: true },
+    }),
+    prisma.$queryRaw<
+      Array<{
+        day: Date;
+        model: string;
+        call_count: bigint;
+        tokens_in: bigint | null;
+        tokens_out: bigint | null;
+      }>
+    >`
+      SELECT
+        date_trunc('day', "createdAt") AS day,
+        model,
+        COUNT(*)::bigint AS call_count,
+        COALESCE(SUM("tokensIn"), 0)::bigint AS tokens_in,
+        COALESCE(SUM("tokensOut"), 0)::bigint AS tokens_out
+      FROM "AIGenerationLog"
+      WHERE "userId" = ${session.user.id}
+        AND "createdAt" >= ${windowStart}
+        AND "createdAt" <= ${windowEnd}
+      GROUP BY day, model
+      ORDER BY day DESC
+    `,
+  ]);
 
   const usageRows: UsageRow[] = rows
     .map((r) => {
@@ -156,6 +196,79 @@ export async function GET(request: Request) {
     }))
     .sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd);
 
+  // Aggregate by provider
+  const providerMap = new Map<
+    string,
+    {
+      callCount: number;
+      tokensIn: number;
+      tokensOut: number;
+      cost: number;
+      models: Set<string>;
+    }
+  >();
+  for (const r of usageRows) {
+    const provider = priceFor(r.model).provider;
+    const prev = providerMap.get(provider) ?? {
+      callCount: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      cost: 0,
+      models: new Set<string>(),
+    };
+    prev.models.add(r.model);
+    providerMap.set(provider, {
+      callCount: prev.callCount + r.callCount,
+      tokensIn: prev.tokensIn + r.tokensIn,
+      tokensOut: prev.tokensOut + r.tokensOut,
+      cost: prev.cost + r.estimatedCostUsd,
+      models: prev.models,
+    });
+  }
+  const byProvider = Array.from(providerMap.entries())
+    .map(([provider, agg]) => ({
+      provider,
+      label: providerLabel(provider),
+      modelCount: agg.models.size,
+      callCount: agg.callCount,
+      tokensIn: agg.tokensIn,
+      tokensOut: agg.tokensOut,
+      estimatedCostUsd: agg.cost,
+    }))
+    .sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd);
+
+  // Aggregate by day while keeping per-model pricing accurate.
+  const dayMap = new Map<
+    string,
+    { callCount: number; tokensIn: number; tokensOut: number; cost: number }
+  >();
+  for (const row of dailyRows) {
+    const key = row.day.toISOString().slice(0, 10);
+    const tokensIn = Number(row.tokens_in ?? 0);
+    const tokensOut = Number(row.tokens_out ?? 0);
+    const prev = dayMap.get(key) ?? {
+      callCount: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      cost: 0,
+    };
+    dayMap.set(key, {
+      callCount: prev.callCount + Number(row.call_count),
+      tokensIn: prev.tokensIn + tokensIn,
+      tokensOut: prev.tokensOut + tokensOut,
+      cost: prev.cost + estimateCost(row.model, tokensIn, tokensOut),
+    });
+  }
+  const byDay = Array.from(dayMap.entries())
+    .map(([date, agg]) => ({
+      date,
+      callCount: agg.callCount,
+      tokensIn: agg.tokensIn,
+      tokensOut: agg.tokensOut,
+      estimatedCostUsd: agg.cost,
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
   const totals = usageRows.reduce(
     (acc, r) => ({
       calls: acc.calls + r.callCount,
@@ -177,11 +290,20 @@ export async function GET(request: Request) {
     rows: usageRows,
     byFeature,
     byModel,
+    byProvider,
+    byDay,
   };
 
   return NextResponse.json(response, {
     headers: privateCacheHeaders(5 * 60, 30 * 60),
   });
+}
+
+function providerLabel(provider: string): string {
+  if (provider === "anthropic") return "Anthropic";
+  if (provider === "voyage") return "Voyage";
+  if (provider === "openai") return "OpenAI";
+  return "Unknown";
 }
 
 function clampDays(d: number): number {

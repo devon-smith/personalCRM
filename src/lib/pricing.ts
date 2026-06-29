@@ -19,7 +19,7 @@ export interface ModelPrice {
   /** Display label for the dashboard. */
   label: string;
   /** Provider name for grouping. */
-  provider: "anthropic" | "voyage" | "openai";
+  provider: "anthropic" | "voyage" | "openai" | "unknown";
 }
 
 const PRICING: Record<string, ModelPrice> = {
@@ -82,7 +82,7 @@ const FALLBACK_PRICE: ModelPrice = {
   inputPerMillion: 0,
   outputPerMillion: 0,
   label: "Unknown model",
-  provider: "anthropic",
+  provider: "unknown",
 };
 
 export function priceFor(model: string): ModelPrice {

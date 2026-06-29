@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Activity, AlertCircle } from "lucide-react";
+import { ArrowLeft, Activity, AlertCircle, BarChart3 } from "lucide-react";
 import type { UsageResponse } from "@/app/api/usage/route";
 
 const WINDOWS: Array<{ days: number; label: string }> = [
@@ -23,8 +24,6 @@ function formatTokens(n: number): string {
   if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
   return `${(n / 1_000_000).toFixed(2)}M`;
 }
-
-import { useState } from "react";
 
 export default function UsagePage() {
   const [days, setDays] = useState(30);
@@ -114,6 +113,54 @@ export default function UsagePage() {
               value={formatTokens(data.totalTokensOut)}
             />
           </div>
+
+          {/* By provider */}
+          <section>
+            <h2 className="ds-heading-md mb-3 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              By provider
+            </h2>
+            {data.byProvider.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <div className="grid gap-3 md:grid-cols-3">
+                {data.byProvider.map((row) => (
+                  <div key={row.provider} className="crm-card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p
+                          className="text-[11px] font-medium uppercase tracking-wide"
+                          style={{ color: "var(--text-tertiary)" }}
+                        >
+                          {row.label}
+                        </p>
+                        <p className="ds-display-md mt-1 tabular-nums">
+                          {formatUsd(row.estimatedCostUsd)}
+                        </p>
+                      </div>
+                      <span
+                        className="rounded-full px-2 py-1 text-[11px]"
+                        style={{
+                          color: "var(--text-tertiary)",
+                          backgroundColor: "var(--surface-sunken)",
+                        }}
+                      >
+                        {row.modelCount} {row.modelCount === 1 ? "model" : "models"}
+                      </span>
+                    </div>
+                    <div
+                      className="mt-3 grid grid-cols-3 gap-2 border-t pt-3 text-[11px]"
+                      style={{ borderColor: "var(--border-subtle)" }}
+                    >
+                      <MiniMetric label="Calls" value={row.callCount.toLocaleString()} />
+                      <MiniMetric label="In" value={formatTokens(row.tokensIn)} />
+                      <MiniMetric label="Out" value={formatTokens(row.tokensOut)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
 
           {/* By feature */}
           <section>
@@ -233,6 +280,63 @@ export default function UsagePage() {
             )}
           </section>
 
+          {/* Daily trend */}
+          <section>
+            <h2 className="ds-heading-md mb-3">Daily trend</h2>
+            {data.byDay.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <div className="crm-card overflow-x-auto">
+                <table className="w-full min-w-[480px] text-[13px]">
+                  <thead>
+                    <tr
+                      className="text-left"
+                      style={{
+                        color: "var(--text-tertiary)",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      <th className="px-4 py-2 font-medium">Date</th>
+                      <th className="px-4 py-2 font-medium text-right">Calls</th>
+                      <th className="px-4 py-2 font-medium text-right">
+                        Tokens in
+                      </th>
+                      <th className="px-4 py-2 font-medium text-right">
+                        Tokens out
+                      </th>
+                      <th className="px-4 py-2 font-medium text-right">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byDay.slice(0, 14).map((row) => (
+                      <tr
+                        key={row.date}
+                        style={{ borderBottom: "1px solid var(--border-subtle)" }}
+                      >
+                        <td className="px-4 py-2.5">{formatDay(row.date)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {row.callCount.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {formatTokens(row.tokensIn)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {formatTokens(row.tokensOut)}
+                        </td>
+                        <td
+                          className="px-4 py-2.5 text-right tabular-nums font-medium"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {formatUsd(row.estimatedCostUsd)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
           <p
             className="text-[11px] mt-4"
             style={{ color: "var(--text-tertiary)" }}
@@ -245,6 +349,24 @@ export default function UsagePage() {
       )}
     </div>
   );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="font-medium" style={{ color: "var(--text-primary)" }}>
+        {value}
+      </p>
+      <p style={{ color: "var(--text-tertiary)" }}>{label}</p>
+    </div>
+  );
+}
+
+function formatDay(date: string): string {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(`${date}T00:00:00`));
 }
 
 function StatCard({

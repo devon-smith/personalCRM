@@ -23,10 +23,11 @@
 - Production now defaults to worker-mode sync. The browser fallback only runs in production when `NEXT_PUBLIC_ENABLE_BROWSER_SYNC=true`, or in local dev unless force-disabled.
 - Manual draft generation now stores a short-window request fingerprint and reuses recent identical drafts instead of calling Anthropic again on repeat clicks, refresh loops, or duplicate composer submissions.
 - Sources now surfaces sync runtime health from the existing data-health payload: worker status, browser fallback mode, and Gmail/Calendar freshness.
+- API usage now rolls up existing `AIGenerationLog` rows by provider and by day, so Settings can show Anthropic/Voyage/OpenAI spend trends without making any provider calls.
 
 ## Next Highest-Impact Efficiency Work
 
-- Add budget/rate telemetry per provider from `AIGenerationLog`: daily Anthropic tokens, Voyage embedding calls, Gmail sync calls, and Google Calendar calls.
+- Add provider-call telemetry outside `AIGenerationLog`: Gmail sync requests, Google Calendar requests, embedding batch counts, worker trigger source, and per-run duration.
 - Add sync-run visibility for cron/manual/webhook collisions: started at, completed at, source, duration, and provider calls made.
 
 ## Product Polish Before App Finalization
