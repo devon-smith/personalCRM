@@ -32,6 +32,7 @@ interface SuggestionsResponse {
 
 export function CircleSuggestions() {
   const queryClient = useQueryClient();
+  const [isOpen, setIsOpen] = useState(false);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // Track removed contacts per suggestion: suggestionId -> Set of removed contactIds
@@ -46,6 +47,8 @@ export function CircleSuggestions() {
       if (!res.ok) throw new Error("Failed to fetch suggestions");
       return res.json();
     },
+    enabled: isOpen,
+    staleTime: 10 * 60 * 1000,
   });
 
   const removeContact = useCallback(
@@ -104,6 +107,7 @@ export function CircleSuggestions() {
     onSuccess: ({ circleName, count }) => {
       toast.success(`Created "${circleName}" with ${count} contacts`);
       queryClient.invalidateQueries({ queryKey: ["circles"] });
+      queryClient.invalidateQueries({ queryKey: ["contacts", "people-bootstrap"] });
       queryClient.invalidateQueries({ queryKey: ["circle-suggestions"] });
     },
     onError: (err) => toast.error(err.message),
@@ -125,6 +129,7 @@ export function CircleSuggestions() {
     onSuccess: ({ circleName, count }) => {
       toast.success(`Added ${count} contacts to "${circleName}"`);
       queryClient.invalidateQueries({ queryKey: ["circles"] });
+      queryClient.invalidateQueries({ queryKey: ["contacts", "people-bootstrap"] });
       queryClient.invalidateQueries({ queryKey: ["circle-suggestions"] });
     },
     onError: (err) => toast.error(err.message),
@@ -134,21 +139,60 @@ export function CircleSuggestions() {
     (s) => !dismissedIds.has(s.id),
   );
 
-  if (isLoading || suggestions.length === 0) return null;
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        className="crm-animate-enter mt-6 flex w-full items-center justify-between rounded-[14px] border bg-white px-5 py-4 text-left transition-colors hover:bg-gray-50/70"
+        style={{ borderColor: "#EAE2D6" }}
+        onClick={() => setIsOpen(true)}
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-amber-500" />
+          <h2 className="text-[14px] font-semibold text-[#1A1A1A]">
+            Suggested circles
+          </h2>
+        </div>
+        <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+      </button>
+    );
+  }
 
   const isPending = createAndAssign.isPending || addToExisting.isPending;
 
   return (
-    <div className="crm-animate-enter mt-6">
-      <div className="mb-3 flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-amber-500" />
-        <h2 className="text-[14px] font-semibold text-[#1A1A1A]">
-          Suggested circles
-        </h2>
-        <span className="text-[12px] text-[#AAAFB5]">
-          Based on your contacts and interaction patterns
-        </span>
-      </div>
+    <div className="crm-animate-enter mt-6 rounded-[14px] border bg-white px-5 py-4" style={{ borderColor: "#EAE2D6" }}>
+      <button
+        type="button"
+        className="mb-3 flex w-full items-center justify-between text-left"
+        onClick={() => setIsOpen(false)}
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-amber-500" />
+          <h2 className="text-[14px] font-semibold text-[#1A1A1A]">
+            Suggested circles
+          </h2>
+          {suggestions.length > 0 && (
+            <span className="text-[12px] text-[#AAAFB5]">
+              {suggestions.length}
+            </span>
+          )}
+        </div>
+        <ChevronUp className="h-4 w-4 shrink-0 text-gray-400" />
+      </button>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 py-2 text-[12px] text-gray-400">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading suggestions...
+        </div>
+      )}
+
+      {!isLoading && suggestions.length === 0 && (
+        <p className="py-2 text-[12px] text-gray-400">
+          No suggestions right now.
+        </p>
+      )}
 
       <div className="space-y-2">
         {suggestions.map((suggestion) => {

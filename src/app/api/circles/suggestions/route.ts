@@ -16,7 +16,14 @@ export async function GET() {
     }
 
     const suggestions = await generateCircleSuggestions(session.user.id);
-    return NextResponse.json({ suggestions });
+    return NextResponse.json(
+      { suggestions },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
+        },
+      },
+    );
   } catch (error) {
     console.error("[GET /api/circles/suggestions]", error);
     return NextResponse.json(
