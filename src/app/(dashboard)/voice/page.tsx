@@ -16,6 +16,10 @@ import {
 import { toast } from "sonner";
 import { Surface, SectionLabel, Pill } from "@/components/ds";
 import type { LearnedProfile, VoiceOverrides } from "@/lib/voice/profile";
+import {
+  mergeVoiceReferenceRows,
+  type VoiceReferenceCacheRow,
+} from "@/lib/voice/reference-cache";
 
 interface ProfileResponse {
   learned: LearnedProfile;
@@ -39,22 +43,7 @@ interface VoiceBootstrapResponse {
   references: VoiceReferenceRow[];
 }
 
-interface VoiceReferenceRow {
-  id: string;
-  filename: string;
-  sourceType: string;
-  weight: number;
-  byteSize: number;
-  guidance: {
-    applicableRelationships?: string[];
-    greetings?: string[];
-    closings?: string[];
-    signaturePhrases?: string[];
-    avoidPhrases?: string[];
-    toneNotes?: string;
-  } | null;
-  addedAt: string;
-}
+type VoiceReferenceRow = VoiceReferenceCacheRow;
 
 interface UploadOutcome {
   status: "imported" | "duplicate" | "failed";
@@ -118,12 +107,26 @@ export default function VoiceSettingsPage() {
       }
       return res.json() as Promise<{
         outcomes: UploadOutcome[];
+        importedReferences: VoiceReferenceRow[];
         summary: { imported: number; duplicates: number; failed: number };
       }>;
     },
     onSuccess: (result) => {
       setLastOutcomes(result.outcomes);
-      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
+      if (result.importedReferences.length > 0) {
+        qc.setQueryData<VoiceBootstrapResponse>(
+          ["voice", "bootstrap"],
+          (current) => current
+            ? {
+                ...current,
+                references: mergeVoiceReferenceRows(
+                  current.references,
+                  result.importedReferences,
+                ),
+              }
+            : current,
+        );
+      }
       const { imported, duplicates, failed } = result.summary;
       const parts: string[] = [];
       if (imported > 0) parts.push(`${imported} imported`);

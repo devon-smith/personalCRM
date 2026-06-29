@@ -15,6 +15,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Surface, SectionLabel } from "@/components/ds";
+import {
+  mergeVoiceReferenceRows,
+  type VoiceReferenceCacheRow,
+} from "@/lib/voice/reference-cache";
 import type {
   LearnedProfile,
   LearnedRelationshipBucket,
@@ -31,22 +35,7 @@ import type { RelationshipType } from "@/lib/voice/relationship-classifier";
  * how she WANTS to write, not just how she has written.
  */
 
-interface VoiceReferenceRow {
-  id: string;
-  filename: string;
-  sourceType: string;
-  weight: number;
-  byteSize: number;
-  guidance: {
-    applicableRelationships?: string[];
-    greetings?: string[];
-    closings?: string[];
-    signaturePhrases?: string[];
-    avoidPhrases?: string[];
-    toneNotes?: string;
-  } | null;
-  addedAt: string;
-}
+type VoiceReferenceRow = VoiceReferenceCacheRow;
 
 interface VoiceReferencesBootstrapResponse {
   profile: {
@@ -147,12 +136,26 @@ export default function VoiceReferencesPage() {
       }
       return res.json() as Promise<{
         outcomes: UploadOutcome[];
+        importedReferences: VoiceReferenceRow[];
         summary: { imported: number; duplicates: number; failed: number };
       }>;
     },
     onSuccess: (result) => {
       setLastOutcomes(result.outcomes);
-      qc.invalidateQueries({ queryKey: ["voice", "bootstrap"] });
+      if (result.importedReferences.length > 0) {
+        qc.setQueryData<VoiceReferencesBootstrapResponse>(
+          ["voice", "bootstrap"],
+          (current) => current
+            ? {
+                ...current,
+                references: mergeVoiceReferenceRows(
+                  current.references,
+                  result.importedReferences,
+                ),
+              }
+            : current,
+        );
+      }
       const { imported, duplicates, failed } = result.summary;
       const parts: string[] = [];
       if (imported > 0) parts.push(`${imported} imported`);

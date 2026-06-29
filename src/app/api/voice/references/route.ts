@@ -57,8 +57,31 @@ export async function POST(req: NextRequest) {
       outcomes.push(outcome);
     }
 
+    const importedIds = outcomes
+      .filter((outcome) => outcome.status === "imported")
+      .map((outcome) => outcome.id);
+    const importedReferences = importedIds.length > 0
+      ? await prisma.voiceReference.findMany({
+          where: { userId, id: { in: importedIds } },
+          orderBy: { addedAt: "desc" },
+          select: {
+            id: true,
+            filename: true,
+            sourceType: true,
+            weight: true,
+            byteSize: true,
+            guidance: true,
+            addedAt: true,
+          },
+        })
+      : [];
+
     return NextResponse.json({
       outcomes,
+      importedReferences: importedReferences.map((reference) => ({
+        ...reference,
+        addedAt: reference.addedAt.toISOString(),
+      })),
       summary: {
         imported: outcomes.filter((o) => o.status === "imported").length,
         duplicates: outcomes.filter((o) => o.status === "duplicate").length,
