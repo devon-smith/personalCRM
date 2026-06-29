@@ -23,6 +23,26 @@ interface NicknameMatch {
   confidence: number;
 }
 
+type NicknameMatchesData = { suggestions: NicknameMatch[] };
+
+function matchIncludes(
+  match: NicknameMatch,
+  contactId: string,
+): boolean {
+  return match.contactA.id === contactId || match.contactB.id === contactId;
+}
+
+function isSamePair(
+  match: NicknameMatch,
+  contactAId: string,
+  contactBId: string,
+): boolean {
+  return (
+    (match.contactA.id === contactAId && match.contactB.id === contactBId) ||
+    (match.contactA.id === contactBId && match.contactB.id === contactAId)
+  );
+}
+
 function Avatar({ contact }: { contact: MatchContact }) {
   const initials = contact.name
     .split(" ")
@@ -161,7 +181,7 @@ export function NicknameMatches() {
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
 
-  const { data, isLoading } = useQuery<{ suggestions: NicknameMatch[] }>({
+  const { data, isLoading } = useQuery<NicknameMatchesData>({
     queryKey: ["nickname-matches"],
     queryFn: async () => {
       const res = await fetch("/api/contacts/nickname-matches");
@@ -192,9 +212,20 @@ export function NicknameMatches() {
       if (!res.ok) throw new Error("Merge failed");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast("Contacts merged");
-      queryClient.invalidateQueries({ queryKey: ["nickname-matches"] });
+      queryClient.setQueryData<NicknameMatchesData>(
+        ["nickname-matches"],
+        (current) => current
+          ? {
+              suggestions: current.suggestions.filter(
+                (match) =>
+                  !matchIncludes(match, variables.contactAId) &&
+                  !matchIncludes(match, variables.contactBId),
+              ),
+            }
+          : current,
+      );
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       queryClient.invalidateQueries({ queryKey: ["duplicates"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -222,9 +253,19 @@ export function NicknameMatches() {
       if (!res.ok) throw new Error("Dismiss failed");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast("Match dismissed");
-      queryClient.invalidateQueries({ queryKey: ["nickname-matches"] });
+      queryClient.setQueryData<NicknameMatchesData>(
+        ["nickname-matches"],
+        (current) => current
+          ? {
+              suggestions: current.suggestions.filter(
+                (match) =>
+                  !isSamePair(match, variables.contactAId, variables.contactBId),
+              ),
+            }
+          : current,
+      );
     },
     onError: (err) => toast.error(err.message),
   });

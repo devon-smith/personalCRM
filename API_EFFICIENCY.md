@@ -136,6 +136,7 @@
 - Removed the unused stale-outbound interaction route and its raw SQL helper. Reply-priority/noise utilities remain, but direct `/api/interactions/stale-outbound` calls can no longer scan latest outbound emails across contacts.
 - Removed the unused manual user-email management route. Additional Google account emails are still captured by the OAuth callback and read by Gmail/Calendar sync, but direct `/api/user-emails` calls can no longer mutate sync-direction aliases.
 - Remaining hardcoded private response caches were converted to the shared cache helper, preserving existing max-age windows while adding consistent `Vary: Cookie` handling for authenticated route responses.
+- Nickname duplicate merge/dismiss actions now update the open suggestions cache directly instead of invalidating and immediately rescanning all contacts through `/api/contacts/nickname-matches`.
 
 ## Next Highest-Impact Efficiency Work
 
