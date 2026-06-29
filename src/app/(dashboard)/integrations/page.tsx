@@ -118,11 +118,7 @@ export default function SourcesPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const isSyncing =
-    syncGmail.isPending ||
-    importContacts.isPending ||
-    syncCalendar.isPending ||
-    importApple.isPending;
+  const isRefreshingFreshness = syncGmail.isPending || syncCalendar.isPending;
 
   // Auto-sync after adding a new Google account
   const didAutoSync = useRef(false);
@@ -139,12 +135,23 @@ export default function SourcesPage() {
     window.history.replaceState({}, "", "/integrations");
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function handleSyncAll() {
+  function handleRefreshFreshness() {
     if (!data) return;
-    syncGmail.mutate();
-    importContacts.mutate();
-    syncCalendar.mutate();
-    importApple.mutate();
+    const gmail = data.sources.find((source) => source.key === "gmail");
+    const calendar = data.sources.find((source) => source.key === "google-calendar");
+    let started = false;
+
+    if (gmail?.canSync) {
+      syncGmail.mutate();
+      started = true;
+    }
+    if (calendar?.canSync) {
+      syncCalendar.mutate();
+      started = true;
+    }
+    if (!started) {
+      toast("Connect Gmail or Calendar before refreshing");
+    }
   }
 
   // Calculate data quality score
@@ -177,8 +184,8 @@ export default function SourcesPage() {
       <div className="crm-animate-enter flex items-center justify-between">
         <h1 className="ds-display-lg">Sources</h1>
         <button
-          onClick={handleSyncAll}
-          disabled={isSyncing}
+          onClick={handleRefreshFreshness}
+          disabled={isRefreshingFreshness}
           className="flex items-center gap-2 rounded-[10px] px-4 py-2 ds-body-sm font-medium transition-colors disabled:opacity-50"
           style={{
             backgroundColor: "var(--accent-color)",
@@ -188,14 +195,14 @@ export default function SourcesPage() {
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--accent-hover)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--accent-color)"; }}
         >
-          {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Refresh all
+          {isRefreshingFreshness ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Refresh Gmail + Calendar
         </button>
       </div>
 
       <SyncRuntimeCard data={data} />
 
-      <ManualRefreshCard data={data} isSyncing={isSyncing} />
+      <ManualRefreshCard data={data} isSyncing={isRefreshingFreshness} />
 
       {/* ═══ SECTION 1 — Google Accounts ═══ */}
       <div className="crm-animate-enter mt-8 space-y-3" style={{ animationDelay: "80ms" }}>

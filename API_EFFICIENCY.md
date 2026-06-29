@@ -104,6 +104,7 @@
 - Removed the unused `/api/observations` GET route. Dashboard observations are already bundled in `/api/dashboard/bootstrap`; the focused dismiss route remains for the visible observation cards.
 - Removed orphan AI endpoints `/api/ai/relationship-health` and `/api/ai/suggest-tags`, plus their route-only Anthropic helper code. Historical `RelationshipInsight` rows remain readable by the extension, but the app no longer exposes unused direct AI compute paths.
 - Merge gaps now use `/api/data-health?scope=gaps`, avoiding the full Sources/data-health payload when the user expands that optional section. The full data-health coverage score now counts all zero-interaction contacts instead of using the capped preview list.
+- Sources page-level refresh now only runs Gmail and Calendar freshness syncs. Broad Google Contacts and Apple Contacts imports remain explicit per-source actions, preventing a routine freshness click from scanning contact providers.
 
 ## Next Highest-Impact Efficiency Work
 
