@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Activity, AlertCircle, BarChart3 } from "lucide-react";
+import { ArrowLeft, Activity, AlertCircle, BarChart3, RefreshCw } from "lucide-react";
 import type { UsageResponse } from "@/app/api/usage/route";
 
 const WINDOWS: Array<{ days: number; label: string }> = [
@@ -23,6 +23,10 @@ function formatTokens(n: number): string {
   if (n < 1000) return n.toString();
   if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
   return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+function formatLabel(value: string): string {
+  return value.replace(/_/g, " ");
 }
 
 export default function UsagePage() {
@@ -158,6 +162,70 @@ export default function UsagePage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* Sync health */}
+          <section>
+            <h2 className="ds-heading-md mb-3 flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Sync health
+            </h2>
+            {data.sync.totalRuns === 0 ? (
+              <EmptyState message="No sync runs in this window yet." />
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard
+                    label="Sync runs"
+                    value={data.sync.totalRuns.toLocaleString()}
+                  />
+                  <StatCard
+                    label="Google calls"
+                    value={data.sync.totalProviderCalls.toLocaleString()}
+                  />
+                  <StatCard
+                    label="Success rate"
+                    value={`${Math.round((data.sync.successRuns / data.sync.totalRuns) * 100)}%`}
+                  />
+                  <StatCard
+                    label="Errors"
+                    value={data.sync.errorRuns.toLocaleString()}
+                    tone={data.sync.errorRuns > 0 ? "warning" : undefined}
+                  />
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <SyncSourceTable rows={data.sync.bySource} />
+                  <SyncTriggerTable rows={data.sync.byTrigger} />
+                </div>
+
+                {data.sync.byErrorCategory.length > 0 && (
+                  <div className="crm-card p-4">
+                    <div
+                      className="text-[11px] font-medium uppercase tracking-wide"
+                      style={{ color: "var(--text-tertiary)" }}
+                    >
+                      Error categories
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {data.sync.byErrorCategory.map((row) => (
+                        <span
+                          key={row.category}
+                          className="rounded-full px-2.5 py-1 text-[12px] capitalize"
+                          style={{
+                            color: "var(--accent-coral)",
+                            backgroundColor:
+                              "color-mix(in srgb, var(--accent-coral) 12%, transparent)",
+                          }}
+                        >
+                          {formatLabel(row.category)} · {row.runCount}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -362,6 +430,116 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SyncSourceTable({
+  rows,
+}: {
+  rows: UsageResponse["sync"]["bySource"];
+}) {
+  return (
+    <div className="crm-card overflow-x-auto">
+      <table className="w-full min-w-[420px] text-[13px]">
+        <thead>
+          <tr
+            className="text-left"
+            style={{
+              color: "var(--text-tertiary)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            <th className="px-4 py-2 font-medium">Source</th>
+            <th className="px-4 py-2 font-medium text-right">Runs</th>
+            <th className="px-4 py-2 font-medium text-right">Calls</th>
+            <th className="px-4 py-2 font-medium text-right">Errors</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={row.source}
+              style={{ borderBottom: "1px solid var(--border-subtle)" }}
+            >
+              <td className="px-4 py-2.5 capitalize">{row.source}</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {row.runCount.toLocaleString()}
+              </td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {row.providerCalls.toLocaleString()}
+              </td>
+              <td
+                className="px-4 py-2.5 text-right tabular-nums"
+                style={{
+                  color:
+                    row.errorRuns > 0
+                      ? "var(--accent-coral)"
+                      : "var(--text-tertiary)",
+                }}
+              >
+                {row.errorRuns.toLocaleString()}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SyncTriggerTable({
+  rows,
+}: {
+  rows: UsageResponse["sync"]["byTrigger"];
+}) {
+  return (
+    <div className="crm-card overflow-x-auto">
+      <table className="w-full min-w-[420px] text-[13px]">
+        <thead>
+          <tr
+            className="text-left"
+            style={{
+              color: "var(--text-tertiary)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            <th className="px-4 py-2 font-medium">Trigger</th>
+            <th className="px-4 py-2 font-medium text-right">Runs</th>
+            <th className="px-4 py-2 font-medium text-right">Calls</th>
+            <th className="px-4 py-2 font-medium text-right">Errors</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={row.trigger}
+              style={{ borderBottom: "1px solid var(--border-subtle)" }}
+            >
+              <td className="px-4 py-2.5 capitalize">
+                {formatLabel(row.trigger)}
+              </td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {row.runCount.toLocaleString()}
+              </td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {row.providerCalls.toLocaleString()}
+              </td>
+              <td
+                className="px-4 py-2.5 text-right tabular-nums"
+                style={{
+                  color:
+                    row.errorRuns > 0
+                      ? "var(--accent-coral)"
+                      : "var(--text-tertiary)",
+                }}
+              >
+                {row.errorRuns.toLocaleString()}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function formatDay(date: string): string {
   return new Intl.DateTimeFormat("en", {
     month: "short",
@@ -376,7 +554,7 @@ function StatCard({
 }: {
   label: string;
   value: string;
-  tone?: "primary";
+  tone?: "primary" | "warning";
 }) {
   return (
     <div className="crm-card p-4">
@@ -389,7 +567,12 @@ function StatCard({
       <p
         className="ds-display-md mt-1 tabular-nums"
         style={{
-          color: tone === "primary" ? "var(--text-primary)" : "var(--text-secondary)",
+          color:
+            tone === "primary"
+              ? "var(--text-primary)"
+              : tone === "warning"
+                ? "var(--accent-coral)"
+                : "var(--text-secondary)",
         }}
       >
         {value}
@@ -398,16 +581,17 @@ function StatCard({
   );
 }
 
-function EmptyState() {
+function EmptyState({
+  message = "No API usage in this window yet. Generate a draft or run a query to populate.",
+}: {
+  message?: string;
+}) {
   return (
     <div
       className="crm-card p-6 text-center"
       style={{ color: "var(--text-tertiary)" }}
     >
-      <p className="ds-body-sm">
-        No API usage in this window yet. Generate a draft or run a query
-        to populate.
-      </p>
+      <p className="ds-body-sm">{message}</p>
     </div>
   );
 }

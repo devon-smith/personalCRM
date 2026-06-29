@@ -68,6 +68,36 @@ export interface UsageResponse {
     tokensOut: number;
     estimatedCostUsd: number;
   }>;
+  sync: {
+    totalRuns: number;
+    totalProviderCalls: number;
+    totalItemsProcessed: number;
+    successRuns: number;
+    errorRuns: number;
+    runningRuns: number;
+    bySource: Array<{
+      source: string;
+      runCount: number;
+      successRuns: number;
+      errorRuns: number;
+      providerCalls: number;
+      itemsProcessed: number;
+    }>;
+    byTrigger: Array<{
+      trigger: string;
+      runCount: number;
+      errorRuns: number;
+      providerCalls: number;
+    }>;
+    byStatus: Array<{
+      status: string;
+      runCount: number;
+    }>;
+    byErrorCategory: Array<{
+      category: string;
+      runCount: number;
+    }>;
+  };
 }
 
 export async function GET(request: Request) {
@@ -83,7 +113,7 @@ export async function GET(request: Request) {
   const windowEnd = new Date();
   const windowStart = new Date(windowEnd.getTime() - days * 24 * 60 * 60 * 1000);
 
-  const [rows, dailyRows] = await Promise.all([
+  const [rows, dailyRows, syncRows] = await Promise.all([
     prisma.aIGenerationLog.groupBy({
       by: ["feature", "model"],
       where: {
@@ -114,6 +144,32 @@ export async function GET(request: Request) {
         AND "createdAt" <= ${windowEnd}
       GROUP BY day, model
       ORDER BY day DESC
+    `,
+    prisma.$queryRaw<
+      Array<{
+        source: string;
+        trigger: string;
+        status: string;
+        error_category: string | null;
+        run_count: bigint;
+        provider_calls: bigint | null;
+        items_processed: bigint | null;
+      }>
+    >`
+      SELECT
+        source,
+        trigger,
+        status,
+        "metadata"->>'errorCategory' AS error_category,
+        COUNT(*)::bigint AS run_count,
+        COALESCE(SUM("providerCalls"), 0)::bigint AS provider_calls,
+        COALESCE(SUM("itemsProcessed"), 0)::bigint AS items_processed
+      FROM "SyncRun"
+      WHERE "userId" = ${session.user.id}
+        AND "startedAt" >= ${windowStart}
+        AND "startedAt" <= ${windowEnd}
+      GROUP BY source, trigger, status, error_category
+      ORDER BY source ASC, trigger ASC, status ASC
     `,
   ]);
 
@@ -278,6 +334,7 @@ export async function GET(request: Request) {
     }),
     { calls: 0, in: 0, out: 0, cost: 0 },
   );
+  const sync = buildSyncUsage(syncRows);
 
   const response: UsageResponse = {
     windowDays: days,
@@ -292,11 +349,117 @@ export async function GET(request: Request) {
     byModel,
     byProvider,
     byDay,
+    sync,
   };
 
   return NextResponse.json(response, {
     headers: privateCacheHeaders(5 * 60, 30 * 60),
   });
+}
+
+function buildSyncUsage(
+  rows: Array<{
+    source: string;
+    trigger: string;
+    status: string;
+    error_category: string | null;
+    run_count: bigint;
+    provider_calls: bigint | null;
+    items_processed: bigint | null;
+  }>,
+): UsageResponse["sync"] {
+  const sourceMap = new Map<
+    string,
+    {
+      runCount: number;
+      successRuns: number;
+      errorRuns: number;
+      providerCalls: number;
+      itemsProcessed: number;
+    }
+  >();
+  const triggerMap = new Map<
+    string,
+    { runCount: number; errorRuns: number; providerCalls: number }
+  >();
+  const statusMap = new Map<string, number>();
+  const errorMap = new Map<string, number>();
+
+  let totalRuns = 0;
+  let totalProviderCalls = 0;
+  let totalItemsProcessed = 0;
+  let successRuns = 0;
+  let errorRuns = 0;
+  let runningRuns = 0;
+
+  for (const row of rows) {
+    const runCount = Number(row.run_count);
+    const providerCalls = Number(row.provider_calls ?? 0);
+    const itemsProcessed = Number(row.items_processed ?? 0);
+    const isSuccess = row.status === "success";
+    const isError = row.status === "error";
+    const isRunning = row.status === "running";
+
+    totalRuns += runCount;
+    totalProviderCalls += providerCalls;
+    totalItemsProcessed += itemsProcessed;
+    if (isSuccess) successRuns += runCount;
+    if (isError) errorRuns += runCount;
+    if (isRunning) runningRuns += runCount;
+
+    const source = sourceMap.get(row.source) ?? {
+      runCount: 0,
+      successRuns: 0,
+      errorRuns: 0,
+      providerCalls: 0,
+      itemsProcessed: 0,
+    };
+    sourceMap.set(row.source, {
+      runCount: source.runCount + runCount,
+      successRuns: source.successRuns + (isSuccess ? runCount : 0),
+      errorRuns: source.errorRuns + (isError ? runCount : 0),
+      providerCalls: source.providerCalls + providerCalls,
+      itemsProcessed: source.itemsProcessed + itemsProcessed,
+    });
+
+    const trigger = triggerMap.get(row.trigger) ?? {
+      runCount: 0,
+      errorRuns: 0,
+      providerCalls: 0,
+    };
+    triggerMap.set(row.trigger, {
+      runCount: trigger.runCount + runCount,
+      errorRuns: trigger.errorRuns + (isError ? runCount : 0),
+      providerCalls: trigger.providerCalls + providerCalls,
+    });
+
+    statusMap.set(row.status, (statusMap.get(row.status) ?? 0) + runCount);
+    if (isError) {
+      const category = row.error_category ?? "uncategorized";
+      errorMap.set(category, (errorMap.get(category) ?? 0) + runCount);
+    }
+  }
+
+  return {
+    totalRuns,
+    totalProviderCalls,
+    totalItemsProcessed,
+    successRuns,
+    errorRuns,
+    runningRuns,
+    bySource: Array.from(sourceMap.entries())
+      .map(([source, aggregate]) => ({ source, ...aggregate }))
+      .sort((a, b) => b.providerCalls - a.providerCalls),
+    byTrigger: Array.from(triggerMap.entries())
+      .map(([trigger, aggregate]) => ({ trigger, ...aggregate }))
+      .sort((a, b) => b.providerCalls - a.providerCalls),
+    byStatus: Array.from(statusMap.entries())
+      .map(([status, runCount]) => ({ status, runCount }))
+      .sort((a, b) => b.runCount - a.runCount),
+    byErrorCategory: Array.from(errorMap.entries())
+      .map(([category, runCount]) => ({ category, runCount }))
+      .sort((a, b) => b.runCount - a.runCount),
+  };
 }
 
 function providerLabel(provider: string): string {
