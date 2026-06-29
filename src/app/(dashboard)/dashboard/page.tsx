@@ -18,7 +18,6 @@ import { getAvatarColor, getInitials } from "@/lib/avatar";
 import { formatDistanceToNow } from "@/lib/date-utils";
 import { NetworkQueryBox } from "@/components/network-query/network-query-box";
 import { AssistantObservations } from "@/components/dashboard/assistant-observations";
-import { SyncAlerts } from "@/components/dashboard/sync-alerts";
 import type { DashboardBootstrapResponse } from "@/app/api/dashboard/bootstrap/route";
 
 type Birthday = DashboardBootstrapResponse["birthdays"][number];
@@ -180,7 +179,6 @@ export default function DashboardPage() {
 
       <NetworkQueryBox submitTarget="ask-page" />
       <AssistantObservations />
-      <SyncAlerts />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <main className="space-y-4">
