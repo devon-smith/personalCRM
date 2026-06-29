@@ -185,6 +185,7 @@
 - Circle intelligence now dedupes in-flight generation per user/circle, counts full membership with aggregate DB queries, and sends only the 24 most recently active members into the Haiku prompt. Large circles keep accurate overview counts without turning one Insights open into an unbounded interaction/prompt read.
 - Draft variant generation now dedupes in-flight requests and reuses a two-minute per-draft/current-content result. Repeated mobile taps or retry loops return the existing variants instead of rebuilding voice context, rerunning Voyage retrieval, and spending another Sonnet call.
 - Workspace draft creation now dedupes in-flight generation per inbox item or draft fingerprint. Concurrent "Draft reply" or composer opens share one Sonnet generation/write instead of racing past the recent-draft check and creating duplicate workspace drafts.
+- Draft refinement streaming now rejects concurrent refinements for the same draft with a 409 before building voice context or opening a Sonnet stream. This prevents overlapping SSE requests from racing the version history write or spending duplicate model calls.
 
 ## Next Highest-Impact Efficiency Work
 

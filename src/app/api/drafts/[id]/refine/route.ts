@@ -16,6 +16,8 @@ import {
 import { buildRefineContext } from "@/lib/drafts/context";
 import { logAIGeneration } from "@/lib/ai-generation-log";
 
+const inFlightDraftRefinements = new Set<string>();
+
 /**
  * POST /api/drafts/[id]/refine?stream=1
  *
@@ -79,6 +81,14 @@ export async function POST(
   const current = currentVersion(versions);
   const currentContent = current?.content ?? draft.content;
   const currentSubject = current?.subjectLine ?? draft.subjectLine ?? null;
+  const refinementKey = `${userId}:${draft.id}`;
+  if (inFlightDraftRefinements.has(refinementKey)) {
+    return NextResponse.json(
+      { error: "A refinement is already in progress for this draft" },
+      { status: 409 },
+    );
+  }
+  inFlightDraftRefinements.add(refinementKey);
 
   // Build context up-front — we want a snapshot from BEFORE the
   // stream starts so the SSE flow stays purely about token delivery.
@@ -94,6 +104,7 @@ export async function POST(
       queryText: `${currentContent.slice(0, 600)} ${userRequest}`,
     });
   } catch (err) {
+    inFlightDraftRefinements.delete(refinementKey);
     return NextResponse.json(
       {
         error: "Couldn't load draft context",
@@ -112,6 +123,7 @@ export async function POST(
     chat,
     versions,
     context,
+    refinementKey,
   });
 }
 
@@ -124,6 +136,7 @@ interface StreamArgs {
   chat: RefinementChatMessage[];
   versions: WorkspaceVersion[];
   context: Awaited<ReturnType<typeof buildRefineContext>>;
+  refinementKey: string;
 }
 
 function streamResponse(args: StreamArgs): Response {
@@ -223,6 +236,7 @@ function streamResponse(args: StreamArgs): Response {
         const msg = err instanceof Error ? err.message : String(err);
         send("error", { message: msg });
       } finally {
+        inFlightDraftRefinements.delete(args.refinementKey);
         controller.close();
       }
     },
