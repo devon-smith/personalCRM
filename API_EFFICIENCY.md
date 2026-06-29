@@ -141,6 +141,7 @@
 - Contact updates now merge the PATCH response into the open contact detail and summary caches instead of refetching those focused reads immediately; the broader contact-list invalidation remains for filtered People views.
 - Contact detail, summary, and reply-context reads now return short private cache headers, absorbing immediate reopen/reload cases for the selected person without changing mutation behavior.
 - Contact alias/email/phone edits now merge the alias-route response into the open contact detail and summary caches, avoiding stale refetches against short-cached contact reads.
+- Contact deletes now remove the focused contact detail and summary query caches instead of invalidating them, so deleted contacts cannot be repopulated from short-cached detail responses.
 
 ## Next Highest-Impact Efficiency Work
 

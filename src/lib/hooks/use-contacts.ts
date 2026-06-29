@@ -118,8 +118,8 @@ export function useDeleteContact() {
       fetchJson(`/api/contacts/${id}`, { method: "DELETE" }),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["contact", id] });
-      queryClient.invalidateQueries({ queryKey: ["contact-summary", id] });
+      queryClient.removeQueries({ queryKey: ["contact", id], exact: true });
+      queryClient.removeQueries({ queryKey: ["contact-summary", id], exact: true });
     },
   });
 }
