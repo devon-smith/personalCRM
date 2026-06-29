@@ -49,6 +49,7 @@ import inboxDraftPrepopulate from "./tasks/inbox-draft-prepopulate.js";
 import inboxClassify from "./tasks/inbox-classify.js";
 import extractLifeEvents from "./tasks/extract-life-events.js";
 import feedAggregate from "./tasks/feed-aggregate.js";
+import syncRunRetention from "./tasks/sync-run-retention.js";
 
 // ─── WORKER_DATABASE_URL — direct connection only ──────────────────────
 // graphile-worker uses named prepared statements internally. Postgres
@@ -92,6 +93,7 @@ const taskList = {
   "inbox-classify": inboxClassify,
   "extract-life-events": extractLifeEvents,
   "feed-aggregate": feedAggregate,
+  "sync-run-retention": syncRunRetention,
 };
 
 // Crontab entries follow standard cron syntax; the third comma-separated
@@ -161,6 +163,9 @@ const crontab = `
 # LifeEventSignal. Runs right after the life-event extractor so the
 # /feed page reflects the latest signals by the morning brief.
 30 4 * * * feed-aggregate
+# Daily at 01:45 UTC: retain recent SyncRun telemetry and mark
+# abandoned "running" rows from interrupted sync processes.
+45 1 * * * sync-run-retention
 `.trim();
 
 async function main() {

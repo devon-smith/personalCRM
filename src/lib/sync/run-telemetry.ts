@@ -4,6 +4,12 @@ import { withProviderCallCounter } from "@/lib/sync/provider-call-counter";
 
 export type SyncSource = "gmail" | "calendar";
 export type SyncTrigger = "cron" | "manual" | "webhook" | "browser_fallback";
+export type SyncErrorCategory =
+  | "auth"
+  | "network"
+  | "provider"
+  | "rate_limit"
+  | "unknown";
 
 interface SyncRunSummary {
   itemsProcessed?: number | null;
@@ -74,6 +80,8 @@ export async function recordSyncRun<T>({
     return result;
   } catch (error) {
     const finishedAt = new Date();
+    const errorMessage = formatError(error);
+    const errorCategory = classifySyncError(error);
     if (runId) {
       await prisma.syncRun
         .update({
@@ -82,7 +90,8 @@ export async function recordSyncRun<T>({
             status: "error",
             finishedAt,
             durationMs: finishedAt.getTime() - startedAt.getTime(),
-            error: formatError(error).slice(0, 2000),
+            error: errorMessage.slice(0, 2000),
+            metadata: mergeErrorMetadata(metadata, errorCategory),
           },
         })
         .catch((updateError) => {
@@ -100,6 +109,54 @@ export function parseSyncTrigger(value: unknown): SyncTrigger {
   return "cron";
 }
 
+export function classifySyncError(error: unknown): SyncErrorCategory {
+  const message = formatError(error).toLowerCase();
+
+  if (/\b429\b/.test(message) || message.includes("rate limit")) {
+    return "rate_limit";
+  }
+  if (
+    /\b(401|403)\b/.test(message) ||
+    message.includes("invalid_grant") ||
+    message.includes("access denied") ||
+    message.includes("no valid google access token") ||
+    message.includes("reconnect") ||
+    message.includes("unauthorized") ||
+    message.includes("forbidden")
+  ) {
+    return "auth";
+  }
+  if (
+    message.includes("network") ||
+    message.includes("fetch failed") ||
+    message.includes("econn") ||
+    message.includes("timed out") ||
+    message.includes("timeout")
+  ) {
+    return "network";
+  }
+  if (
+    /\b5\d\d\b/.test(message) ||
+    message.includes("gmail api error") ||
+    message.includes("calendar api error") ||
+    message.includes("google")
+  ) {
+    return "provider";
+  }
+  return "unknown";
+}
+
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function mergeErrorMetadata(
+  metadata: Prisma.InputJsonValue | undefined,
+  errorCategory: SyncErrorCategory,
+): Prisma.InputJsonValue {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    return { ...metadata, errorCategory };
+  }
+  if (metadata === undefined) return { errorCategory };
+  return { errorCategory, previousMetadata: metadata };
 }

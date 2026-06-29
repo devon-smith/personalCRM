@@ -25,11 +25,12 @@
 - Sources now surfaces sync runtime health from the existing data-health payload: worker status, browser fallback mode, and Gmail/Calendar freshness.
 - API usage now rolls up existing `AIGenerationLog` rows by provider and by day, so Settings can show Anthropic/Voyage/OpenAI spend trends without making any provider calls.
 - Gmail/Calendar syncs now write durable `SyncRun` telemetry across cron, webhook, manual, and browser-fallback triggers, including per-run Google provider-call counts. Webhook worker jobs honor their `userId` payload, so a single mailbox notification no longer scans every connected user.
+- Sync-run telemetry now has a daily retention worker and structured error categories for auth, rate-limit, provider, network, and unknown failures.
 
 ## Next Highest-Impact Efficiency Work
 
-- Add provider-call telemetry outside `AIGenerationLog`: embedding batch counts, non-sync Google requests, and request-level error/rate-limit categories.
-- Add a small sync-run retention policy once production volume is known, for example keep 30-90 days of successful runs and all recent failures.
+- Add provider-call telemetry outside `AIGenerationLog`: embedding batch counts and non-sync Google requests.
+- Add request-level status/error aggregation to the Usage page so rate-limit/auth churn is visible without inspecting individual SyncRun rows.
 
 ## Product Polish Before App Finalization
 
