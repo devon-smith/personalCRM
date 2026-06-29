@@ -61,6 +61,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 };
 
 const ACCEPTED_EXT = ".txt,.md,.markdown,.pdf,.docx";
+const VOICE_BOOTSTRAP_STALE_MS = 5 * 60 * 1000;
 
 export default function VoiceSettingsPage() {
   const qc = useQueryClient();
@@ -76,6 +77,8 @@ export default function VoiceSettingsPage() {
       if (!res.ok) throw new Error("Failed to load voice settings");
       return res.json();
     },
+    staleTime: VOICE_BOOTSTRAP_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 
   const reindex = useMutation({
