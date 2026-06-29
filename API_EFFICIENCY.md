@@ -80,6 +80,7 @@
 - Retired the Feed runtime surface: removed the `NEXT_PUBLIC_ENABLE_FEED` flag, made `/feed` and `/api/feed*` fail closed, removed extension feed scanning, and removed the scheduled `feed-aggregate` worker path. Raw life-event extraction remains because dashboard observations still use those signals.
 - Retired the WhatsApp runtime surface: removed the `NEXT_PUBLIC_ENABLE_WHATSAPP` flag, removed the Sources WhatsApp setup card, made `/api/whatsapp/*` fail closed, and removed the WhatsApp voice-corpus embedding pass.
 - Retired the iMessage runtime surface: removed the `NEXT_PUBLIC_ENABLE_IMESSAGE` flag, removed Sources/People/Settings iMessage sync UI, made `/api/imessage*` fail closed, and removed iMessage status/source checks from health and data-health payloads.
+- Removed the unused Mac `chat.db` reader, iMessage sync package, and iMessage backfill branch after verifying no active app, worker, script, or test reference remained. Gmail remains the only maintained message-ingestion backfill path.
 
 ## Next Highest-Impact Efficiency Work
 
