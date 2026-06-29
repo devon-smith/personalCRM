@@ -47,11 +47,16 @@ interface InboxItemData {
   responseConfidence?: number | null;
   responseReason?: string | null;
   responseCategory?: string | null;
+  needsResponse?: boolean;
 }
 
 interface InboxItemsData {
   items: InboxItemData[];
   totalOpen: number;
+  groupChats?: InboxItemData[];
+  totalGroupChats?: number;
+  filteredOut?: number;
+  view?: "needs-reply" | "all";
   needsReplyCount?: number;
   allInboundCount?: number;
 }
@@ -211,6 +216,49 @@ interface ReplyQueueBootstrapData {
   inbox: InboxItemsData;
   drafts: { drafts: Draft[] };
   dataHealth: DataHealthResponse;
+}
+
+function removeInboxItem(
+  data: InboxItemsData | undefined,
+  itemId: string,
+): InboxItemsData | undefined {
+  if (!data) return data;
+  const itemWasOpen = data.items.some((item) => item.id === itemId);
+  const groupChats = data.groupChats ?? [];
+  const groupWasOpen = groupChats.some((item) => item.id === itemId);
+  return {
+    ...data,
+    items: data.items.filter((item) => item.id !== itemId),
+    totalOpen: itemWasOpen ? Math.max(data.totalOpen - 1, 0) : data.totalOpen,
+    needsReplyCount: itemWasOpen && data.needsReplyCount !== undefined
+      ? Math.max(data.needsReplyCount - 1, 0)
+      : data.needsReplyCount,
+    groupChats: groupChats.filter((item) => item.id !== itemId),
+    totalGroupChats: groupWasOpen
+      ? Math.max((data.totalGroupChats ?? groupChats.length) - 1, 0)
+      : data.totalGroupChats,
+  };
+}
+
+function markInboxItemNoReply(
+  data: InboxItemsData | undefined,
+  itemId: string,
+): InboxItemsData | undefined {
+  if (!data) return data;
+  const shouldHide = data.view !== "all";
+  if (shouldHide) {
+    const removed = removeInboxItem(data, itemId);
+    return removed
+      ? { ...removed, filteredOut: (data.filteredOut ?? 0) + 1 }
+      : removed;
+  }
+  const updateItem = (item: InboxItemData) =>
+    item.id === itemId ? { ...item, needsResponse: false } : item;
+  return {
+    ...data,
+    items: data.items.map(updateItem),
+    groupChats: (data.groupChats ?? []).map(updateItem),
+  };
 }
 
 const STATUS_STYLES = {
@@ -467,11 +515,43 @@ export function ReplyQueueConsole() {
       });
       if (!res.ok) throw new Error("Failed to resolve item");
     },
+    onMutate: async (item) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ["reply-queue-bootstrap"] }),
+        queryClient.cancelQueries({ queryKey: ["inbox-items"] }),
+      ]);
+      const replyQueueSnapshots =
+        queryClient.getQueriesData<ReplyQueueBootstrapData>({
+          queryKey: ["reply-queue-bootstrap"],
+        });
+      const inboxSnapshots = queryClient.getQueriesData<InboxItemsData>({
+        queryKey: ["inbox-items"],
+      });
+      queryClient.setQueriesData<ReplyQueueBootstrapData>(
+        { queryKey: ["reply-queue-bootstrap"] },
+        (current) => current
+          ? { ...current, inbox: removeInboxItem(current.inbox, item.id) ?? current.inbox }
+          : current,
+      );
+      queryClient.setQueriesData<InboxItemsData>(
+        { queryKey: ["inbox-items"] },
+        (current) => removeInboxItem(current, item.id),
+      );
+      return { replyQueueSnapshots, inboxSnapshots };
+    },
     onSuccess: () => {
-      invalidateWorkflow();
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success("Inbox item resolved");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err, _item, context) => {
+      context?.replyQueueSnapshots.forEach(([queryKey, data]) => {
+        queryClient.setQueryData(queryKey, data);
+      });
+      context?.inboxSnapshots.forEach(([queryKey, data]) => {
+        queryClient.setQueryData(queryKey, data);
+      });
+      toast.error(err.message);
+    },
   });
 
   const markNoReplyMutation = useMutation({
@@ -483,11 +563,43 @@ export function ReplyQueueConsole() {
       });
       if (!res.ok) throw new Error("Failed to label item");
     },
+    onMutate: async (item) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ["reply-queue-bootstrap"] }),
+        queryClient.cancelQueries({ queryKey: ["inbox-items"] }),
+      ]);
+      const replyQueueSnapshots =
+        queryClient.getQueriesData<ReplyQueueBootstrapData>({
+          queryKey: ["reply-queue-bootstrap"],
+        });
+      const inboxSnapshots = queryClient.getQueriesData<InboxItemsData>({
+        queryKey: ["inbox-items"],
+      });
+      queryClient.setQueriesData<ReplyQueueBootstrapData>(
+        { queryKey: ["reply-queue-bootstrap"] },
+        (current) => current
+          ? { ...current, inbox: removeInboxItem(current.inbox, item.id) ?? current.inbox }
+          : current,
+      );
+      queryClient.setQueriesData<InboxItemsData>(
+        { queryKey: ["inbox-items"] },
+        (current) => markInboxItemNoReply(current, item.id),
+      );
+      return { replyQueueSnapshots, inboxSnapshots };
+    },
     onSuccess: () => {
-      invalidateWorkflow();
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       toast("Marked as no reply needed");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err, _item, context) => {
+      context?.replyQueueSnapshots.forEach(([queryKey, data]) => {
+        queryClient.setQueryData(queryKey, data);
+      });
+      context?.inboxSnapshots.forEach(([queryKey, data]) => {
+        queryClient.setQueryData(queryKey, data);
+      });
+      toast.error(err.message);
+    },
   });
 
   const createDraftMutation = useMutation({
