@@ -66,6 +66,7 @@
 - LinkedIn circle assignment now uses `/api/circles?scope=summary` for selector options instead of loading every contact in every circle just to populate a dropdown.
 - Manual merge contact pickers now run debounced, capped server-side contact searches instead of fetching the default contact list when the manual merge panel opens.
 - Removed the unused generic sightings review component and converted `/api/sightings` into a fail-closed legacy stub. Current duplicate/contact-sighting review flows use the Merge and LinkedIn review surfaces instead.
+- Converted unused legacy `/api/action-items` routes into fail-closed stubs so the old dashboard action-item API cannot duplicate Gmail action extraction or mutate stale action rows.
 
 ## Next Highest-Impact Efficiency Work
 
