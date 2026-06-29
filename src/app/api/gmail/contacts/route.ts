@@ -4,6 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { fetchGoogleContacts } from "@/lib/gmail/contacts-import";
 import { processBatch, type SightingInput } from "@/lib/sightings";
 
+interface GoogleContactsImportContact {
+  name: string;
+  email: string | null;
+  additionalEmails?: string[];
+  phone: string | null;
+  company: string | null;
+  role: string | null;
+  birthday: string | null;
+  circleId?: string;
+}
+
 /** GET — Preview Google Contacts (don't import yet) */
 export async function GET() {
   const session = await auth();
@@ -23,36 +34,33 @@ export async function GET() {
   }
 }
 
-/** POST — Import selected Google Contacts via identity resolution */
+/** POST — Import Google Contacts via identity resolution. If the
+ * caller provides `contacts`, imports that selected subset; otherwise
+ * fetches Google Contacts server-side so large contact payloads do not
+ * round-trip through the browser. */
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await req.json()) as {
-    contacts: Array<{
-      name: string;
-      email: string | null;
-      additionalEmails?: string[];
-      phone: string | null;
-      company: string | null;
-      role: string | null;
-      birthday: string | null;
-      circleId?: string;
-    }>;
+  const body = (await req.json().catch(() => ({}))) as {
+    contacts?: GoogleContactsImportContact[];
   };
+  const contacts = Array.isArray(body.contacts)
+    ? body.contacts
+    : await fetchGoogleContacts(session.user.id, 2000);
 
-  if (!body.contacts || body.contacts.length === 0) {
+  if (contacts.length === 0) {
     return NextResponse.json({ error: "No contacts provided" }, { status: 400 });
   }
 
-  if (body.contacts.length > 2000) {
+  if (contacts.length > 2000) {
     return NextResponse.json({ error: "Maximum 2000 contacts per import" }, { status: 400 });
   }
 
   // Convert to sighting inputs
-  const sightings: SightingInput[] = body.contacts.map((c) => ({
+  const sightings: SightingInput[] = contacts.map((c) => ({
     source: "GOOGLE_CONTACTS" as const,
     externalId: c.email ?? `gcontact:${c.name}`,
     name: c.name,
@@ -69,7 +77,7 @@ export async function POST(req: Request) {
   const batch = await processBatch(session.user.id, sightings);
 
   // Save additional emails from Google Contacts
-  const contactsWithExtras = body.contacts.filter((c) => c.additionalEmails?.length);
+  const contactsWithExtras = contacts.filter((c) => c.additionalEmails?.length);
   if (contactsWithExtras.length > 0) {
     const allContactsForEmails = await prisma.contact.findMany({
       where: { userId: session.user.id },
@@ -106,7 +114,7 @@ export async function POST(req: Request) {
   }
 
   // Save birthdays from Google Contacts for contacts that don't already have one
-  const contactsWithBirthdays = body.contacts.filter((c) => c.birthday);
+  const contactsWithBirthdays = contacts.filter((c) => c.birthday);
   if (contactsWithBirthdays.length > 0) {
     const allContacts = await prisma.contact.findMany({
       where: { userId: session.user.id, birthday: null },

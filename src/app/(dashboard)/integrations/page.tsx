@@ -67,13 +67,8 @@ export default function SourcesPage() {
 
   const importContacts = useMutation({
     mutationFn: async () => {
-      const previewRes = await fetch("/api/gmail/contacts");
-      if (!previewRes.ok) throw new Error("Failed to fetch Google Contacts");
-      const { contacts } = await previewRes.json();
       const importRes = await fetch("/api/gmail/contacts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contacts }),
       });
       if (!importRes.ok) throw new Error("Failed to import contacts");
       return importRes.json();
