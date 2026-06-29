@@ -32,6 +32,8 @@ export interface CircleWithContacts {
   googleSyncError?: string | null;
 }
 
+export type CircleSummary = Omit<CircleWithContacts, "contacts" | "health">;
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {

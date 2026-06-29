@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -18,11 +18,44 @@ function computeWarmth(
   return "cold";
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const summaryOnly = req.nextUrl.searchParams.get("scope") === "summary";
+
+    if (summaryOnly) {
+      const circles = await prisma.circle.findMany({
+        where: { userId: session.user.id },
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          icon: true,
+          followUpDays: true,
+          sortOrder: true,
+          isDefault: true,
+          googleSyncEnabled: true,
+          googleSyncedAt: true,
+          googleSyncError: true,
+        },
+        orderBy: { sortOrder: "asc" },
+      });
+
+      return NextResponse.json(
+        circles.map((circle) => ({
+          ...circle,
+          googleSyncedAt: circle.googleSyncedAt?.toISOString() ?? null,
+        })),
+        {
+          headers: {
+            "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
+          },
+        },
+      );
     }
 
     const circles = await prisma.circle.findMany({

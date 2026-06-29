@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import type { LinkedInImportResult } from "@/app/api/import/linkedin/route";
-import type { CircleWithContacts } from "@/lib/hooks/use-circles";
+import type { CircleSummary } from "@/lib/hooks/use-circles";
 
 interface LinkedInRow {
   firstName: string;
@@ -546,13 +546,14 @@ function CircleAssignmentWizard({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
-  const { data: circles } = useQuery<CircleWithContacts[]>({
-    queryKey: ["circles"],
+  const { data: circles } = useQuery<CircleSummary[]>({
+    queryKey: ["circles", "summary"],
     queryFn: async () => {
-      const res = await fetch("/api/circles");
+      const res = await fetch("/api/circles?scope=summary");
       if (!res.ok) throw new Error("Failed to fetch circles");
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   // Group new contacts by company (only the ones just created)
@@ -775,7 +776,7 @@ function CircleAssignmentWizard({
  */
 function buildCompanyGroups(
   rows: LinkedInRow[],
-  circles: CircleWithContacts[],
+  circles: CircleSummary[],
 ): CompanyGroup[] {
   const counts = new Map<string, { original: string; count: number }>();
 
