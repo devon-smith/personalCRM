@@ -3,7 +3,12 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import {
   ArrowLeft,
   Loader2,
@@ -48,6 +53,7 @@ interface DraftRow {
   isWorkspaceDraft: boolean;
   inboxItemId: string | null;
   gmailDraftId: string | null;
+  gmailThreadId: string | null;
 }
 
 interface ContactSnapshot {
@@ -110,6 +116,16 @@ interface DraftVariant {
   title: string;
   content: string;
   subjectLine: string | null;
+}
+
+interface SaveVersionResponse {
+  version: WorkspaceVersion;
+}
+
+interface SaveToGmailResponse {
+  gmailDraftId: string;
+  gmailThreadId: string | null;
+  deepLinkUrl: string;
 }
 
 export default function ComposePage({
@@ -178,10 +194,10 @@ export default function ComposePage({
         body: JSON.stringify(args),
       });
       if (!res.ok) throw new Error("Save failed");
-      return res.json();
+      return res.json() as Promise<SaveVersionResponse>;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["draft-workspace", id] });
+    onSuccess: ({ version }) => {
+      patchWorkspaceVersion(qc, id, version);
     },
     onError: () => toast.error("Couldn't save"),
   });
@@ -202,11 +218,25 @@ export default function ComposePage({
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "Gmail save failed");
       }
-      return res.json() as Promise<{ deepLink: string }>;
+      return res.json() as Promise<SaveToGmailResponse>;
     },
     onSuccess: (result) => {
+      qc.setQueryData<WorkspaceResponse>(
+        ["draft-workspace", id],
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                draft: {
+                  ...previous.draft,
+                  gmailDraftId: result.gmailDraftId,
+                  gmailThreadId: result.gmailThreadId,
+                },
+              }
+            : previous,
+      );
       toast.success("Saved to Gmail");
-      window.open(result.deepLink, "_blank", "noopener,noreferrer");
+      window.open(result.deepLinkUrl, "_blank", "noopener,noreferrer");
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Gmail save failed");
@@ -265,11 +295,26 @@ export default function ComposePage({
               }
             } else if (event === "complete") {
               const newVer = payload.version as WorkspaceVersion;
+              const note =
+                typeof payload.note === "string" ? payload.note : "";
+              const timestamp = new Date().toISOString();
               setEditorContent(newVer.content);
               setEditorSubject(newVer.subjectLine);
               baselineRef.current = newVer.content;
               setStreamingContent(null);
-              qc.invalidateQueries({ queryKey: ["draft-workspace", id] });
+              patchWorkspaceVersion(qc, id, newVer, [
+                {
+                  role: "user",
+                  content: trimmed,
+                  timestamp,
+                },
+                {
+                  role: "assistant",
+                  content: note,
+                  timestamp,
+                  versionId: newVer.version,
+                },
+              ]);
             } else if (event === "error") {
               throw new Error(
                 (payload.message as string) ?? "Refinement error",
@@ -663,6 +708,42 @@ export default function ComposePage({
         </aside>
       </div>
     </div>
+  );
+}
+
+function patchWorkspaceVersion(
+  queryClient: QueryClient,
+  draftId: string,
+  version: WorkspaceVersion,
+  chatTurns: RefinementChatMessage[] = [],
+) {
+  queryClient.setQueryData<WorkspaceResponse>(
+    ["draft-workspace", draftId],
+    (previous) => {
+      if (!previous) return previous;
+
+      const versions = previous.versions.some(
+        (candidate) => candidate.version === version.version,
+      )
+        ? previous.versions.map((candidate) =>
+            candidate.version === version.version ? version : candidate,
+          )
+        : [...previous.versions, version];
+
+      return {
+        ...previous,
+        draft: {
+          ...previous.draft,
+          content: version.content,
+          subjectLine: version.subjectLine,
+        },
+        versions: versions.sort((a, b) => a.version - b.version),
+        chat:
+          chatTurns.length > 0
+            ? [...previous.chat, ...chatTurns]
+            : previous.chat,
+      };
+    },
   );
 }
 

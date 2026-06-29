@@ -149,6 +149,7 @@
 - Reply Queue draft edit and save-to-Gmail actions now patch the cached draft row locally. Editing copy or saving a Gmail draft no longer refetches the full queue, inbox list, dashboard, and draft audit just to update draft metadata.
 - Voice reference deletes and instruction saves now update the cached Voice bootstrap payload locally. Uploads still refetch because parsed reference guidance is only available after server-side ingestion.
 - Dashboard Inbox resolve, bulk clear, and "doesn't need a reply" actions now keep local inbox counts/items coherent and only refresh dashboard aggregates. The inbox list no longer refetches immediately after already-applying the optimistic update.
+- Draft workspace saves and streamed refinements now patch the open workspace cache from the returned version payload instead of refetching `/api/drafts/:id/workspace`. Save-to-Gmail also patches Gmail draft metadata locally and opens the API's returned deep link field.
 
 ## Next Highest-Impact Efficiency Work
 
