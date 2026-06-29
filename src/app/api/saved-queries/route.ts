@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { privateCacheHeaders } from "@/lib/http/cache";
 import { prisma } from "@/lib/prisma";
+
+const READ_CACHE_HEADERS = privateCacheHeaders(60, 5 * 60);
 
 /**
  * GET  /api/saved-queries
@@ -12,6 +15,7 @@ import { prisma } from "@/lib/prisma";
  *     ?starred=1            → only isStarred=true
  *     ?since=<isoDate>      → createdAt >= that date
  *     ?limit=N (default 50) → cap
+ *     ?scope=summary        → omit answer/evidence for lightweight history lists
  *
  * POST /api/saved-queries
  *   Legacy save-query path. M0.x.7: every query auto-saves via
@@ -32,6 +36,7 @@ export async function GET(req: NextRequest) {
   const since = url.searchParams.get("since");
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? Math.min(200, Math.max(1, Number(limitParam))) : 50;
+  const summaryOnly = url.searchParams.get("scope") === "summary";
 
   const includeFollowUps = url.searchParams.get("includeFollowUps") === "1";
 
@@ -51,6 +56,26 @@ export async function GET(req: NextRequest) {
   // ?includeFollowUps=1 to get every row including children.
   if (!includeFollowUps) where.parentQueryId = null;
 
+  if (summaryOnly) {
+    const queries = await prisma.savedQuery.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
+      take: limit,
+      select: {
+        id: true,
+        query: true,
+        title: true,
+        isStarred: true,
+        runCount: true,
+        createdAt: true,
+        lastRunAt: true,
+        parentQueryId: true,
+        followUpCount: true,
+      },
+    });
+    return NextResponse.json({ queries }, { headers: READ_CACHE_HEADERS });
+  }
+
   const queries = await prisma.savedQuery.findMany({
     where,
     orderBy: [{ createdAt: "desc" }],
@@ -69,7 +94,7 @@ export async function GET(req: NextRequest) {
       followUpCount: true,
     },
   });
-  return NextResponse.json({ queries });
+  return NextResponse.json({ queries }, { headers: READ_CACHE_HEADERS });
 }
 
 export async function POST(req: NextRequest) {

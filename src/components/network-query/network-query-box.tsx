@@ -174,7 +174,7 @@ export function NetworkQueryBox({
   }>({
     queryKey: ["saved-queries"],
     queryFn: async () => {
-      const res = await fetch("/api/saved-queries");
+      const res = await fetch("/api/saved-queries?limit=200&scope=summary");
       if (!res.ok) return { queries: [] };
       return res.json();
     },

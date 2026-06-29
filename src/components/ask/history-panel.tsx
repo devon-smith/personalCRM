@@ -28,8 +28,8 @@ export interface SavedQueryRow {
   id: string;
   query: string;
   title: string | null;
-  answer: string | null;
-  evidence: unknown;
+  answer?: string | null;
+  evidence?: unknown;
   isStarred: boolean;
   runCount: number;
   createdAt: string;
@@ -76,7 +76,7 @@ export function HistoryPanel({
   const { data, isLoading } = useQuery<{ queries: SavedQueryRow[] }>({
     queryKey: ["saved-queries-history"],
     queryFn: async () => {
-      const res = await fetch("/api/saved-queries?limit=200");
+      const res = await fetch("/api/saved-queries?limit=200&scope=summary");
       if (!res.ok) throw new Error("Failed to load history");
       return res.json();
     },
@@ -165,7 +165,7 @@ export function HistoryPanel({
       if (starredOnly && !r.isStarred) return false;
       if (since !== null && new Date(r.createdAt).getTime() < since) return false;
       if (searchLower) {
-        const haystack = `${r.query} ${r.answer ?? ""} ${r.title ?? ""}`.toLowerCase();
+        const haystack = `${r.query} ${r.title ?? ""}`.toLowerCase();
         if (!haystack.includes(searchLower)) return false;
       }
       return true;
@@ -207,7 +207,7 @@ export function HistoryPanel({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search past questions & answers…"
+            placeholder="Search past questions…"
             className="w-full rounded-full border pl-7 pr-3 py-1.5 text-[12.5px]"
             style={{
               borderColor: "var(--border)",
@@ -307,9 +307,25 @@ function HistoryRow({
   onReRun: () => void;
 }) {
   const [expanded, setExpanded] = useState(highlighted);
-  const evidence = (row.evidence ?? null) as Evidence | null;
+  const {
+    data: detailData,
+    isLoading: detailLoading,
+    isError: detailError,
+  } = useQuery<{ savedQuery: SavedQueryRow }>({
+    queryKey: ["saved-query", row.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/saved-queries/${encodeURIComponent(row.id)}`);
+      if (!res.ok) throw new Error("Failed to load query detail");
+      return res.json();
+    },
+    enabled: expanded,
+    staleTime: 5 * 60_000,
+  });
+  const detail = detailData?.savedQuery;
+  const answer = detail?.answer ?? row.answer ?? null;
+  const evidence = (detail?.evidence ?? row.evidence ?? null) as Evidence | null;
   const ago = formatRelative(row.createdAt);
-  const hasAnswer = !!row.answer && row.answer.length > 0;
+  const hasAnswer = !!answer && answer.length > 0;
 
   return (
     <li
@@ -395,7 +411,23 @@ function HistoryRow({
 
       {expanded && (
         <div className="px-3 pb-3 pt-1 space-y-2">
-          {hasAnswer ? (
+          {detailLoading && !detail ? (
+            <p
+              className="inline-flex items-center gap-1.5 text-[12px]"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading answer…
+            </p>
+          ) : detailError ? (
+            <p
+              className="inline-flex items-center gap-1.5 text-[12px]"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              <AlertCircle className="h-3 w-3" />
+              Could not load this answer. Open the permalink to retry.
+            </p>
+          ) : hasAnswer ? (
             <p
               className="text-[12.5px] whitespace-pre-wrap"
               style={{
@@ -403,7 +435,7 @@ function HistoryRow({
                 lineHeight: 1.55,
               }}
             >
-              {row.answer}
+              {answer}
             </p>
           ) : (
             <p
