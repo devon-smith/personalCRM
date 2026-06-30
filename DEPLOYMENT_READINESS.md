@@ -18,6 +18,7 @@ This is the final punch list for calling the API-efficiency and polish pass done
 ## Vercel Deployment
 
 - Run the read-only environment audit: `npm run deploy:audit`. Use `npm run deploy:audit -- --strict` before production promotion so high-risk findings fail the command.
+- To audit a materialized Vercel env file, run `vercel env pull /tmp/personal-crm-vercel-production.env --environment=production`, then `npx tsx scripts/audit-deployment-env.ts --env-file=/tmp/personal-crm-vercel-production.env --production --strict`.
 - Deploy the Next.js web/API app to Vercel.
 - Use managed Postgres. Set `DATABASE_URL` to the pooled/serverless-safe URL.
 - Run migrations against production with `npx prisma migrate deploy`.

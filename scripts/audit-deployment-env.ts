@@ -7,14 +7,12 @@
  * Options:
  *   npx tsx scripts/audit-deployment-env.ts --strict
  *   npx tsx scripts/audit-deployment-env.ts --target-email=jaaker@stanford.edu
+ *   npx tsx scripts/audit-deployment-env.ts --env-file=/tmp/vercel.env --production
  *
  * This script reports only presence, shape, and risk signals. It does
  * not print secret values or connect to external services.
  */
 import dotenv from "dotenv";
-
-dotenv.config({ path: ".env.local", override: true, quiet: true });
-dotenv.config({ path: ".env", quiet: true });
 
 const DEFAULT_TARGET_EMAIL = "jaaker@stanford.edu";
 
@@ -30,6 +28,8 @@ interface Finding {
 interface Args {
   readonly strict: boolean;
   readonly targetEmail: string;
+  readonly envFile: string | null;
+  readonly production: boolean;
 }
 
 interface UrlSummary {
@@ -48,15 +48,33 @@ interface UrlSummary {
 function parseArgs(): Args {
   let strict = false;
   let targetEmail = DEFAULT_TARGET_EMAIL;
+  let envFile: string | null = null;
+  let production = false;
 
   for (const arg of process.argv.slice(2)) {
     if (arg === "--strict") strict = true;
-    else if (arg.startsWith("--target-email=")) {
+    else if (arg === "--production") production = true;
+    else if (arg.startsWith("--env-file=")) {
+      envFile = arg.slice("--env-file=".length).trim() || null;
+    } else if (arg.startsWith("--target-email=")) {
       targetEmail = arg.slice("--target-email=".length).trim() || DEFAULT_TARGET_EMAIL;
     }
   }
 
-  return { strict, targetEmail: targetEmail.toLowerCase() };
+  return { strict, targetEmail: targetEmail.toLowerCase(), envFile, production };
+}
+
+function loadEnv(args: Args): void {
+  if (args.envFile) {
+    dotenv.config({ path: args.envFile, override: true, quiet: true });
+  } else {
+    dotenv.config({ path: ".env.local", override: true, quiet: true });
+    dotenv.config({ path: ".env", quiet: true });
+  }
+
+  if (args.production) {
+    process.env.VERCEL_ENV ??= "production";
+  }
 }
 
 function env(name: string): string | undefined {
@@ -210,7 +228,8 @@ function buildFindings(args: Args): Finding[] {
   const findings: Finding[] = [];
   const nodeEnv = env("NODE_ENV");
   const vercelEnv = env("VERCEL_ENV");
-  const productionLike = nodeEnv === "production" || vercelEnv === "production";
+  const productionLike =
+    args.production || nodeEnv === "production" || vercelEnv === "production";
   const authUrl = env("NEXTAUTH_URL") ?? env("AUTH_URL") ?? env("NEXT_PUBLIC_APP_URL");
   const databaseUrl = env("DATABASE_URL");
   const workerDatabaseUrl = env("WORKER_DATABASE_URL");
@@ -562,6 +581,7 @@ function countFindings(findings: Finding[]) {
 
 function main() {
   const args = parseArgs();
+  loadEnv(args);
   const findings = buildFindings(args);
   const report = {
     generatedAt: new Date().toISOString(),
@@ -569,6 +589,7 @@ function main() {
     environment: {
       nodeEnv: env("NODE_ENV") ?? null,
       vercelEnv: env("VERCEL_ENV") ?? null,
+      productionOverride: args.production,
       vercelDetected: !!env("VERCEL"),
       workerRuntime: env("CRM_WORKER_RUNTIME") === "true",
     },
