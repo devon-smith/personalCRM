@@ -39,6 +39,9 @@ export async function POST(req: Request) {
       company: string | null;
       role: string | null;
       birthday: string | null;
+      city?: string | null;
+      state?: string | null;
+      country?: string | null;
       circleId?: string;
     }>;
   };
@@ -51,7 +54,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Maximum 2000 contacts per import" }, { status: 400 });
   }
 
-  // Convert to sighting inputs
+  // Convert to sighting inputs. Location comes from the People API
+  // `addresses` field (M0.x.18) — populated for contacts that have a
+  // home/work address on file.
   const sightings: SightingInput[] = body.contacts.map((c) => ({
     source: "GOOGLE_CONTACTS" as const,
     externalId: c.email ?? `gcontact:${c.name}`,
@@ -60,9 +65,9 @@ export async function POST(req: Request) {
     phone: c.phone,
     company: c.company,
     role: c.role,
-    city: null,
-    state: null,
-    country: null,
+    city: c.city?.trim() || null,
+    state: c.state?.trim() || null,
+    country: c.country?.trim() || null,
     linkedinUrl: null,
   }));
 
