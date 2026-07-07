@@ -129,6 +129,56 @@ describe("evaluateSubnationMatch — England confidence (M0.x.19)", () => {
     );
     expect(v).toEqual({ confidence: "confirmed", matchedOn: "state" });
   });
+
+  // ── M0.x.19.1: real false positives caught against live data ──
+
+  it("EXCLUDES New Hampshire, USA (substring-collided with 'Hampshire')", () => {
+    // Dean Kamen / Ellie Kyung — state "New Hampshire" was matching the
+    // English county fragment "hampshire". The foreign-subdivision guard
+    // must exclude it even if the country is null.
+    expect(
+      evaluateSubnationMatch(
+        { city: "Manchester", state: "New Hampshire", country: null },
+        cfg,
+      ),
+    ).toBeNull();
+    expect(
+      evaluateSubnationMatch(
+        { city: null, state: "New Hampshire", country: null },
+        cfg,
+      ),
+    ).toBeNull();
+  });
+
+  it("EXCLUDES Cambridge / Massachusetts with a NULL country", () => {
+    // Dan Ariely et al. — English-city 'Cambridge' + null country slipped
+    // through the city branch; the state 'Massachusetts' must veto it.
+    expect(
+      evaluateSubnationMatch(
+        { city: "Cambridge", state: "Massachusetts", country: null },
+        cfg,
+      ),
+    ).toBeNull();
+  });
+
+  it("still preserves the county 'Hampshire' (England) as confirmed", () => {
+    // The fix must not throw out the legit English county.
+    const v = evaluateSubnationMatch(
+      { city: null, state: "Hampshire", country: "United Kingdom" },
+      cfg,
+    );
+    expect(v?.confidence).toBe("confirmed");
+  });
+
+  it("still confirms London with no state/country (legit UK default)", () => {
+    // The guard keys on foreign STATE values, so a bare English city with
+    // no other signal is still included (Albert Reynaud case).
+    const v = evaluateSubnationMatch(
+      { city: "London", state: null, country: null },
+      cfg,
+    );
+    expect(v?.confidence).toBe("confirmed");
+  });
 });
 
 describe("evaluateSubnationMatch — Scotland (sibling symmetry)", () => {

@@ -111,6 +111,23 @@ const SUBNATIONS: Record<string, SubnationConfig> = {
   },
 };
 
+/**
+ * Foreign first-level subdivisions (US states, Canadian provinces,
+ * Australian states). When a contact's `state` matches one of these,
+ * they are NOT in a UK sub-nation, full stop — exclude before any
+ * confirming/region logic runs. This closes two real false positives
+ * found against live data (M0.x.19.1):
+ *   - "New Hampshire" (US) was substring-matching the English county
+ *     "hampshire" in a confirming-region regex.
+ *   - Cambridge / Massachusetts contacts with a NULL country slipped
+ *     through the English-city branch (which permits null country for
+ *     legit UK rows like "London" with no country recorded).
+ * Anchored with \b and the full multi-word names so "New Hampshire"
+ * matches but the UK county "Hampshire" does not.
+ */
+const FOREIGN_SUBDIVISION =
+  /\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new\s*hampshire|new\s*jersey|new\s*mexico|new\s*york|north\s*carolina|north\s*dakota|ohio|oklahoma|oregon|pennsylvania|rhode\s*island|south\s*carolina|south\s*dakota|tennessee|texas|utah|vermont|virginia|washington|west\s*virginia|wisconsin|wyoming|ontario|quebec|british\s*columbia|alberta|manitoba|saskatchewan|nova\s*scotia|new\s*brunswick|newfoundland|prince\s*edward\s*island|new\s*south\s*wales|queensland|tasmania)\b/i;
+
 // ─── Country aliases for the generic path ──────────────────
 
 const COUNTRY_ALIASES: Record<string, RegExp> = {
@@ -155,6 +172,11 @@ export function evaluateSubnationMatch(
   const country = (row.country ?? "").trim();
 
   // ── Exclusions first ──
+  // A foreign first-level subdivision on the state means the contact is
+  // outside the UK regardless of city/country — excludes "New Hampshire"
+  // (substring-collided with the county "Hampshire") and Cambridge/
+  // Massachusetts rows that had a NULL country (M0.x.19.1 fix).
+  if (state && FOREIGN_SUBDIVISION.test(state)) return null;
   // A sibling region on the state (e.g. querying England, row is Scotland).
   if (state && config.siblingRegion.test(state)) return null;
   // A sibling-region city (Glasgow when querying England). This catches
