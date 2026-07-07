@@ -170,9 +170,9 @@ describe("parseFinalAnswer", () => {
 });
 
 describe("tool registry", () => {
-  it("registers all 9 tools (5 from M7.3 + 4 memory tools from M8.2)", () => {
+  it("registers all 10 tools (5 from M7.3 + 4 memory tools from M8.2 + find_contacts_by_location from M0.x.19)", () => {
     // If this number changes, double-check the system prompt still
     // describes the right tools to Claude.
-    expect(NETWORK_QUERY_TOOL_COUNT).toBe(9);
+    expect(NETWORK_QUERY_TOOL_COUNT).toBe(10);
   });
 });

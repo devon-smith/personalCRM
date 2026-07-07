@@ -13,6 +13,8 @@
  * Tools available to Claude:
  *   - search_contacts: name/company text search (uses existing trigram)
  *   - find_contacts_by_topic: semantic search via Voyage embeddings
+ *   - find_contacts_by_location: deterministic city/state/country query
+ *     with England-vs-UK confidence tiering (M0.x.19)
  *   - get_contact_profile: ContactProfile attributes (M7.1)
  *   - get_network_neighbors: ContactEdge traversal (M7.2)
  *   - get_interaction_history: recent interactions for a contact
@@ -36,6 +38,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { findNeighbors } from "./graph-traverse";
 import { searchContacts as fuzzyContactSearch } from "@/lib/search/contacts";
+import { searchContactsByLocation } from "@/lib/search/location";
 
 const NETWORK_QUERY_MODEL = "claude-sonnet-4-20250514";
 const MAX_ITERATIONS = 8;
@@ -194,6 +197,57 @@ const TOOLS: RegisteredTool[] = [
           score: h.score,
         })),
         summary: `Found ${hits.length} contact${hits.length === 1 ? "" : "s"} relevant to "${topic}"`,
+      };
+    },
+  },
+  {
+    name: "find_contacts_by_location",
+    description:
+      "Find contacts who live in a place (city, region, or country) by querying their structured city/state/country fields directly — deterministic, not semantic. USE THIS for any 'who lives in X' / 'who's in X' / 'who's based in X' question. Handles sub-national regions with CONFIDENCE tiering: asking for 'England' returns `confirmed` matches (state or an English city pins it) separately from `region_unknown` matches (country is UK but the sub-nation isn't recorded — could be Scotland/Wales/NI). It correctly excludes sibling regions (Glasgow, Cardiff) and same-name foreign cities (London, Ontario). Note: only ~1 in 4 contacts has any location on file, so a short list may reflect missing data, not a small network.",
+    input_schema: {
+      type: "object",
+      properties: {
+        location: {
+          type: "string",
+          description:
+            "A place name: a city ('London'), a sub-national region ('England', 'Scotland'), or a country ('United Kingdom', 'USA').",
+        },
+        limit: { type: "number", description: "Max results, default 100" },
+      },
+      required: ["location"],
+    },
+    execute: async (input, ctx) => {
+      const { location, limit = 100 } = input as {
+        location: string;
+        limit?: number;
+      };
+      const result = await searchContactsByLocation(ctx.userId, location, limit);
+      const summaryParts = [
+        `${result.confirmedCount} confirmed in ${location}`,
+      ];
+      if (result.regionUnknownCount > 0) {
+        summaryParts.push(
+          `${result.regionUnknownCount} in the wider country (sub-region unknown)`,
+        );
+      }
+      return {
+        data: {
+          confirmedCount: result.confirmedCount,
+          regionUnknownCount: result.regionUnknownCount,
+          contacts: result.hits.map((h) => ({
+            contactId: h.id,
+            name: h.name,
+            company: h.company,
+            role: h.role,
+            tier: h.tier,
+            city: h.city,
+            state: h.state,
+            country: h.country,
+            confidence: h.confidence,
+            matchedOn: h.matchedOn,
+          })),
+        },
+        summary: summaryParts.join(", "),
       };
     },
   },
@@ -451,7 +505,7 @@ const TOOLS: RegisteredTool[] = [
   {
     name: "find_personal_mentions",
     description:
-      "Search across all contacts' memory for things THEY have mentioned about themselves matching a query (e.g., 'daughter applying to Stanford', 'sabbatical', 'moving to NYC'). Returns contacts who said something matching with the context.",
+      "Search across all contacts' MEMORY for things THEY have said about themselves in conversation (e.g., 'daughter applying to Stanford', 'sabbatical', 'training for a marathon'). This reads conversational memory, NOT structured contact fields. Do NOT use it for location/where-someone-lives questions — use find_contacts_by_location for those; a location question here will almost always return nothing.",
     input_schema: {
       type: "object",
       properties: {
@@ -548,6 +602,8 @@ const SYSTEM_PROMPT = `You are helping the user reason about the people in their
 CORE RULES:
 - Ground every claim in tool output. NEVER invent contacts, attributes, or relationships that don't appear in the data.
 - Call tools liberally — search_contacts and find_contacts_by_topic to identify candidates, then get_contact_profile / get_network_neighbors / get_interaction_history to verify they fit.
+- For "who lives in / who's based in / who's in <place>" questions, ALWAYS use find_contacts_by_location (it queries structured city/state/country fields). Do NOT use find_personal_mentions for location — it only searches conversational memory and will miss almost everyone.
+- When find_contacts_by_location returns both confirmed and region_unknown counts, REPORT BOTH honestly (e.g. "49 confirmed in England, 95 more in the UK whose region isn't recorded"). Don't collapse them into one number — the distinction is the point. If the total seems low, note that most contacts have no location on file.
 - Stop calling tools once you have enough evidence. Don't loop indefinitely.
 - When recommending people, explain the EVIDENCE: cite which interactions, which shared threads, which profile attributes informed the suggestion.
 
