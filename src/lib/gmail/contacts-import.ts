@@ -11,6 +11,12 @@ export interface GoogleContact {
   role: string | null;
   photoUrl: string | null;
   birthday: string | null; // ISO date string e.g. "1995-03-12"
+  // Location from the People API `addresses` field. Populated when the
+  // contact has a home/work address on file; null otherwise. Maps
+  // People API city → city, region → state, country → country.
+  city: string | null;
+  state: string | null;
+  country: string | null;
 }
 
 interface PeopleApiPerson {
@@ -24,6 +30,13 @@ interface PeopleApiPerson {
   organizations?: Array<{ name?: string; title?: string }>;
   photos?: Array<{ url?: string; default?: boolean }>;
   birthdays?: Array<{ date?: { year?: number; month?: number; day?: number } }>;
+  addresses?: Array<{
+    metadata?: { primary?: boolean };
+    city?: string;
+    region?: string;
+    country?: string;
+    formattedValue?: string;
+  }>;
 }
 
 interface PeopleApiResponse {
@@ -203,7 +216,7 @@ function peopleEndpoint(opts: {
   const url = new URL("https://people.googleapis.com/v1/people/me/connections");
   url.searchParams.set(
     "personFields",
-    "names,emailAddresses,phoneNumbers,organizations,photos,birthdays",
+    "names,emailAddresses,phoneNumbers,organizations,photos,birthdays,addresses",
   );
   url.searchParams.set("pageSize", "100");
   if (opts.pageToken) url.searchParams.set("pageToken", opts.pageToken);
@@ -290,5 +303,46 @@ function parsePerson(person: PeopleApiPerson): GoogleContact | null {
     birthday = `${year}-${month}-${day}`;
   }
 
-  return { name: cleaned.name, email, additionalEmails, phone, company, role, photoUrl, birthday };
+  const { city, state, country } = parseAddress(person.addresses);
+
+  return {
+    name: cleaned.name,
+    email,
+    additionalEmails,
+    phone,
+    company,
+    role,
+    photoUrl,
+    birthday,
+    city,
+    state,
+    country,
+  };
+}
+
+/**
+ * Pick the best address off a People API person and map it to
+ * city/state/country. Prefers an address flagged `metadata.primary`;
+ * otherwise takes the first address that carries any location signal.
+ * Returns nulls when the contact has no usable address (the common
+ * case — most Google contacts have no address on file).
+ */
+function parseAddress(
+  addresses: PeopleApiPerson["addresses"],
+): { city: string | null; state: string | null; country: string | null } {
+  const empty = { city: null, state: null, country: null };
+  if (!addresses || addresses.length === 0) return empty;
+
+  const hasLocation = (a: NonNullable<PeopleApiPerson["addresses"]>[number]) =>
+    !!(a.city?.trim() || a.region?.trim() || a.country?.trim());
+
+  const primary = addresses.find((a) => a.metadata?.primary && hasLocation(a));
+  const chosen = primary ?? addresses.find(hasLocation);
+  if (!chosen) return empty;
+
+  return {
+    city: chosen.city?.trim() || null,
+    state: chosen.region?.trim() || null,
+    country: chosen.country?.trim() || null,
+  };
 }

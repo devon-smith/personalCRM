@@ -220,4 +220,142 @@ describe("fetchGoogleContacts — sync token lifecycle", () => {
 
     expect(result.map((c) => c.name)).toEqual(["Active", "Also Active"]);
   });
+
+  // ─── M0.x.18: location from People API addresses ──────────────
+
+  it("requests the addresses personField", async () => {
+    vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.contactsSyncCursor.upsert).mockResolvedValue({} as never);
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      calls.push({ url });
+      return new Response(
+        JSON.stringify({ connections: [], nextSyncToken: "T" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as never;
+
+    await fetchGoogleContacts("user-1");
+    expect(decodeURIComponent(calls[0].url)).toContain("addresses");
+  });
+
+  it("maps a primary address to city/state/country", async () => {
+    vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.contactsSyncCursor.upsert).mockResolvedValue({} as never);
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          connections: [
+            {
+              names: [{ displayName: "Oga London" }],
+              emailAddresses: [{ value: "oga@x.com" }],
+              addresses: [
+                {
+                  metadata: { primary: true },
+                  city: "London",
+                  region: "England",
+                  country: "United Kingdom",
+                },
+              ],
+            },
+          ],
+          nextSyncToken: "T",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as never;
+
+    const result = await fetchGoogleContacts("user-1");
+    expect(result).toHaveLength(1);
+    expect(result[0].city).toBe("London");
+    expect(result[0].state).toBe("England");
+    expect(result[0].country).toBe("United Kingdom");
+  });
+
+  it("prefers a primary address over a non-primary one", async () => {
+    vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.contactsSyncCursor.upsert).mockResolvedValue({} as never);
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          connections: [
+            {
+              names: [{ displayName: "Two Homes" }],
+              emailAddresses: [{ value: "th@x.com" }],
+              addresses: [
+                { city: "Palo Alto", region: "CA", country: "USA" },
+                {
+                  metadata: { primary: true },
+                  city: "New York",
+                  region: "NY",
+                  country: "USA",
+                },
+              ],
+            },
+          ],
+          nextSyncToken: "T",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as never;
+
+    const result = await fetchGoogleContacts("user-1");
+    expect(result[0].city).toBe("New York");
+  });
+
+  it("returns null location when no address is present", async () => {
+    vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.contactsSyncCursor.upsert).mockResolvedValue({} as never);
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          connections: [
+            {
+              names: [{ displayName: "No Address" }],
+              emailAddresses: [{ value: "na@x.com" }],
+            },
+          ],
+          nextSyncToken: "T",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as never;
+
+    const result = await fetchGoogleContacts("user-1");
+    expect(result[0].city).toBeNull();
+    expect(result[0].state).toBeNull();
+    expect(result[0].country).toBeNull();
+  });
+
+  it("falls back to the first address that carries any location signal", async () => {
+    vi.mocked(prisma.contactsSyncCursor.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.contactsSyncCursor.upsert).mockResolvedValue({} as never);
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          connections: [
+            {
+              names: [{ displayName: "No Primary Flag" }],
+              emailAddresses: [{ value: "np@x.com" }],
+              addresses: [
+                { poBox: "PO 5" }, // no city/region/country — skipped
+                { city: "Berlin", country: "Germany" },
+              ],
+            },
+          ],
+          nextSyncToken: "T",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as never;
+
+    const result = await fetchGoogleContacts("user-1");
+    expect(result[0].city).toBe("Berlin");
+    expect(result[0].country).toBe("Germany");
+    expect(result[0].state).toBeNull();
+  });
 });
